@@ -16,6 +16,7 @@ if (new URLSearchParams(location.search).has('smoke')) {
 // supplies a tiny concrete subclass — a consumer, not framework code — registered as
 // <pg-mobile-shell> and shown phone-framed in the Navigation section.
 import { BMobileAppShell, type Surface } from 'birko-web-shell';
+import { createWakeLockManager, createAudioCue, registerServiceWorker } from 'birko-web-core';
 
 class PgMobileShell extends BMobileAppShell {
   protected get brandName(): string { return 'Reps'; }
@@ -31,6 +32,40 @@ class PgMobileShell extends BMobileAppShell {
   }
 }
 if (!customElements.get('pg-mobile-shell')) customElements.define('pg-mobile-shell', PgMobileShell);
+
+// Device-utils demo card (EPIC-016 backports): Screen Wake Lock, iOS-safe audio cue, and opt-in PWA
+// service-worker register/unregister — the interactive coverage promoted out of the old review panel.
+class PgDeviceDemo extends HTMLElement {
+  connectedCallback(): void {
+    if (this.dataset.ready) return;
+    this.dataset.ready = '1';
+    this.innerHTML = `
+      <div style="display:flex;flex-wrap:wrap;gap:.5rem;align-items:center">
+        <button type="button" data-act="wake">Acquire wake lock</button>
+        <button type="button" data-act="wake-off">Release</button>
+        <button type="button" data-act="beep">Beep</button>
+        <button type="button" data-act="sw-on">Register SW</button>
+        <button type="button" data-act="sw-off">Unregister SW</button>
+      </div>
+      <p data-status style="font-size:.8rem;color:var(--b-text-secondary);min-height:1.2em;margin:.5rem 0 0"></p>`;
+    const wake = createWakeLockManager();
+    const cue = createAudioCue();
+    const say = (m: string): void => { const s = this.querySelector('[data-status]'); if (s) s.textContent = m; };
+    const on = (act: string, fn: () => void): void => {
+      this.querySelector(`[data-act="${act}"]`)?.addEventListener('click', fn);
+    };
+    on('wake', () => { wake.acquire(); say(`wake lock: ${wake.held ? 'held' : 'requested (may be denied off-gesture)'}`); });
+    on('wake-off', () => { wake.release(); say('wake lock released'); });
+    on('beep', () => { cue.prime(); cue.beep({ frequency: 660, durationMs: 120, vibrate: 20 }); say('beep'); });
+    on('sw-on', () => { void registerServiceWorker('/sw.js').then((reg) => say(reg ? 'SW registered — see DevTools → Application; go Offline + reload' : 'SW registration failed / unsupported')); });
+    on('sw-off', () => { void (async () => {
+      const regs = (await navigator.serviceWorker?.getRegistrations?.()) ?? [];
+      await Promise.all(regs.map((r) => r.unregister()));
+      say(`unregistered ${regs.length} service worker(s) — reload to clear`);
+    })(); });
+  }
+}
+if (!customElements.get('pg-device-demo')) customElements.define('pg-device-demo', PgDeviceDemo);
 
 // ── Component catalogue ──────────────────────────────────────────────────────
 // Maintained manifest. Each entry renders one representative instance plus controls
@@ -152,6 +187,11 @@ const CATALOGUE: ComponentDef[] = [
   { tag: 'b-skeleton', label: 'Skeleton', category: 'feedback', attrs: { width: '180px', height: '1rem' } },
   { tag: 'b-stale-banner', label: 'Stale banner', category: 'feedback', render: () => 'Data may be out of date.', note: 'Typically shown when cached data is stale.' },
   { tag: 'b-toast-item', label: 'Toast item', category: 'feedback', attrs: { variant: 'success' }, render: () => 'Saved successfully', note: 'Normally emitted through the toast service.' },
+  { tag: 'b-sync-status', label: 'Sync status', category: 'feedback',
+    note: 'Offline / syncing / synced chip bound to an outbox SyncSource (EPIC-002 backport). Shown with 2 pending writes (syncing); it hides when online + idle and shows "offline" when disconnected.',
+    setup: (el) => el.bind({ get pendingCount() { return 2; }, onChange() { return () => {}; } }) },
+  { tag: 'pg-device-demo', label: 'Device utils (wake lock / audio cue / SW)', category: 'feedback',
+    note: 'EPIC-016 backports: Screen Wake Lock, iOS-safe audio cue, and opt-in PWA service-worker register/unregister. Buttons drive each; the playground never auto-registers a SW.' },
 
   // ── nav ──
   { tag: 'b-breadcrumb', label: 'Breadcrumb', category: 'nav', setup: (el) => el.setItems([{ label: 'Home', href: '#' }, { label: 'Section', href: '#' }, { label: 'Page' }]) },

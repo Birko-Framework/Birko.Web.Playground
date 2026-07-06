@@ -1,0 +1,8 @@
+node_modules/
+wwwroot/
+*.user
+.vs/
+.vscode/
+.idea/
+Thumbs.db
+.DS_Store

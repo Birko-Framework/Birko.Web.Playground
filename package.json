@@ -1,0 +1,16 @@
+{
+  "name": "birko-web-playground",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Component gallery + live design-token editor + theme-CSS export for Birko.Web.*",
+  "scripts": {
+    "build": "node build.js",
+    "watch": "node build.js --watch",
+    "serve": "node serve.mjs"
+  },
+  "devDependencies": {
+    "esbuild": "^0.24.0",
+    "puppeteer": "^25.2.0"
+  }
+}

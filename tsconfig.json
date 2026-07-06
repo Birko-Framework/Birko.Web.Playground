@@ -1,0 +1,25 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ES2022",
+    "moduleResolution": "bundler",
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "strict": true,
+    "noEmit": true,
+    "sourceMap": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true,
+    "experimentalDecorators": true,
+    "useDefineForClassFields": false,
+    "paths": {
+      "birko-web-core":         ["../../Web/Birko.Web.Core/src/index.ts"],
+      "birko-web-core/*":       ["../../Web/Birko.Web.Core/src/*/index.ts"],
+      "birko-web-components":   ["../../Web/Birko.Web.Components/src/index.ts"],
+      "birko-web-components/*": ["../../Web/Birko.Web.Components/src/*/index.ts"],
+      "birko-web-shell":        ["../../Web/Birko.Web.Shell/src/index.ts"],
+      "birko-web-shell/*":      ["../../Web/Birko.Web.Shell/src/*/index.ts"]
+    }
+  },
+  "include": ["src/**/*.ts"]
+}

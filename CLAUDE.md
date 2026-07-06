@@ -1,0 +1,36 @@
+# Birko.Web.Playground
+
+## Overview
+Frontend reference consumer (TypeScript + esbuild) — a **component gallery + live design-token
+editor + theme-CSS export** for `Birko.Web.*`. Visual counterpart to `Birko.Sandbox` (backend smoke
+harness). Created in TASK-038 (EPIC-013 reference consumers).
+
+## Location
+`C:\Source\Birko\Consumers\Birko.Web.Playground` — a Birko.Web consumer under `Birko\Consumers`.
+
+## How it consumes the framework
+- `build.js` resolves the **`Birko\Web`** bucket (the TS frontend libs) without a committed absolute
+  path: `BIRKO_SRC` env var, else walk up to find `Birko/Web/Birko.Web.Core`. The esbuild `alias`
+  map points `birko-web-*` imports at `${BIRKO_SRC}/Birko.Web.X/src/...`.
+- `tsconfig.json` `paths` mirror the aliases (`../../Web/Birko.Web.*`) for editor type-checking.
+- Base CSS (`tokens.css`, `reset.css`, `themes/*.css`) is copied into `wwwroot/css/` at build.
+
+## Structure
+- `src/app.ts` — the playground app: imports `birko-web-components` (registers all `b-*`), builds the
+  gallery + token editor + export UI.
+- `index.html` — links `css/*`, hosts `<style id="playground-theme">` (live edits applied here) + `app.js`.
+- `build.js` / `package.json` / `tsconfig.json` — esbuild build + aliases.
+- `wwwroot/` — build output (`app.js` + copied `css/`); git-ignored.
+
+## Conventions
+- The gallery is driven by a manifest (`src/catalogue.ts` when split out) so new `b-*` components don't silently go missing; keep it in sync with the `Birko.Web.Components` catalogue.
+- The token editor parses `wwwroot/css/tokens.css` at runtime so the editable token list stays in sync with the framework automatically.
+- Live edits write to the `#playground-theme` `[data-theme="playground"]` block; export emits only tokens that differ from the chosen base (clean diff, like `dark.css`/`neon.css`).
+- No live network calls; this is a pure static frontend.
+
+## Building / running
+```bash
+npm install && npm run build   # -> wwwroot/app.js (+ css/), resolves Birko\Web
+npm run watch                  # rebuild on save
+# serve wwwroot/ or open index.html in a browser
+```

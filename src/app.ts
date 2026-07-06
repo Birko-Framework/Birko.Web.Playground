@@ -67,6 +67,21 @@ class PgDeviceDemo extends HTMLElement {
 }
 if (!customElements.get('pg-device-demo')) customElements.define('pg-device-demo', PgDeviceDemo);
 
+// Vertical-range equalizer bank (TASK-053) — a row of slider-only vertical b-ranges.
+class PgEqualizer extends HTMLElement {
+  connectedCallback(): void {
+    if (this.dataset.ready) return;
+    this.dataset.ready = '1';
+    this.style.display = 'flex';
+    this.style.gap = '1rem';
+    this.style.height = '180px';
+    this.innerHTML = [30, 55, 80, 45, 65]
+      .map((v) => `<b-range orientation="vertical" display="slider" min="0" max="100" value="${v}"></b-range>`)
+      .join('');
+  }
+}
+if (!customElements.get('pg-equalizer')) customElements.define('pg-equalizer', PgEqualizer);
+
 // ── Component catalogue ──────────────────────────────────────────────────────
 // Maintained manifest. Each entry renders one representative instance plus controls
 // that flip a common attribute live. Keep in sync with the Birko.Web.Components catalogue;
@@ -108,7 +123,10 @@ const CATALOGUE: ComponentDef[] = [
   { tag: 'b-select', label: 'Select', category: 'inputs', attrs: { label: 'Pick one', placeholder: 'Choose…' }, render: () => '<option value="1">One</option><option value="2">Two</option><option value="3">Three</option>' },
   { tag: 'b-multi-select', label: 'Multi-select', category: 'inputs', attrs: { label: 'Pick many' }, setup: (el) => el.setOptions([{ value: '1', label: 'One' }, { value: '2', label: 'Two' }, { value: '3', label: 'Three' }]) },
   { tag: 'b-color-picker', label: 'Color picker', category: 'inputs', attrs: { value: '#25ba7a', label: 'Brand color' } },
-  { tag: 'b-range', label: 'Range', category: 'inputs', attrs: { min: '0', max: '100', value: '60' } },
+  { tag: 'b-range', label: 'Range', category: 'inputs', attrs: { min: '0', max: '100', value: '60' },
+    controls: [{ label: 'orientation', attr: 'orientation', options: ['horizontal', 'vertical'] }] },
+  { tag: 'pg-equalizer', label: 'Range — vertical (equalizer)', category: 'inputs',
+    note: 'A row of vertical b-range sliders (orientation="vertical", display="slider") — the equalizer/mixer layout (TASK-053).' },
   { tag: 'b-date-picker', label: 'Date picker', category: 'inputs', attrs: { label: 'Date' } },
   { tag: 'b-datetime-picker', label: 'Datetime picker', category: 'inputs', attrs: { label: 'When' } },
   { tag: 'b-date-range-picker', label: 'Date range', category: 'inputs', attrs: { label: 'Range' } },

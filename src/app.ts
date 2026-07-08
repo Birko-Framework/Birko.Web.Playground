@@ -17,6 +17,11 @@ if (new URLSearchParams(location.search).has('smoke')) {
 // <pg-mobile-shell> and shown phone-framed in the Navigation section.
 import { BMobileAppShell, type Surface } from 'birko-web-shell';
 import { createWakeLockManager, createAudioCue, registerServiceWorker } from 'birko-web-core';
+// Imperative dialog helpers (TASK-063) — the lean subpath, not the layout/inputs barrels.
+import {
+  confirm as dlgConfirm, confirmDelete, alert as dlgAlert, prompt as dlgPrompt,
+  choose, promptForm, busy, notify,
+} from 'birko-web-components/dialogs';
 
 class PgMobileShell extends BMobileAppShell {
   protected get brandName(): string { return 'Reps'; }
@@ -81,6 +86,53 @@ class PgEqualizer extends HTMLElement {
   }
 }
 if (!customElements.get('pg-equalizer')) customElements.define('pg-equalizer', PgEqualizer);
+
+// ── Imperative dialogs demo (TASK-063) ───────────────────────────────────────
+// The dialog helpers are functions, not components, so the gallery hosts them in a small
+// local element: a button per helper + a readout of the last awaited result. Each button also
+// logs `[playground] dialogs: <name> => <result>` so verify.mjs can assert behaviour headlessly.
+class PgDialogs extends HTMLElement {
+  connectedCallback(): void {
+    if (this.dataset.ready) return;
+    this.dataset.ready = '1';
+    this.style.cssText = 'display:flex;flex-wrap:wrap;gap:.5rem;align-items:flex-start';
+    const out = document.createElement('code');
+    out.className = 'pg-dialogs-out';
+    out.style.cssText = 'flex:1 1 100%;margin-top:.5rem;color:var(--b-text-secondary);font-size:var(--b-text-sm)';
+    out.textContent = 'result: —';
+    const report = (name: string, value: unknown) => {
+      const s = JSON.stringify(value);
+      out.textContent = `result: ${name} → ${s}`;
+      out.setAttribute('data-last', `${name}:${s}`);
+      console.info(`[playground] dialogs: ${name} => ${s}`);
+    };
+    const mk = (label: string, fn: () => void) => {
+      const b = document.createElement('b-button');
+      b.setAttribute('size', 'sm');
+      b.setAttribute('variant', 'secondary');
+      b.textContent = label;
+      b.addEventListener('click', fn);
+      return b;
+    };
+    this.append(
+      mk('confirm', async () => report('confirm', await dlgConfirm('Proceed with the action?', { title: 'Confirm' }))),
+      mk('confirmDelete', async () => report('confirmDelete', await confirmDelete('Delete this item? This cannot be undone.'))),
+      mk('alert', async () => { await dlgAlert('Your changes have been saved.', { title: 'Saved' }); report('alert', 'ok'); }),
+      mk('prompt', async () => report('prompt', await dlgPrompt('What is your name?', { defaultValue: 'Ada', placeholder: 'name' }))),
+      mk('choose', async () => report('choose', await choose('Export format', [
+        { label: 'PDF', value: 'pdf' }, { label: 'CSV', value: 'csv' }, { label: 'Excel', value: 'xlsx', variant: 'primary' },
+      ]))),
+      mk('promptForm', async () => report('promptForm', await promptForm([
+        { name: 'first', type: 'text', label: 'First name', required: true, rules: [{ type: 'required' }] },
+        { name: 'age', type: 'number', label: 'Age' },
+      ], { title: 'Person' }))),
+      mk('busy', async () => { await busy(() => new Promise((r) => setTimeout(r, 1200)), { message: 'Working…' }); report('busy', 'done'); }),
+      mk('notify', () => { notify('This is a toast notification', 'success'); report('notify', 'toast'); }),
+      out,
+    );
+  }
+}
+if (!customElements.get('pg-dialogs')) customElements.define('pg-dialogs', PgDialogs);
 
 // ── Component catalogue ──────────────────────────────────────────────────────
 // Maintained manifest. Each entry renders one representative instance plus controls
@@ -210,6 +262,8 @@ const CATALOGUE: ComponentDef[] = [
     setup: (el) => el.bind({ get pendingCount() { return 2; }, onChange() { return () => {}; } }) },
   { tag: 'pg-device-demo', label: 'Device utils (wake lock / audio cue / SW)', category: 'feedback',
     note: 'EPIC-016 backports: Screen Wake Lock, iOS-safe audio cue, and opt-in PWA service-worker register/unregister. Buttons drive each; the playground never auto-registers a SW.' },
+  { tag: 'pg-dialogs', label: 'Dialogs (imperative helpers)', category: 'feedback',
+    note: 'TASK-063: birko-web-components/dialogs — confirm / confirmDelete / alert / prompt / choose / promptForm / busy / notify. Click a button; the awaited result shows below. All are themed native <dialog> (top layer).' },
 
   // ── nav ──
   { tag: 'b-breadcrumb', label: 'Breadcrumb', category: 'nav', setup: (el) => el.setItems([{ label: 'Home', href: '#' }, { label: 'Section', href: '#' }, { label: 'Page' }]) },

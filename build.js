@@ -37,6 +37,7 @@ const aliases = {
   'birko-web-components/layout':     `${BIRKO_SRC}/Birko.Web.Components/src/layout/index.ts`,
   'birko-web-components/data':       `${BIRKO_SRC}/Birko.Web.Components/src/data/index.ts`,
   'birko-web-components/feedback':   `${BIRKO_SRC}/Birko.Web.Components/src/feedback/index.ts`,
+  'birko-web-components/dialogs':     `${BIRKO_SRC}/Birko.Web.Components/src/dialogs/index.ts`,
   'birko-web-components/nav':        `${BIRKO_SRC}/Birko.Web.Components/src/nav/index.ts`,
   'birko-web-components/command':    `${BIRKO_SRC}/Birko.Web.Components/src/command/index.ts`,
   'birko-web-components/form-utils': `${BIRKO_SRC}/Birko.Web.Components/src/form-utils/index.ts`,

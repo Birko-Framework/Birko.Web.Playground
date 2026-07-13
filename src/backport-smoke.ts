@@ -1,9 +1,13 @@
 // EPIC-002 web backport smoke — exercises the new Birko.Web.Core APIs in a real browser via the
 // playground's headless verify (verify.mjs surfaces `[playground]` console logs + page errors).
 // This is how the framework's frontend backports are verified (no in-framework unit runner).
-import { getFormatter, createWakeLockManager, createAudioCue, MirrorStore, readThrough, define, registerServiceWorker } from 'birko-web-core';
+import { getFormatter, createWakeLockManager, createAudioCue, MirrorStore, readThrough, define, registerServiceWorker, I18n, signal, setPersistPrefix, SyncManager, Store, unwrapList, apiErrorMessage } from 'birko-web-core';
 import { BSyncStatus, type SyncSource } from 'birko-web-components/feedback';
+import { BTreeMenu } from 'birko-web-components/nav';
+import { BMarkdownEditor } from 'birko-web-components/inputs';
+import { BPagination } from 'birko-web-components/data';
 import { BMobileAppShell, type Surface } from 'birko-web-shell';
+import { getVisibleOptions, hasPermission, resolveModuleFromHash } from 'birko-web-shell';
 
 void (async () => {
   const results: string[] = [];
@@ -95,6 +99,107 @@ void (async () => {
     // never throw (localhost is a secure context, so serviceWorker is available in the verify run).
     const reg = await registerServiceWorker('/no-such-sw-smoke.js');
     check('registerServiceWorker best-effort → null on missing script', reg === null);
+
+    // ── STORY-026 medium-findings regression (CR-M256…M266 web track) ──────────
+
+    // CR-M261 — I18n restores the persisted locale on construction (was write-only before).
+    localStorage.setItem('pg_m261_locale', 'sk');
+    check('M261 i18n restores persisted locale', new I18n({ defaultLocale: 'en', storageKey: 'pg_m261_locale' }).locale === 'sk');
+    localStorage.removeItem('pg_m261_locale');
+    check('M261 i18n falls back to default when nothing persisted', new I18n({ defaultLocale: 'en', storageKey: 'pg_m261_locale' }).locale === 'en');
+
+    // CR-M262 — persisted signals use the framework-neutral 'birko_' prefix, not 'symbio_', and
+    // setPersistPrefix() overrides it.
+    const sig = signal(0, { persist: 'pg_m262_key' });
+    sig.value = 42;
+    check('M262 signal persists under birko_ prefix (not symbio_)',
+      localStorage.getItem('birko_pg_m262_key') === '42' && localStorage.getItem('symbio_pg_m262_key') === null);
+    localStorage.removeItem('birko_pg_m262_key');
+    setPersistPrefix('pgtest_');
+    const sig2 = signal(0, { persist: 'pg_m262_k2' });
+    sig2.value = 7;
+    check('M262 setPersistPrefix overrides the namespace', localStorage.getItem('pgtest_pg_m262_k2') === '7');
+    localStorage.removeItem('pgtest_pg_m262_k2');
+    setPersistPrefix('birko_'); // restore default so nothing else is disturbed
+
+    // CR-M260 — SyncManager.dispose() unregisters the window 'online' listener (was leaked).
+    let getPendingCalls = 0;
+    const fakeQueue = {
+      pendingCount: 0,
+      getPending: async () => { getPendingCalls++; return []; },
+      update: async () => {},
+      remove: async () => {},
+    } as unknown as ConstructorParameters<typeof SyncManager>[0];
+    const sm = new SyncManager(fakeQueue, {} as ConstructorParameters<typeof SyncManager>[1], { syncInterval: 1_000_000 });
+    window.dispatchEvent(new Event('online'));
+    await new Promise((r) => setTimeout(r, 0));
+    const callsWhileLive = getPendingCalls;
+    sm.dispose();
+    window.dispatchEvent(new Event('online'));
+    await new Promise((r) => setTimeout(r, 0));
+    check('M260 SyncManager syncs on online while live', callsWhileLive >= 1);
+    check('M260 SyncManager dispose() unregisters online listener', getPendingCalls === callsWhileLive);
+
+    // CR-M258 — b-tree-menu emits load-error (no unhandled rejection) when lazy onExpand rejects.
+    if (!customElements.get('b-tree-menu')) define('b-tree-menu', BTreeMenu);
+    const tree = document.createElement('b-tree-menu') as BTreeMenu;
+    document.body.appendChild(tree);
+    let loadErrorFired = false;
+    tree.addEventListener('load-error', () => { loadErrorFired = true; });
+    tree.setConfig({ items: [{ id: 'n1', label: 'Node 1' }], onExpand: async () => { throw new Error('boom'); } });
+    // Before the fix this rejected (unhandled) out of the async toggle(); reaching the check proves
+    // the rejection is now caught.
+    await tree.toggle('n1');
+    await new Promise((r) => setTimeout(r, 0));
+    check('M258 b-tree-menu emits load-error on rejecting onExpand', loadErrorFired);
+    tree.remove();
+
+    // ── Test-gap coverage (CR-M259/M263/M266) — highest-risk pure functions the findings name ──
+
+    // CR-M263 (Web.Core) — unwrapList / apiErrorMessage / I18n resolution + plural
+    const resp = <D>(data: D) => ({ ok: true, status: 200, data }) as Parameters<typeof unwrapList>[0];
+    check('M263 unwrapList raw array', unwrapList(resp([1, 2, 3])).length === 3);
+    check('M263 unwrapList paged envelope', unwrapList(resp({ items: [1, 2], totalCount: 2, page: 1, pageSize: 10 })).length === 2);
+    check('M263 unwrapList keyed override', unwrapList(resp({ results: [1] }), 'results').length === 1);
+    check('M263 unwrapList null → []', unwrapList(resp(null)).length === 0);
+    check('M263 apiErrorMessage ProblemDetails detail>title', apiErrorMessage({ title: 'T', detail: 'D' }) === 'D');
+    check('M263 apiErrorMessage error.message', apiErrorMessage({ error: { message: 'boom' } }) === 'boom');
+    check('M263 apiErrorMessage plain string', apiErrorMessage('oops') === 'oops');
+    check('M263 apiErrorMessage fallback', apiErrorMessage(null, 'fb') === 'fb');
+    const i18nP = new I18n({ defaultLocale: 'en' });
+    i18nP.addMessages('en', { items: { one: '{count} item', other: '{count} items' } });
+    check('M263 i18n plural one', i18nP.t('items', { count: 1 }) === '1 item');
+    check('M263 i18n plural other', i18nP.t('items', { count: 5 }) === '5 items');
+    check('M263 i18n missing key falls back to key', i18nP.t('nope.missing') === 'nope.missing');
+
+    // CR-M259 (Web.Components) — BMarkdownEditor.renderMarkdown + b-pagination page-number logic
+    check('M259 renderMarkdown heading', BMarkdownEditor.renderMarkdown('# Title').includes('<h1>Title</h1>'));
+    check('M259 renderMarkdown escapes HTML (XSS-safe)', BMarkdownEditor.renderMarkdown('<script>x</script>').includes('&lt;script&gt;'));
+    check('M259 renderMarkdown empty → <p></p>', BMarkdownEditor.renderMarkdown('') === '<p></p>');
+    if (!customElements.get('b-pagination')) define('b-pagination', BPagination);
+    const pg = document.createElement('b-pagination');
+    pg.setAttribute('total-pages', '10');
+    pg.setAttribute('page', '5');
+    document.body.appendChild(pg);
+    await new Promise((r) => setTimeout(r, 0));
+    const pageNums = [...(pg.shadowRoot?.querySelectorAll('.page-btn') ?? [])].map((b) => b.getAttribute('data-page'));
+    check('M259 pagination shows first + current + last',
+      pageNums.includes('1') && pageNums.includes('5') && pageNums.includes('10'));
+    check('M259 pagination collapses middle with ellipsis', !!pg.shadowRoot?.querySelector('.ellipsis'));
+    pg.remove();
+
+    // CR-M266 (Web.Shell) — permissions wildcard + module hash resolution
+    const modWild = { id: 'a', label: 'A', icon: '', order: 0, permissions: ['*'],
+      options: [{ id: 'o1', label: 'O1', route: '/a/o1' }, { id: 'o2', label: 'O2', route: '/a/o2', permission: 'a.secret' }] };
+    const modLimited = { ...modWild, permissions: ['a.read'] };
+    check('M266 getVisibleOptions wildcard returns all', getVisibleOptions(modWild).length === 2);
+    check('M266 getVisibleOptions filters unpermitted option', getVisibleOptions(modLimited).length === 1);
+    const shellStore = new Store({ modules: [modWild], activeModuleId: 'a', activeOptionId: null });
+    check('M266 hasPermission wildcard grants any', hasPermission(shellStore, 'anything'));
+    const resolved = resolveModuleFromHash(shellStore, '/inventory/stock/42');
+    check('M266 resolveModuleFromHash parses module/option/entity',
+      resolved.moduleId === 'inventory' && resolved.optionId === 'stock' && resolved.entityId === '42');
+    check('M266 resolveModuleFromHash updates store', shellStore.get('activeModuleId') === 'inventory');
   } catch (e) {
     check(`unexpected throw: ${(e as Error).message}`, false);
   }

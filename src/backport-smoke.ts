@@ -5,7 +5,7 @@ import { getFormatter, createWakeLockManager, createAudioCue, MirrorStore, readT
 import { BSyncStatus, type SyncSource } from 'birko-web-components/feedback';
 import { BTreeMenu } from 'birko-web-components/nav';
 import { BMarkdownEditor } from 'birko-web-components/inputs';
-import { BPagination } from 'birko-web-components/data';
+import { BPagination, BKanban } from 'birko-web-components/data';
 import { BMobileAppShell, type Surface } from 'birko-web-shell';
 import { getVisibleOptions, hasPermission, resolveModuleFromHash } from 'birko-web-shell';
 
@@ -200,6 +200,33 @@ void (async () => {
     check('M266 resolveModuleFromHash parses module/option/entity',
       resolved.moduleId === 'inventory' && resolved.optionId === 'stock' && resolved.entityId === '42');
     check('M266 resolveModuleFromHash updates store', shellStore.get('activeModuleId') === 'inventory');
+
+    // CR-L392 (Web.Components) — moveCard with an implicit target index reports the TRUE landing
+    // index in the emitted event (regression: precedence bug made it `findIndex(...) - 1`, one too
+    // low). The same toIndex expression feeds both the cross-column card-move and the same-column
+    // card-reorder branches, so assert both.
+    if (!customElements.get('b-kanban')) define('b-kanban', BKanban);
+    const kanban = document.createElement('b-kanban') as BKanban;
+    document.body.appendChild(kanban);
+    kanban.setConfig({
+      columns: [{ id: 'todo', label: 'Todo' }, { id: 'done', label: 'Done' }],
+      cards: [
+        { id: 'c1', columnId: 'todo', title: 'One' },
+        { id: 'c2', columnId: 'todo', title: 'Two' },
+        { id: 'c3', columnId: 'done', title: 'Three' },
+      ],
+    });
+    let reorderToIndex: number | undefined;
+    let moveToIndex: number | undefined;
+    kanban.addEventListener('card-reorder', (e) => { reorderToIndex = (e as CustomEvent).detail.toIndex; });
+    kanban.addEventListener('card-move', (e) => { moveToIndex = (e as CustomEvent).detail.toIndex; });
+    // Same-column reorder: move c1 to the end of 'todo' with no explicit index → lands after c2, true index 1.
+    kanban.moveCard('c1', 'todo');
+    check('CR-L392 card-reorder implicit index reports true landing position', reorderToIndex === 1);
+    // Cross-column move: move c1 into 'done' with no explicit index → lands after c3, true index 1.
+    kanban.moveCard('c1', 'done');
+    check('CR-L392 card-move implicit index reports true landing position', moveToIndex === 1);
+    kanban.remove();
   } catch (e) {
     check(`unexpected throw: ${(e as Error).message}`, false);
   }

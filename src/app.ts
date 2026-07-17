@@ -244,7 +244,7 @@ const CATALOGUE: ComponentDef[] = [
     el.load(); // setConfig configures but doesn't fetch; load() pulls the first page
   } },
   { tag: 'b-editable-table', label: 'Editable table', category: 'data', setup: (el) => { el.setConfig({ columns: [{ key: 'name', label: 'Name', type: 'text' }, { key: 'qty', label: 'Qty', type: 'number' }] }); el.setData([{ name: 'Widget', qty: 3 }, { name: 'Gadget', qty: 7 }]); } },
-  { tag: 'b-chart', label: 'Chart', category: 'data', attrs: { type: 'bar', height: '220px' },
+  { tag: 'b-chart', label: 'Chart', category: 'data', attrs: { type: 'bar', height: '220' },
     controls: [{ label: 'type', attr: 'type', options: ['bar', 'line', 'area', 'pie', 'donut', 'gauge'] }],
     setup: (el) => el.setData({ labels: ['Jan', 'Feb', 'Mar', 'Apr'], series: [{ id: 'sales', label: 'Sales', data: [{ y: 65 }, { y: 40 }, { y: 80 }, { y: 55 }] }] }) },
   { tag: 'b-kanban', label: 'Kanban', category: 'data', setup: (el) => el.setConfig({ columns: [{ id: 'todo', label: 'To do' }, { id: 'doing', label: 'In progress' }, { id: 'done', label: 'Done' }], cards: [{ id: '1', columnId: 'todo', title: 'Task A' }, { id: '2', columnId: 'doing', title: 'Task B' }, { id: '3', columnId: 'done', title: 'Task C' }] }) },

@@ -1,7 +1,7 @@
 // EPIC-002 web backport smoke — exercises the new Birko.Web.Core APIs in a real browser via the
 // playground's headless verify (verify.mjs surfaces `[playground]` console logs + page errors).
 // This is how the framework's frontend backports are verified (no in-framework unit runner).
-import { getFormatter, createWakeLockManager, createAudioCue, MirrorStore, readThrough, define, registerServiceWorker, I18n, signal, setPersistPrefix, SyncManager, Store, unwrapList, apiErrorMessage } from 'birko-web-core';
+import { getFormatter, createWakeLockManager, createAudioCue, MirrorStore, readThrough, define, registerServiceWorker, I18n, signal, setPersistPrefix, SyncManager, Store, unwrapList, apiErrorMessage, ApiClient } from 'birko-web-core';
 import { BSyncStatus, type SyncSource } from 'birko-web-components/feedback';
 import { BTreeMenu } from 'birko-web-components/nav';
 import { BMarkdownEditor } from 'birko-web-components/inputs';
@@ -227,6 +227,43 @@ void (async () => {
     kanban.moveCard('c1', 'done');
     check('CR-L392 card-move implicit index reports true landing position', moveToIndex === 1);
     kanban.remove();
+
+    // CR-L395 (Web.Core) — ApiClient token-refresh retry: onUnauthorized fires only on an explicit
+    // 401, NOT when the post-refresh retry hits a network error (refresh succeeded → transient blip,
+    // logging out would be wrong).
+    const realFetch = globalThis.fetch;
+    try {
+      // (a) 401 → refresh succeeds → retry throws (network) → NO logout, status 0.
+      let unauthorizedA = false;
+      let callA = 0;
+      globalThis.fetch = (async () => {
+        callA += 1;
+        if (callA === 1) return new Response('', { status: 401 });
+        throw new TypeError('network down');
+      }) as typeof fetch;
+      const clientA = new ApiClient({
+        baseUrl: 'https://smoke.test',
+        getToken: () => 'stale',
+        onRefreshToken: async () => 'fresh',
+        onUnauthorized: () => { unauthorizedA = true; },
+      });
+      const respA = await clientA.get('items');
+      check('CR-L395 retry network error does not trigger onUnauthorized', !unauthorizedA && respA.status === 0);
+
+      // (b) 401 → refresh succeeds → retry still 401 (token rejected) → logout fires.
+      let unauthorizedB = false;
+      globalThis.fetch = (async () => new Response('', { status: 401 })) as typeof fetch;
+      const clientB = new ApiClient({
+        baseUrl: 'https://smoke.test',
+        getToken: () => 'stale',
+        onRefreshToken: async () => 'fresh',
+        onUnauthorized: () => { unauthorizedB = true; },
+      });
+      await clientB.get('items');
+      check('CR-L395 explicit 401 after refresh triggers onUnauthorized', unauthorizedB);
+    } finally {
+      globalThis.fetch = realFetch;
+    }
   } catch (e) {
     check(`unexpected throw: ${(e as Error).message}`, false);
   }

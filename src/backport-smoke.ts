@@ -7,7 +7,7 @@ import { BTreeMenu } from 'birko-web-components/nav';
 import { BMarkdownEditor } from 'birko-web-components/inputs';
 import { BPagination, BKanban } from 'birko-web-components/data';
 import { BMobileAppShell, type Surface } from 'birko-web-shell';
-import { getVisibleOptions, hasPermission, resolveModuleFromHash } from 'birko-web-shell';
+import { getVisibleOptions, hasPermission, resolveModuleFromHash, createEntitySearchProvider } from 'birko-web-shell';
 
 void (async () => {
   const results: string[] = [];
@@ -261,6 +261,23 @@ void (async () => {
       });
       await clientB.get('items');
       check('CR-L395 explicit 401 after refresh triggers onUnauthorized', unauthorizedB);
+
+      // CR-L398 (Web.Shell) — entity-search provider tolerates an ok response with a null/non-array
+      // body (returns [] instead of throwing on resp.data.map).
+      globalThis.fetch = (async () =>
+        new Response('null', { status: 200, headers: { 'Content-Type': 'application/json' } })) as typeof fetch;
+      const searchClient = new ApiClient({ baseUrl: 'https://smoke.test' });
+      const provider = createEntitySearchProvider({
+        moduleId: 'widgets', moduleLabel: 'Widgets', icon: '', apiClient: searchClient,
+      });
+      let searchResult: unknown[] | 'threw';
+      try {
+        searchResult = await provider.search('ab');
+      } catch {
+        searchResult = 'threw';
+      }
+      check('CR-L398 entity-search null body returns [] (no throw)',
+        Array.isArray(searchResult) && searchResult.length === 0);
     } finally {
       globalThis.fetch = realFetch;
     }

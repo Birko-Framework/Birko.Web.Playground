@@ -6,6 +6,7 @@ import { BSyncStatus, type SyncSource } from 'birko-web-components/feedback';
 import { BTreeMenu } from 'birko-web-components/nav';
 import { BMarkdownEditor } from 'birko-web-components/inputs';
 import { BPagination, BKanban } from 'birko-web-components/data';
+import { confirm as dlgConfirm } from 'birko-web-components/dialogs';
 import { BMobileAppShell, type Surface } from 'birko-web-shell';
 import { getVisibleOptions, hasPermission, resolveModuleFromHash, createEntitySearchProvider } from 'birko-web-shell';
 
@@ -187,6 +188,50 @@ void (async () => {
       pageNums.includes('1') && pageNums.includes('5') && pageNums.includes('10'));
     check('M259 pagination collapses middle with ellipsis', !!pg.shadowRoot?.querySelector('.ellipsis'));
     pg.remove();
+
+    // STORY-065 / TASK-208 (Web.Components) — b-confirm-dialog stored-XSS fix. The dialog used to
+    // interpolate its caller-supplied `message`/`title` straight into innerHTML, so a confirm built
+    // from user data (e.g. a member's username) was a stored/reflected-XSS sink. The message/title
+    // now render as TEXT by default (matching the alert/prompt helpers), with an explicit
+    // `message-html` opt-in for trusted, developer-authored markup. If the payload below ever
+    // executed, its onerror would flip `__xssConfirm` to 1 — the check asserts it stays 0.
+    const xssWin = window as unknown as { __xssConfirm?: number };
+    xssWin.__xssConfirm = 0;
+    const XSS = '<img src=x onerror="window.__xssConfirm=1">';
+
+    // (a) component default — renders as text: no <img> node created, literal payload preserved.
+    const cd = document.createElement('b-confirm-dialog');
+    cd.setAttribute('message', XSS);
+    document.body.appendChild(cd);
+    await new Promise((r) => setTimeout(r, 0));
+    const cdBody = cd.shadowRoot?.querySelector('.dialog-body');
+    check('STORY-065 confirm-dialog renders message as text (no <img> node)', !cdBody?.querySelector('img'));
+    check('STORY-065 confirm-dialog preserves the literal payload as text', (cdBody?.textContent ?? '') === XSS);
+    cd.remove();
+
+    // (b) explicit opt-in — `message-html` renders trusted markup as real DOM.
+    const cdHtml = document.createElement('b-confirm-dialog');
+    cdHtml.setAttribute('message', '<b>bold</b>');
+    cdHtml.setAttribute('message-html', '');
+    document.body.appendChild(cdHtml);
+    await new Promise((r) => setTimeout(r, 0));
+    check('STORY-065 confirm-dialog message-html opt-in renders real markup',
+      !!cdHtml.shadowRoot?.querySelector('.dialog-body b'));
+    cdHtml.remove();
+
+    // (c) the confirm() helper is safe by default — no caller change required.
+    const helperPromise = dlgConfirm(XSS); // fire-and-forget; inspect the element it created, then cancel it
+    await new Promise((r) => setTimeout(r, 20));
+    // The gallery also hosts a b-confirm-dialog — pick the helper's by its unique message payload.
+    const helperEl = [...document.querySelectorAll('b-confirm-dialog')]
+      .find((el) => el.getAttribute('message') === XSS);
+    const helperBody = helperEl?.shadowRoot?.querySelector('.dialog-body');
+    check('STORY-065 confirm() helper escapes user message by default',
+      !!helperBody && !helperBody.querySelector('img') && (helperBody.textContent ?? '') === XSS);
+    (helperEl?.shadowRoot?.querySelector('.btn-cancel') as HTMLElement | undefined)?.click();
+    check('STORY-065 confirm-dialog XSS payload never executed', xssWin.__xssConfirm === 0);
+    // Cancel resolves the helper; race a timeout so a wiring change can never hang the harness.
+    await Promise.race([helperPromise, new Promise((r) => setTimeout(r, 500))]);
 
     // CR-M266 (Web.Shell) — permissions wildcard + module hash resolution
     const modWild = { id: 'a', label: 'A', icon: '', order: 0, permissions: ['*'],

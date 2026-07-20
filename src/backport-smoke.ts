@@ -5,7 +5,7 @@ import { getFormatter, createWakeLockManager, createAudioCue, MirrorStore, readT
 import { BSyncStatus, type SyncSource } from 'birko-web-components/feedback';
 import { BTreeMenu } from 'birko-web-components/nav';
 import { BMarkdownEditor } from 'birko-web-components/inputs';
-import { BPagination, BKanban } from 'birko-web-components/data';
+import { BPagination, BKanban, BDataTable } from 'birko-web-components/data';
 import { confirm as dlgConfirm } from 'birko-web-components/dialogs';
 import { BMobileAppShell, type Surface } from 'birko-web-shell';
 import { getVisibleOptions, hasPermission, resolveModuleFromHash, createEntitySearchProvider } from 'birko-web-shell';
@@ -325,6 +325,213 @@ void (async () => {
         Array.isArray(searchResult) && searchResult.length === 0);
     } finally {
       globalThis.fetch = realFetch;
+    }
+
+    // ── Prompt 1 (Web.Components) — b-pagination click wiring ──────────────────
+    // Regression: onUpdated wired clicks via btn.querySelector('button'), but b-button renders its
+    // <button> in its SHADOW root, so the light-DOM query returned null and NO listener ever
+    // attached — every prev/next/numbered control was inert for all consumers. Fixed by binding the
+    // click on the <b-button> HOST and guarding the host's `disabled` attribute. Assert that real
+    // host clicks emit page-change with the right page, and that disabled controls emit nothing.
+    if (!customElements.get('b-pagination')) define('b-pagination', BPagination);
+    const pgClick = document.createElement('b-pagination') as BPagination;
+    pgClick.setAttribute('total-pages', '5');
+    pgClick.setAttribute('page', '2');
+    document.body.appendChild(pgClick);
+    await new Promise((r) => setTimeout(r, 0));
+    const pgPages: number[] = [];
+    pgClick.addEventListener('page-change', (e) => pgPages.push((e as CustomEvent).detail.page));
+    const clickPg = async (sel: string, resetTo?: string) => {
+      (pgClick.shadowRoot?.querySelector(sel) as HTMLElement | null)?.click();
+      if (resetTo !== undefined) { pgClick.setAttribute('page', resetTo); }
+      await new Promise((r) => setTimeout(r, 0));
+    };
+    await clickPg('.page-btn-next', '2');   // page 2 → Next → 3 (then reset attr to 2 for the next assertion)
+    check('Prompt1 pagination Next click emits page-change (+1)', pgPages.at(-1) === 3);
+    await clickPg('.page-btn-prev', '2');   // page 2 → Prev → 1
+    check('Prompt1 pagination Prev click emits page-change (-1)', pgPages.at(-1) === 1);
+    const numFive = [...(pgClick.shadowRoot?.querySelectorAll('.page-btn') ?? [])]
+      .find((b) => b.getAttribute('data-page') === '5') as HTMLElement | undefined;
+    numFive?.click();
+    await new Promise((r) => setTimeout(r, 0));
+    check('Prompt1 pagination numbered-page click emits its page', pgPages.at(-1) === 5);
+    pgClick.remove();
+
+    // Disabled controls stay inert: page 1 → Prev disabled, last page → Next disabled.
+    const pgEdge = document.createElement('b-pagination') as BPagination;
+    pgEdge.setAttribute('total-pages', '3');
+    pgEdge.setAttribute('page', '1');
+    document.body.appendChild(pgEdge);
+    await new Promise((r) => setTimeout(r, 0));
+    let edgeEmits = 0;
+    pgEdge.addEventListener('page-change', () => edgeEmits++);
+    (pgEdge.shadowRoot?.querySelector('.page-btn-prev') as HTMLElement | null)?.click();
+    await new Promise((r) => setTimeout(r, 0));
+    check('Prompt1 pagination Prev inert on first page (no emit)', edgeEmits === 0);
+    pgEdge.setAttribute('page', '3');
+    await new Promise((r) => setTimeout(r, 0));
+    (pgEdge.shadowRoot?.querySelector('.page-btn-next') as HTMLElement | null)?.click();
+    await new Promise((r) => setTimeout(r, 0));
+    check('Prompt1 pagination Next inert on last page (no emit)', edgeEmits === 0);
+    pgEdge.remove();
+
+    // ── Prompt 2 (Web.Components) — b-data-table auto-detects the server-paged envelope ─────────
+    // Footgun: with the client-paged default, an endpoint returning a CAPPED { items, totalCount }
+    // page was sliced AGAIN client-side → page 2+ rendered empty and no page=2 request ever fired.
+    // The table now detects a capped envelope and switches to server paging (refetch on
+    // page-change); a bare array stays client-sliced; an explicit flatArray is honoured.
+    if (!customElements.get('b-data-table')) define('b-data-table', BDataTable);
+    const dtCols = [{ key: 'name', label: 'Name' }];
+    const mkRows = (from: number, n: number) =>
+      Array.from({ length: n }, (_, i) => ({ id: String(from + i), name: `Row ${from + i}` }));
+    const rendered = (dt: BDataTable): string[] => {
+      const tbl = dt.shadowRoot?.querySelector('b-table');
+      return [...(tbl?.shadowRoot?.querySelectorAll('tbody tr[data-id]') ?? [])]
+        .map((tr) => (tr as HTMLElement).dataset.id ?? '');
+    };
+    const nextOf = (dt: BDataTable): HTMLElement | null =>
+      (dt.shadowRoot?.querySelector('b-pagination')?.shadowRoot?.querySelector('.page-btn-next') as HTMLElement | null);
+    const pagerOf = (dt: BDataTable): HTMLElement | null => dt.shadowRoot?.querySelector('b-pagination') ?? null;
+
+    // (a) capped server envelope, flatArray UNSET → auto server mode; Next fetches page=2 (not empty).
+    {
+      const seen: string[] = [];
+      const client = {
+        get: async (_e: string, params?: Record<string, string>) => {
+          const page = Number(params?.page ?? 1);
+          seen.push(params?.page ?? '(none)');
+          return { ok: true, status: 200, headers: new Headers(),
+            data: { items: mkRows((page - 1) * 20 + 1, 20), totalCount: 57, page, pageSize: 20 } };
+        },
+      };
+      const dt = document.createElement('b-data-table') as BDataTable;
+      document.body.appendChild(dt);
+      dt.setConfig({ endpoint: 'items', columns: dtCols, apiClient: client as never, pageSize: 20 });
+      await dt.load();
+      await new Promise((r) => setTimeout(r, 10));
+      check('Prompt2(a) capped envelope → page 1 shows the server page (20 of 57)',
+        rendered(dt).length === 20 && rendered(dt)[0] === '1');
+      nextOf(dt)?.click();   // real host click → page-change → server refetch (also covers Prompt 1)
+      await new Promise((r) => setTimeout(r, 10));
+      check('Prompt2(a) Next fired a page=2 request', seen.includes('2'));
+      check('Prompt2(a) page 2 renders the server page — NOT empty',
+        rendered(dt).length === 20 && rendered(dt)[0] === '21');
+      dt.remove();
+    }
+
+    // (a2) THE footgun: flatArray:true (the base-crud-page default) + capped envelope must STILL
+    // auto-flip to server — detection wins over a mis-set client default.
+    {
+      const seen: string[] = [];
+      const client = {
+        get: async (_e: string, params?: Record<string, string>) => {
+          const page = Number(params?.page ?? 1);
+          seen.push(params?.page ?? '(none)');
+          return { ok: true, status: 200, headers: new Headers(),
+            data: { items: mkRows((page - 1) * 20 + 1, 20), totalCount: 57, page, pageSize: 20 } };
+        },
+      };
+      const dt = document.createElement('b-data-table') as BDataTable;
+      document.body.appendChild(dt);
+      dt.setConfig({ endpoint: 'items', columns: dtCols, apiClient: client as never, pageSize: 20, flatArray: true });
+      await dt.load();
+      await new Promise((r) => setTimeout(r, 10));
+      nextOf(dt)?.click();
+      await new Promise((r) => setTimeout(r, 10));
+      check('Prompt2(a2) flatArray:true + capped envelope auto-flips to server (page=2 fetched)',
+        seen.includes('2') && rendered(dt)[0] === '21');
+      dt.remove();
+    }
+
+    // (b) bare array → client-side slicing across pages, NO refetch on page-change.
+    {
+      let calls = 0;
+      const client = { get: async () => { calls++; return { ok: true, status: 200, headers: new Headers(), data: mkRows(1, 45) }; } };
+      const dt = document.createElement('b-data-table') as BDataTable;
+      document.body.appendChild(dt);
+      dt.setConfig({ endpoint: 'items', columns: dtCols, apiClient: client as never, pageSize: 20 });
+      await dt.load();
+      await new Promise((r) => setTimeout(r, 10));
+      check('Prompt2(b) bare array → client page 1 (first 20)', rendered(dt).length === 20 && rendered(dt)[0] === '1');
+      const callsAfterLoad = calls;
+      nextOf(dt)?.click();
+      await new Promise((r) => setTimeout(r, 10));
+      check('Prompt2(b) Next re-slices client-side (page 2 = rows 21..40), NO refetch',
+        calls === callsAfterLoad && rendered(dt).length === 20 && rendered(dt)[0] === '21');
+      dt.remove();
+    }
+
+    // (c) page-size change: server mode refetches page 1 with the new size; client mode re-slices.
+    {
+      // server (capped envelope)
+      const seen: Array<{ page?: string; pageSize?: string }> = [];
+      const client = {
+        get: async (_e: string, params?: Record<string, string>) => {
+          const page = Number(params?.page ?? 1);
+          const size = Number(params?.pageSize ?? 20);
+          seen.push({ page: params?.page, pageSize: params?.pageSize });
+          return { ok: true, status: 200, headers: new Headers(),
+            data: { items: mkRows((page - 1) * size + 1, size), totalCount: 57, page, pageSize: size } };
+        },
+      };
+      const dt = document.createElement('b-data-table') as BDataTable;
+      document.body.appendChild(dt);
+      dt.setConfig({ endpoint: 'items', columns: dtCols, apiClient: client as never, pageSize: 20 });
+      await dt.load();
+      await new Promise((r) => setTimeout(r, 10));
+      pagerOf(dt)?.dispatchEvent(new CustomEvent('page-size-change', { detail: { pageSize: 10 } }));
+      await new Promise((r) => setTimeout(r, 10));
+      check('Prompt2(c) server page-size change refetches page 1 at pageSize=10',
+        seen.at(-1)?.page === '1' && seen.at(-1)?.pageSize === '10' && rendered(dt).length === 10);
+      dt.remove();
+    }
+    {
+      // client (bare array)
+      let calls = 0;
+      const client = { get: async () => { calls++; return { ok: true, status: 200, headers: new Headers(), data: mkRows(1, 45) }; } };
+      const dt = document.createElement('b-data-table') as BDataTable;
+      document.body.appendChild(dt);
+      dt.setConfig({ endpoint: 'items', columns: dtCols, apiClient: client as never, pageSize: 20 });
+      await dt.load();
+      await new Promise((r) => setTimeout(r, 10));
+      const callsAfterLoad = calls;
+      pagerOf(dt)?.dispatchEvent(new CustomEvent('page-size-change', { detail: { pageSize: 10 } }));
+      await new Promise((r) => setTimeout(r, 10));
+      check('Prompt2(c) client page-size change re-slices to 10 rows, NO refetch',
+        calls === callsAfterLoad && rendered(dt).length === 10);
+      dt.remove();
+    }
+
+    // (d) explicit flatArray override still forces the chosen mode, regardless of response shape.
+    {
+      // flatArray:false + BARE array → forced server mode: rows rendered as-is, no client slicing.
+      const client = { get: async () => ({ ok: true, status: 200, headers: new Headers(), data: mkRows(1, 45) }) };
+      const dt = document.createElement('b-data-table') as BDataTable;
+      document.body.appendChild(dt);
+      dt.setConfig({ endpoint: 'items', columns: dtCols, apiClient: client as never, pageSize: 20, flatArray: false });
+      await dt.load();
+      await new Promise((r) => setTimeout(r, 10));
+      check('Prompt2(d) flatArray:false forces server mode on a bare array (all 45 rendered, unsliced)',
+        rendered(dt).length === 45);
+      dt.remove();
+    }
+    {
+      // flatArray:true + FULL envelope (items === totalCount) → forced client mode: slices locally, no refetch.
+      let calls = 0;
+      const client = { get: async () => { calls++; return { ok: true, status: 200, headers: new Headers(), data: { items: mkRows(1, 30), totalCount: 30 } }; } };
+      const dt = document.createElement('b-data-table') as BDataTable;
+      document.body.appendChild(dt);
+      dt.setConfig({ endpoint: 'items', columns: dtCols, apiClient: client as never, pageSize: 20, flatArray: true });
+      await dt.load();
+      await new Promise((r) => setTimeout(r, 10));
+      check('Prompt2(d) flatArray:true keeps a FULL envelope client-paged (page 1 = 20)',
+        rendered(dt).length === 20 && rendered(dt)[0] === '1');
+      const callsAfterLoad = calls;
+      nextOf(dt)?.click();
+      await new Promise((r) => setTimeout(r, 10));
+      check('Prompt2(d) full-envelope client Next re-slices (rows 21..30), NO refetch',
+        calls === callsAfterLoad && rendered(dt).length === 10 && rendered(dt)[0] === '21');
+      dt.remove();
     }
   } catch (e) {
     check(`unexpected throw: ${(e as Error).message}`, false);

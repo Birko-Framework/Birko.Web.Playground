@@ -3,7 +3,7 @@
 // This is how the framework's frontend backports are verified (no in-framework unit runner).
 import { getFormatter, createWakeLockManager, createAudioCue, MirrorStore, readThrough, define, registerServiceWorker, I18n, signal, setPersistPrefix, SyncManager, Store, unwrapList, apiErrorMessage, ApiClient } from 'birko-web-core';
 import { BSyncStatus, type SyncSource } from 'birko-web-components/feedback';
-import { BTreeMenu } from 'birko-web-components/nav';
+import { BTreeMenu, BRibbon, type RibbonTab } from 'birko-web-components/nav';
 import { BMarkdownEditor } from 'birko-web-components/inputs';
 import { BPagination, BKanban, BDataTable } from 'birko-web-components/data';
 import { confirm as dlgConfirm } from 'birko-web-components/dialogs';
@@ -532,6 +532,36 @@ void (async () => {
       check('Prompt2(d) full-envelope client Next re-slices (rows 21..30), NO refetch',
         calls === callsAfterLoad && rendered(dt).length === 10 && rendered(dt)[0] === '21');
       dt.remove();
+    }
+
+    // Ribbon — unpinned hover→flyout click resolves to the HOVERED tab, not the active/first tab.
+    // Repro (Symbio field report): on an unpinned + collapsed ribbon, hovering tab 2 fires expand(),
+    // whose `expanded` attribute change triggers a full re-render; the panel used to rebuild from
+    // `active` (tab 1), discarding the hover preview and binding every flyout button to tab 1 — so a
+    // click on tab 2's flyout resolved to tab 1. Fixed by rendering the panel from `_hoverTabId ?? active`.
+    {
+      if (!customElements.get('b-ribbon')) define('b-ribbon', BRibbon);
+      const ribbon = document.createElement('b-ribbon') as BRibbon;
+      document.body.appendChild(ribbon);
+      const mkTab = (n: string): RibbonTab => ({
+        id: `t${n}`, label: `Tab ${n}`,
+        // action:true (no href) keeps the tab panelled — a lone nav-link would be auto-panelless.
+        groups: [{ id: `g${n}`, label: `G${n}`, items: [{ id: `i${n}`, label: `Item ${n}`, action: true }] }],
+      });
+      ribbon.setTabs([mkTab('1'), mkTab('2')]); // active defaults to t1; ribbon starts unpinned + collapsed
+      await new Promise((r) => setTimeout(r, 10));
+      const clicks: (string | undefined)[] = [];
+      ribbon.addEventListener('item-click', (e) => clicks.push((e as CustomEvent).detail.tabId));
+
+      const tab2 = ribbon.shadowRoot?.querySelector<HTMLElement>('.ribbon-tab[data-tab="t2"]');
+      tab2?.dispatchEvent(new MouseEvent('mouseenter'));
+      await new Promise((r) => setTimeout(r, 180)); // past the 100ms hover-expand timer + its re-render
+
+      const panelItem = ribbon.shadowRoot?.querySelector<HTMLElement>('.ribbon-panel .ribbon-item');
+      check('ribbon unpinned hover shows the HOVERED tab in the panel (data-tab=t2)', panelItem?.dataset.tab === 't2');
+      panelItem?.click();
+      check('ribbon unpinned hover→flyout click resolves to the hovered tab (t2, not active t1)', clicks.at(-1) === 't2');
+      ribbon.remove();
     }
   } catch (e) {
     check(`unexpected throw: ${(e as Error).message}`, false);

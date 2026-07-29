@@ -19,6 +19,8 @@ if (new URLSearchParams(location.search).has('smoke')) {
   void import('./grid-bench-smoke.js');
   // STORY-049 / TASK-097 — the ribbon's overflow affordance (tab strip + panel, incl. resize-only).
   void import('./ribbon-overflow-smoke.js');
+  // STORY-049 / TASK-099 — the scaling policy (parity with the C# original) and the rendered variants.
+  void import('./ribbon-scaling-smoke.js');
 }
 
 // ── BMobileAppShell demo (EPIC-016 / TASK-049) ───────────────────────────────

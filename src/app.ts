@@ -17,6 +17,8 @@ if (new URLSearchParams(location.search).has('smoke')) {
   void import('./description-smoke.js');
   // STORY-002 / TASK-002 — the raw-vs-bare grid benchmark that gates the b-editable-table migration.
   void import('./grid-bench-smoke.js');
+  // STORY-049 / TASK-097 — the ribbon's overflow affordance (tab strip + panel, incl. resize-only).
+  void import('./ribbon-overflow-smoke.js');
 }
 
 // ── BMobileAppShell demo (EPIC-016 / TASK-049) ───────────────────────────────

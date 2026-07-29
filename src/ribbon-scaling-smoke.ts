@@ -167,9 +167,22 @@ void (async () => {
       const flyout = el.shadowRoot!.querySelector('.ribbon-flyout') as HTMLElement;
       check('the flyout is closed to begin with', getComputedStyle(flyout).display === 'none');
 
+      // The flyout MUST be a popover. Reported from the playground: it was cut off on the right and the
+      // bottom, because it was position:absolute inside two overflow:hidden ancestors -- .ribbon-panel (for
+      // its max-height collapse) and .ribbon-panel-inner (which became overflow:hidden when the scroller was
+      // removed). An absolutely-positioned element cannot escape an overflow:hidden ancestor; the top layer
+      // can. Asserted structurally on purpose: clipping does not change getBoundingClientRect, so no
+      // rect-based check could ever have caught this.
+      check('the flyout is a popover, so no overflow:hidden ancestor can clip it',
+        flyout.hasAttribute('popover'));
+      const panelInner = el.shadowRoot!.querySelector('.ribbon-panel-inner') as HTMLElement;
+      check('and the ancestor that would have clipped it still does clip, so that matters',
+        getComputedStyle(panelInner).overflow === 'hidden');
+
       chunk.click();
       await settle(20);
       check('clicking the chunk opens the flyout', getComputedStyle(flyout).display !== 'none');
+      check('and it is in the top layer while open', flyout.matches(':popover-open'));
       check('and reports itself expanded', chunk.getAttribute('aria-expanded') === 'true');
       check('the flyout holds the group\'s items', flyout.querySelectorAll('.ribbon-item').length === 3);
 

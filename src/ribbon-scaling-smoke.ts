@@ -79,6 +79,13 @@ void (async () => {
     eq('widening promotes back up',
       resolveRibbonSizes([G(), G()], 1000, 'large'), ['large', 'large']);
 
+    // Floors are soft: reachability beats legibility when they conflict.
+    eq('a floor gives way rather than letting the row overflow',
+      resolveRibbonSizes([G(100, 'small'), G(0)], 25, 'large'), ['popup', 'popup']);
+
+    eq('a floor is still honoured whenever the row can fit without breaking it',
+      resolveRibbonSizes([G(100, 'small'), G(0)], 45, 'large'), ['small', 'popup']);
+
     eq('it gives up rather than looping when nothing can degrade further',
       resolveRibbonSizes([G(), G()], 1, 'large'), ['popup', 'popup']);
 

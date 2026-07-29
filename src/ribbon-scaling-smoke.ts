@@ -212,6 +212,60 @@ void (async () => {
         track.scrollWidth <= track.clientWidth + 1);
       el.remove();
     }
+    // Hover-previewing a tab must re-scale for THAT tab. Reported from the playground: toggling pinned and
+    // hovering Home showed the panel sometimes narrowed and sometimes not, with groups missing -- because
+    // _showTabContent re-rendered using the previous tab's decisions and never re-measured, and the panel is
+    // overflow:hidden, so anything that did not fit was silently clipped.
+    {
+      const dense = ['Clipboard', 'Records', 'Layout', 'Styles', 'Review', 'Export'].map((n, i) => G3(n, 10 - i));
+      const el = document.createElement('b-ribbon') as Ribbon;
+      el.style.width = '420px';
+      el.setAttribute('expanded', '');
+      el.setAttribute('pinned', '');
+      document.body.appendChild(el);
+      await settle(20);
+      el.setTabs([
+        { id: 'sparse', label: 'Sparse', groups: [G3('Solo', 0)] },
+        { id: 'dense', label: 'Dense', groups: dense },
+      ]);
+      await settle(140);
+
+      eq('the one-group tab needs no degrading at 420px', sizesOf(el), ['medium']);
+
+      // Preview the dense tab the way a hover does.
+      const denseTab = el.shadowRoot!.querySelector('[data-tab="dense"]') as HTMLElement;
+      denseTab.dispatchEvent(new MouseEvent('mouseenter'));
+      await settle(180);
+
+      const sizes = sizesOf(el);
+      check(`previewing the dense tab re-scales for it (got ${JSON.stringify(sizes)})`,
+        sizes.length === 6 && sizes.some((s) => s !== 'medium'));
+
+      const track = el.shadowRoot!.querySelector('.ribbon-panel-inner') as HTMLElement;
+      check(`and its groups are not clipped (${track.scrollWidth} <= ${track.clientWidth})`,
+        track.scrollWidth <= track.clientWidth + 1);
+      el.remove();
+    }
+    // The rendered result must SETTLE. Reported from the playground: toggling pinned and hovering Home
+    // narrowed the panel on some renders and not others. Cause: the probe rendered through _renderGroup,
+    // which read this._compactChunks, so an already-compact row measured compact chunks and a labelled row
+    // measured labelled ones -- the decision became a function of the applied layout and flipped every pass.
+    // Asserted by letting several measure passes run and requiring the outcome to stop changing.
+    {
+      const dense = ['Clipboard', 'Records', 'Layout', 'Styles', 'Review', 'Export'].map((n, i) => G3(n, 10 - i));
+      const el = await mountRibbon(dense, 300);
+
+      const snapshot = () => `${sizesOf(el).join(',')}|${!!el.shadowRoot!.querySelector('.compact')}`;
+      const first = snapshot();
+      for (let i = 0; i < 4; i++) await settle(60);
+      const after = snapshot();
+
+      check(`the layout settles instead of oscillating (${first} -> ${after})`, first === after);
+      const track = el.shadowRoot!.querySelector('.ribbon-panel-inner') as HTMLElement;
+      check(`and the settled row is not clipped (${track.scrollWidth} <= ${track.clientWidth})`,
+        track.scrollWidth <= track.clientWidth + 1);
+      el.remove();
+    }
   } catch (e) {
     check(`unexpected throw: ${(e as Error).message}`, false);
   }

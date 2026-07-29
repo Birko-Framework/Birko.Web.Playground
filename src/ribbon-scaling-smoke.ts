@@ -179,6 +179,26 @@ void (async () => {
       check('and clears the expanded state', chunk.getAttribute('aria-expanded') === 'false');
       el.remove();
     }
+    // At the extreme the chunk buttons drop their group names, so the row fits widths a labelled row
+    // cannot. The name stays in title/aria-label, so nothing becomes anonymous.
+    {
+      const groups = ['Clipboard', 'Records', 'Layout', 'Styles', 'Review', 'Export'].map((n, i) => G3(n, 10 - i));
+      const el = await mountRibbon(groups, 240);
+      const chunk = el.shadowRoot!.querySelector('.ribbon-group.size-popup .ribbon-chunk') as HTMLElement;
+      const name = chunk?.querySelector('.ribbon-chunk-name') as HTMLElement | null;
+
+      eq('every group collapsed at 240px', sizesOf(el), ['popup', 'popup', 'popup', 'popup', 'popup', 'popup']);
+      check('the chunk row went compact', !!el.shadowRoot!.querySelector('.ribbon-group.size-popup.compact'));
+      check('the group name is not drawn on the chunk face',
+        !!name && getComputedStyle(name).display === 'none');
+      check('but the chunk still carries the name',
+        (chunk?.getAttribute('aria-label') ?? '').length > 0 && (chunk?.getAttribute('title') ?? '').length > 0);
+
+      const track = el.shadowRoot!.querySelector('.ribbon-panel-inner') as HTMLElement;
+      check(`and the row fits, so no group is clipped (${track.scrollWidth} <= ${track.clientWidth})`,
+        track.scrollWidth <= track.clientWidth + 1);
+      el.remove();
+    }
   } catch (e) {
     check(`unexpected throw: ${(e as Error).message}`, false);
   }

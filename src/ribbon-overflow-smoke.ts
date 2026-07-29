@@ -125,7 +125,30 @@ void (async () => {
       el.remove();
     }
 
-    // ── 7. Chevrons carry an accessible name (they are the only route to hidden commands) ──
+    // ── 7. The chevrons must survive a re-render without blinking out ──
+    // Reported from the field on an UNPINNED ribbon: the right chevron flickers and is hard to click,
+    // and the click lands on a tab instead. Mechanism: `visible` is applied imperatively, but
+    // update() morphs synchronously and the template's `class` attribute overwrites it, so the button
+    // goes display:none for a frame until requestAnimationFrame(sync) restores it. While it is hidden
+    // the flex row reflows and a TAB slides under the cursor. Unpinned hover expand/collapse triggers
+    // a re-render on every mouse move across the strip, so this fires constantly.
+    {
+      const el = await mount(CROWDED, 320, true);
+      el.removeAttribute('pinned'); // the reported configuration
+      await settle();
+      check('unpinned: chevron visible before the re-render', visible(el, '#scroll-right'));
+
+      // Synchronous check straight after an observed-attribute change — update() has already morphed,
+      // and this is the exact frame in which the button used to vanish.
+      el.setAttribute('active', 'design');
+      check('tab chevron survives a re-render (no blank frame)', visible(el, '#scroll-right'));
+
+      el.setAttribute('active', 'home');
+      check('panel chevron survives a re-render (no blank frame)', visible(el, '#panel-scroll-right'));
+      el.remove();
+    }
+
+    // ── 8. Chevrons carry an accessible name (they are the only route to hidden commands) ──
     {
       const el = await mount(CROWDED, 320);
       const named = ['#scroll-left', '#scroll-right', '#panel-scroll-left', '#panel-scroll-right']

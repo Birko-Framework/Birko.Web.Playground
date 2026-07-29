@@ -1,7 +1,7 @@
 // EPIC-002 web backport smoke — exercises the new Birko.Web.Core APIs in a real browser via the
 // playground's headless verify (verify.mjs surfaces `[playground]` console logs + page errors).
 // This is how the framework's frontend backports are verified (no in-framework unit runner).
-import { getFormatter, createWakeLockManager, createAudioCue, MirrorStore, readThrough, define, registerServiceWorker, I18n, signal, setPersistPrefix, SyncManager, Store, unwrapList, apiErrorMessage, ApiClient } from 'birko-web-core';
+import { getFormatter, createWakeLockManager, createAudioCue, MirrorStore, readThrough, readWindowThrough, syncWindow, inWindow, define, registerServiceWorker, I18n, signal, setPersistPrefix, SyncManager, Store, unwrapList, apiErrorMessage, ApiClient } from 'birko-web-core';
 import { BSyncStatus, type SyncSource } from 'birko-web-components/feedback';
 import { BTreeMenu, BRibbon, type RibbonTab } from 'birko-web-components/nav';
 import { BMarkdownEditor } from 'birko-web-components/inputs';
@@ -52,6 +52,113 @@ void (async () => {
     check('readThrough 404 evicts + returns undefined', gone === undefined && (await mirror.get('a')) === undefined);
 
     await mirror.clear();
+
+    // TASK-094 — windowed read-through (readWindowThrough / syncWindow / inWindow).
+    //
+    // The behaviour under test is the one `readAllThrough` gets WRONG for a dated collection read a window at
+    // a time: a narrow refresh must not truncate a wider cache. Everything else here exists to pin the
+    // window-scoped replace — evict inside the fetched window, preserve outside it — plus the `primed` flag,
+    // which is what lets a caller tell "nothing in this range" from "this device has never synced".
+    {
+      interface Row { id: string; date: string; v: number }
+      const dated = new MirrorStore<Row>({ dbName: 'pg_window_smoke', storeName: 'rows', keyPath: 'id' });
+      await dated.clear();
+
+      check('inWindow respects both bounds', inWindow('2026-03-05', '2026-03-01', '2026-03-31'));
+      check('inWindow excludes outside', !inWindow('2026-02-28', '2026-03-01', '2026-03-31'));
+      check('inWindow unbounded when both omitted', inWindow('1999-01-01') && inWindow('2999-12-31'));
+      check('inWindow is inclusive on both ends',
+        inWindow('2026-03-01', '2026-03-01', '2026-03-31') && inWindow('2026-03-31', '2026-03-01', '2026-03-31'));
+
+      // Prime a wide window (Jan–Mar), then read a narrow one (March only).
+      const wide = await readWindowThrough<Row>({
+        fetch: async () => ({ ok: true, status: 200, data: [
+          { id: 'jan', date: '2026-01-10', v: 1 },
+          { id: 'feb', date: '2026-02-10', v: 2 },
+          { id: 'mar', date: '2026-03-10', v: 3 },
+        ] }),
+        mirror: dated, keyOf: (r) => r.id, dateOf: (r) => r.date,
+      });
+      check('readWindowThrough server read reports source=server + primed', wide.source === 'server' && wide.primed);
+      check('readWindowThrough server read returns all 3', wide.rows.length === 3);
+
+      // THE case this helper exists for: a narrow refresh must leave the wider cache intact.
+      await readWindowThrough<Row>({
+        fetch: async () => ({ ok: true, status: 200, data: [{ id: 'mar', date: '2026-03-10', v: 30 }] }),
+        mirror: dated, keyOf: (r) => r.id, dateOf: (r) => r.date,
+        from: '2026-03-01', to: '2026-03-31',
+      });
+      const afterNarrow = await dated.readAll();
+      check('narrow read does NOT truncate the wider cache (3 rows survive)', afterNarrow.length === 3);
+      check('narrow read refreshed the row inside its window (v=30)',
+        afterNarrow.find((r) => r.id === 'mar')?.v === 30);
+      check('rows outside the fetched window are untouched (jan v=1)',
+        afterNarrow.find((r) => r.id === 'jan')?.v === 1);
+
+      // A row deleted server-side, inside the fetched window, is evicted; outside it, preserved.
+      await readWindowThrough<Row>({
+        fetch: async () => ({ ok: true, status: 200, data: [] }),
+        mirror: dated, keyOf: (r) => r.id, dateOf: (r) => r.date,
+        from: '2026-03-01', to: '2026-03-31',
+      });
+      const afterDelete = await dated.readAll();
+      check('a row that vanished from INSIDE the window is evicted', !afterDelete.some((r) => r.id === 'mar'));
+      check('rows OUTSIDE the window survive that eviction', afterDelete.length === 2);
+
+      // Offline: the mirror answers, filtered to the window and sorted oldest-first.
+      const offline = await readWindowThrough<Row>({
+        fetch: async () => { throw new Error('offline'); },
+        mirror: dated, keyOf: (r) => r.id, dateOf: (r) => r.date,
+        from: '2026-01-01', to: '2026-12-31',
+      });
+      check('offline read reports source=mirror', offline.source === 'mirror');
+      check('offline read filters to the window + sorts oldest-first',
+        offline.rows.map((r) => r.id).join(',') === 'jan,feb');
+      check('offline read of a primed mirror reports primed', offline.primed);
+
+      // A non-ok response (not a throw) also falls back — a 500 must not blank the screen.
+      const errored = await readWindowThrough<Row>({
+        fetch: async () => ({ ok: false, status: 500, data: null }),
+        mirror: dated, keyOf: (r) => r.id, dateOf: (r) => r.date,
+      });
+      check('a non-ok response falls back to the mirror too', errored.source === 'mirror' && errored.rows.length === 2);
+
+      // The never-primed case — an EMPTY window on a primed mirror must stay distinguishable from a mirror
+      // that has never held anything. Conflating them is what makes a surface claim the user has no history.
+      const emptyWindowPrimed = await readWindowThrough<Row>({
+        fetch: async () => { throw new Error('offline'); },
+        mirror: dated, keyOf: (r) => r.id, dateOf: (r) => r.date,
+        from: '2030-01-01', to: '2030-12-31',
+      });
+      check('an empty window on a primed mirror is still primed',
+        emptyWindowPrimed.rows.length === 0 && emptyWindowPrimed.primed);
+
+      await dated.clear();
+      const neverPrimed = await readWindowThrough<Row>({
+        fetch: async () => { throw new Error('offline'); },
+        mirror: dated, keyOf: (r) => r.id, dateOf: (r) => r.date,
+      });
+      check('a never-primed mirror reports primed=false',
+        neverPrimed.rows.length === 0 && !neverPrimed.primed);
+
+      // keyOf and dateOf are deliberately separate: this collection keys by date (one row per day), the one
+      // above keyed by id. Collapsing them would break whichever case it wasn't written for.
+      const byDay = new MirrorStore<{ date: string; n: number }>({ dbName: 'pg_window_smoke_day', storeName: 'days', keyPath: 'date' });
+      await byDay.clear();
+      await readWindowThrough<{ date: string; n: number }>({
+        fetch: async () => ({ ok: true, status: 200, data: [{ date: '2026-05-01', n: 7 }] }),
+        mirror: byDay, keyOf: (r) => r.date, dateOf: (r) => r.date,
+      });
+      check('keyOf === dateOf works for a one-row-per-day collection', (await byDay.readAll()).length === 1);
+
+      // syncWindow standalone — the merge without the fetch, for a caller that fetched on its own.
+      await syncWindow(byDay, [{ date: '2026-05-02', n: 8 }], (r) => r.date, (r) => r.date, '2026-05-02', '2026-05-02');
+      const merged = (await byDay.readAll()).map((r) => r.date).sort().join(',');
+      check('syncWindow standalone merges without touching rows outside its window', merged === '2026-05-01,2026-05-02');
+
+      await dated.clear();
+      await byDay.clear();
+    }
 
     // TASK-037 — <b-sync-status> chip bound to a fake SyncSource (headless is online, so we exercise
     // the idle→hidden and pending→syncing transitions; the offline visual is a gallery/manual check).

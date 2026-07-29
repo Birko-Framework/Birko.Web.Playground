@@ -9,6 +9,14 @@ void Object.keys(BirkoWebComponents).length;
 // loads /?smoke=1) so the interactive gallery console stays clean; the regression gate is preserved.
 if (new URLSearchParams(location.search).has('smoke')) {
   void import('./backport-smoke.js');
+  // STORY-001 / TASK-001 — `bare` attribute on the form controls.
+  void import('./bare-smoke.js');
+  // STORY-023 / TASK-035 — ElementInternals form association.
+  void import('./form-assoc-smoke.js');
+  // EPIC-001 — the `description` help-text row.
+  void import('./description-smoke.js');
+  // STORY-002 / TASK-002 — the raw-vs-bare grid benchmark that gates the b-editable-table migration.
+  void import('./grid-bench-smoke.js');
 }
 
 // ── BMobileAppShell demo (EPIC-016 / TASK-049) ───────────────────────────────
@@ -46,11 +54,11 @@ class PgDeviceDemo extends HTMLElement {
     this.dataset.ready = '1';
     this.innerHTML = `
       <div style="display:flex;flex-wrap:wrap;gap:.5rem;align-items:center">
-        <button type="button" data-act="wake">Acquire wake lock</button>
-        <button type="button" data-act="wake-off">Release</button>
-        <button type="button" data-act="beep">Beep</button>
-        <button type="button" data-act="sw-on">Register SW</button>
-        <button type="button" data-act="sw-off">Unregister SW</button>
+        <b-button variant="secondary" data-act="wake">Acquire wake lock</b-button>
+        <b-button variant="ghost" data-act="wake-off">Release</b-button>
+        <b-button variant="secondary" data-act="beep">Beep</b-button>
+        <b-button variant="secondary" data-act="sw-on">Register SW</b-button>
+        <b-button variant="ghost" data-act="sw-off">Unregister SW</b-button>
       </div>
       <p data-status style="font-size:.8rem;color:var(--b-text-secondary);min-height:1.2em;margin:.5rem 0 0"></p>`;
     const wake = createWakeLockManager();
@@ -134,6 +142,162 @@ class PgDialogs extends HTMLElement {
 }
 if (!customElements.get('pg-dialogs')) customElements.define('pg-dialogs', PgDialogs);
 
+// ── `description` help-text row demo (STORY-029 / TASK-091) ──────────────────
+// A human-test surface for the help-text row, laid out so each row answers one question from the task's
+// human test plan: is it announced as the field's description, does it coexist with an error, does long
+// text wrap inside a narrow column, and is the muted colour legible in the current theme.
+class PgDescription extends HTMLElement {
+  connectedCallback(): void {
+    if (this.dataset.ready) return;
+    this.dataset.ready = '1';
+    this.innerHTML = `
+      <style>
+        .pgd-grid { display: grid; gap: 1rem; }
+        .pgd-case { border-top: 1px dashed var(--b-border); padding-top: .75rem; }
+        .pgd-case:first-child { border-top: 0; padding-top: 0; }
+        .pgd-q { font-size: var(--b-text-xs); color: var(--b-text-secondary); margin: 0 0 .4rem; }
+        /* A deliberately narrow column: the wrap check needs a field narrower than its help text. */
+        .pgd-narrow { max-width: 11rem; }
+        .pgd-row { display: flex; gap: .5rem; align-items: flex-start; flex-wrap: wrap; }
+        .pgd-cell { border: 1px solid var(--b-border); padding: .35rem; border-radius: var(--b-radius); }
+      </style>
+      <div class="pgd-grid">
+        <div class="pgd-case">
+          <p class="pgd-q">1 — Announced as the field's description? Focus it with a screen reader on.</p>
+          <b-input label="Steps" type="number" inputmode="numeric" min="0"
+                   description="Goal 8000 steps"></b-input>
+        </div>
+
+        <div class="pgd-case">
+          <p class="pgd-q">2 — Error + description together: BOTH announced, error first. Type a negative
+             value, or press the button to set an error.</p>
+          <b-input id="pgd-err" label="Steps" type="number" inputmode="numeric" min="0"
+                   description="Goal 8000 steps"></b-input>
+          <div class="pgd-row" style="margin-top:.4rem">
+            <b-button size="sm" variant="secondary" data-act="err-on">Set error</b-button>
+            <b-button size="sm" variant="ghost" data-act="err-off">Clear error</b-button>
+          </div>
+        </div>
+
+        <div class="pgd-case">
+          <p class="pgd-q">3 — Long text in a narrow column: does it wrap rather than widen the field?</p>
+          <div class="pgd-narrow">
+            <b-input label="Reference" description="Up to 20 characters; letters, digits and dashes only — no spaces"></b-input>
+          </div>
+        </div>
+
+        <div class="pgd-case">
+          <p class="pgd-q">4 — Help-row colour legible in every shipped theme? Switch below and compare the
+             help row against the error row and the label. Measured: AA in light / dark / neon / inverse,
+             3.77:1 in finstat (theme-token limit, shared with the label). (The switcher sets
+             <code>data-theme</code> on &lt;html&gt;, so it re-themes the whole gallery, not just this card.)</p>
+          <div class="pgd-row" style="margin-bottom:.5rem">
+            <b-segmented id="pgd-theme"></b-segmented>
+          </div>
+          <b-input label="Contrast sample" description="Help text — var(--b-text-secondary) on var(--b-bg)"
+                   error="Error row for comparison — var(--b-color-danger)"></b-input>
+        </div>
+
+        <div class="pgd-case">
+          <p class="pgd-q">5 — hint AND description coexist: <code>?</code> tooltip beside the label,
+             persistent row under the control.</p>
+          <b-input label="Superset group" type="number" inputmode="numeric"
+                   description="Max 10"
+                   hint="Same number = performed back-to-back as a superset"></b-input>
+        </div>
+
+        <div class="pgd-case">
+          <p class="pgd-q">6 — Dense layouts: <code>bare</code> drops the row entirely (hover for the
+             title fallback). Both cells carry the same description.</p>
+          <div class="pgd-row">
+            <span class="pgd-cell">
+              <b-input bare size="sm" label="Qty" type="number" min="0" inputmode="numeric"
+                       description="Whole units only"></b-input>
+            </span>
+            <span class="pgd-cell">
+              <b-input size="sm" label="Qty" type="number" min="0" inputmode="numeric"
+                       description="Whole units only"></b-input>
+            </span>
+          </div>
+        </div>
+
+        <div class="pgd-case">
+          <p class="pgd-q">7 — Every stacked-chrome control carries it, not just b-input.</p>
+          <b-select id="pgd-select" label="Status" description="Draft rows are not billed"></b-select>
+          <b-textarea label="Notes" rows="2" description="Markdown is not rendered here"></b-textarea>
+          <b-tag-input id="pgd-tags" label="Labels" description="Enter or comma to commit a tag"></b-tag-input>
+          <b-multi-select id="pgd-multi" label="Sites" description="Leave empty for all sites"></b-multi-select>
+          <b-date-picker label="Start" description="Cannot precede the contract date"></b-date-picker>
+          <b-datetime-picker label="Cutoff" description="Local time, not UTC"></b-datetime-picker>
+        </div>
+      </div>`;
+
+    const field = this.querySelector('#pgd-err');
+    this.querySelector('[data-act="err-on"]')?.addEventListener('click',
+      () => field?.setAttribute('error', 'Steps cannot be negative'));
+    this.querySelector('[data-act="err-off"]')?.addEventListener('click',
+      () => field?.removeAttribute('error'));
+
+    // Theme switcher for case 4. The shipped themes are linked in index.html and each activates on a
+    // `data-theme` value on <html>; base/light is the absence of one.
+    type Seg = HTMLElement & { setOptions(o: { value: string; label: string }[]): void; value: string };
+    const theme = this.querySelector('#pgd-theme') as Seg | null;
+    if (theme) {
+      theme.setOptions([
+        { value: 'light', label: 'Light' },
+        { value: 'dark', label: 'Dark' },
+        { value: 'neon', label: 'Neon' },
+        { value: 'finstat', label: 'Finstat' },
+        { value: 'inverse', label: 'Inverse' },
+      ]);
+      theme.value = document.documentElement.getAttribute('data-theme') ?? 'light';
+      theme.addEventListener('change', (e) => {
+        const v = (e as CustomEvent<{ value?: string }>).detail?.value ?? 'light';
+        document.documentElement.setAttribute('data-theme', v);
+      });
+    }
+
+    // Options are data — set them imperatively, as a consumer would.
+    type Opts = HTMLElement & { setOptions(o: { value: string; label: string }[]): void };
+    (this.querySelector('#pgd-select') as Opts | null)?.setOptions(
+      [{ value: 'draft', label: 'Draft' }, { value: 'open', label: 'Open' }]);
+    (this.querySelector('#pgd-multi') as Opts | null)?.setOptions(
+      [{ value: 'a', label: 'Site A' }, { value: 'b', label: 'Site B' }]);
+  }
+}
+if (!customElements.get('pg-description')) customElements.define('pg-description', PgDescription);
+// ── Grid benchmark card (STORY-002 / TASK-002) ───────────────────────────────
+// Runs the raw-vs-bare 500-row comparison on demand — it allocates thousands of nodes, so it is
+// button-driven rather than built with the gallery.
+class PgGridBench extends HTMLElement {
+  connectedCallback(): void {
+    if (this.dataset.ready) return;
+    this.dataset.ready = '1';
+    this.innerHTML = `
+      <p style="font-size:var(--b-text-xs);color:var(--b-text-secondary);margin:0 0 .5rem">
+        500 rows × 6 columns (3000 cells), median of 3 passes. Compares the raw
+        <code>&lt;input&gt;</code>/<code>&lt;select&gt;</code> cells b-editable-table renders today against
+        <code>&lt;b-input bare size="sm"&gt;</code> per cell. Takes a few seconds.</p>
+      <b-button variant="primary" size="sm" data-act="run">Run benchmark</b-button>
+      <pre class="pgb-out" style="margin:.6rem 0 0;font-size:var(--b-text-xs);white-space:pre-wrap"></pre>
+      <div class="pgb-stage" style="position:absolute;left:-9999px;top:0"></div>`;
+    const out = this.querySelector('.pgb-out')!;
+    const stage = this.querySelector('.pgb-stage') as HTMLElement;
+    this.querySelector('[data-act="run"]')?.addEventListener('click', async () => {
+      out.textContent = 'running…';
+      const { runGridBench } = await import('./grid-bench.js');
+      const res = await runGridBench(stage, 3);
+      out.textContent = res.map((r) =>
+        `${r.variant.padEnd(5)} build ${String(r.buildMs).padStart(7)}ms   rerender ${String(r.rerenderMs).padStart(7)}ms` +
+        `   edit×50 ${String(r.editMs).padStart(6)}ms   caret ${r.caretKept ? 'kept' : 'LOST'}` +
+        `   ${r.elements} elements, ${r.shadowRoots} shadow roots`).join('\n');
+    });
+  }
+}
+if (!customElements.get('pg-grid-bench')) customElements.define('pg-grid-bench', PgGridBench);
+
+
+
 // ── Component catalogue ──────────────────────────────────────────────────────
 // Maintained manifest. Each entry renders one representative instance plus controls
 // that flip a common attribute live. Keep in sync with the Birko.Web.Components catalogue;
@@ -159,7 +323,12 @@ const SIZE: ControlDef = { label: 'size', attr: 'size', options: ['', 'sm', 'lg'
 const VARIANT: ControlDef = { label: 'variant', attr: 'variant', options: ['primary', 'secondary', 'danger', 'ghost'] };
 const STATUS: ControlDef = { label: 'variant', attr: 'variant', options: ['', 'success', 'warning', 'danger', 'info'] };
 const DISABLED: ControlDef = { label: 'disabled', attr: 'disabled', options: ['', 'disabled'] };
+// STORY-001/TASK-001 — flip the stacked .field chrome off to review the inline (toolbar / table-cell) form.
+const BARE: ControlDef = { label: 'bare', attr: 'bare', options: ['', 'bare'] };
 const PROGRESS_TYPE: ControlDef = { label: 'type', attr: 'type', options: ['linear', 'circular'] };
+// b-tag has no `variant` — its real knobs are `color` (the leading dot), `size` and `removable`.
+const TAG_COLOR: ControlDef = { label: 'color', attr: 'color', options: ['', '#25ba7a', '#0091ff', '#f5a623', '#e5484d', '#8e4ec6'] };
+const REMOVABLE: ControlDef = { label: 'removable', attr: 'removable', options: ['', 'removable'] };
 
 // Full catalogue (kept in sync with Birko.Web.Components). reportMissing() warns about any
 // tag here that didn't register; a registered component absent from this list is a gap to fill.
@@ -169,26 +338,28 @@ const CATALOGUE: ComponentDef[] = [
   { tag: 'b-checkbox', label: 'Checkbox', category: 'inputs', render: () => 'Accept terms', controls: [DISABLED] },
   { tag: 'b-radio', label: 'Radio', category: 'inputs', render: () => 'Option A', attrs: { name: 'demo-radio', value: 'a' }, controls: [DISABLED] },
   { tag: 'b-switch', label: 'Switch', category: 'inputs', render: () => 'Enabled', controls: [DISABLED] },
-  { tag: 'b-input', label: 'Input', category: 'inputs', attrs: { label: 'Name', placeholder: 'Type here…' }, controls: [SIZE, DISABLED] },
-  { tag: 'b-textarea', label: 'Textarea', category: 'inputs', attrs: { label: 'Notes', placeholder: 'Multi-line…' }, controls: [DISABLED] },
+  { tag: 'b-input', label: 'Input', category: 'inputs', attrs: { label: 'Name', placeholder: 'Type here…', description: 'Shown as-is under the control (the `description` attribute)' }, controls: [SIZE, DISABLED, BARE] },
+  { tag: 'b-textarea', label: 'Textarea', category: 'inputs', attrs: { label: 'Notes', placeholder: 'Multi-line…' }, controls: [DISABLED, BARE] },
   { tag: 'b-search-input', label: 'Search input', category: 'inputs', attrs: { placeholder: 'Search…' }, controls: [SIZE] },
-  { tag: 'b-select', label: 'Select', category: 'inputs', attrs: { label: 'Pick one', placeholder: 'Choose…' }, render: () => '<option value="1">One</option><option value="2">Two</option><option value="3">Three</option>' },
-  { tag: 'b-multi-select', label: 'Multi-select', category: 'inputs', attrs: { label: 'Pick many' }, setup: (el) => el.setOptions([{ value: '1', label: 'One' }, { value: '2', label: 'Two' }, { value: '3', label: 'Three' }]) },
-  { tag: 'b-color-picker', label: 'Color picker', category: 'inputs', attrs: { value: '#25ba7a', label: 'Brand color' } },
+  { tag: 'b-select', label: 'Select', category: 'inputs', attrs: { label: 'Pick one', placeholder: 'Choose…' }, render: () => '<option value="1">One</option><option value="2">Two</option><option value="3">Three</option>', controls: [SIZE, BARE] },
+  { tag: 'b-multi-select', label: 'Multi-select', category: 'inputs', attrs: { label: 'Pick many' }, controls: [BARE], setup: (el) => el.setOptions([{ value: '1', label: 'One' }, { value: '2', label: 'Two' }, { value: '3', label: 'Three' }]) },
+  { tag: 'b-color-picker', label: 'Color picker', category: 'inputs', attrs: { value: '#25ba7acc', label: 'Brand color', alpha: '' } },
   { tag: 'b-range', label: 'Range', category: 'inputs', attrs: { min: '0', max: '100', value: '60' },
     controls: [{ label: 'orientation', attr: 'orientation', options: ['horizontal', 'vertical'] }] },
+  { tag: 'pg-description', label: 'Help text — the `description` row', category: 'inputs',
+    note: 'STORY-029/TASK-091: persistent help text under a control, wired into aria-describedby (a page-rendered sibling cannot be, since the control is in shadow DOM). Each numbered row answers one human-test question — SR announcement, error+description together, wrapping in a narrow column, help-row contrast per theme (with a live theme switcher — the shipped themes were never linked in index.html before, so the gallery could only be seen in light), hint+description coexisting, and bare dropping the row.' },
   { tag: 'pg-equalizer', label: 'Range — vertical (equalizer)', category: 'inputs',
     note: 'A row of vertical b-range sliders (orientation="vertical", display="slider") — the equalizer/mixer layout (TASK-053).' },
-  { tag: 'b-date-picker', label: 'Date picker', category: 'inputs', attrs: { label: 'Date' } },
-  { tag: 'b-datetime-picker', label: 'Datetime picker', category: 'inputs', attrs: { label: 'When' } },
+  { tag: 'b-date-picker', label: 'Date picker', category: 'inputs', attrs: { label: 'Date' }, controls: [BARE] },
+  { tag: 'b-datetime-picker', label: 'Datetime picker', category: 'inputs', attrs: { label: 'When' }, controls: [BARE] },
   { tag: 'b-date-range-picker', label: 'Date range', category: 'inputs', attrs: { label: 'Range' } },
   { tag: 'b-time', label: 'Time', category: 'inputs', attrs: { label: 'Time' } },
-  { tag: 'b-file-upload', label: 'File upload', category: 'inputs', attrs: { label: 'Upload a file' } },
+  { tag: 'b-file-upload', label: 'File upload', category: 'inputs', attrs: { label: 'Upload a file' }, controls: [BARE] },
   { tag: 'b-inline-edit', label: 'Inline edit', category: 'inputs', attrs: { value: 'Click to edit' } },
   { tag: 'b-markdown-editor', label: 'Markdown editor', category: 'inputs', attrs: { value: '# Hello\n\nMarkdown **here**.' } },
-  { tag: 'b-tag-input', label: 'Tag input', category: 'inputs', attrs: { label: 'Tags', placeholder: 'add tag…' }, setup: (el) => el.setTags(['design', 'birko', 'web', 'components']) },
+  { tag: 'b-tag-input', label: 'Tag input', category: 'inputs', attrs: { label: 'Tags', placeholder: 'add tag…' }, controls: [BARE], setup: (el) => el.setTags(['design', 'birko', 'web', 'components']) },
   { tag: 'b-segmented', label: 'Segmented', category: 'inputs', attrs: { value: 'day' }, setup: (el) => el.setOptions([{ value: 'day', label: 'Day' }, { value: 'week', label: 'Week' }, { value: 'month', label: 'Month' }]) },
-  { tag: 'b-option-group', label: 'Option group', category: 'inputs', attrs: { label: 'Choose' }, setup: (el) => el.setOptions([{ value: 'a', label: 'Option A' }, { value: 'b', label: 'Option B' }, { value: 'c', label: 'Option C' }]) },
+  { tag: 'b-option-group', label: 'Option group', category: 'inputs', attrs: { label: 'Choose' }, controls: [BARE], setup: (el) => el.setOptions([{ value: 'a', label: 'Option A' }, { value: 'b', label: 'Option B' }, { value: 'c', label: 'Option C' }]) },
   { tag: 'b-form', label: 'Form', category: 'inputs',
     setup: (el) => el.setSchema({ name: 'demo', children: [
       { name: 'fullName', type: 'text', label: 'Full name', placeholder: 'Ada Lovelace', required: true },
@@ -226,8 +397,10 @@ const CATALOGUE: ComponentDef[] = [
     ], { id: 'pg-demo-tour' }) } },
 
   // ── data ──
+  { tag: 'pg-grid-bench', label: 'Grid benchmark — raw vs bare cells', category: 'data',
+    note: 'STORY-002/TASK-002: the benchmark that gates migrating b-editable-table cells onto <b-input bare size=\"sm\">. Button-driven (allocates 3000 cells). Measures build, re-render, 50-keystroke edit latency, caret survival and node/shadow-root count for both variants.' },
   { tag: 'b-badge', label: 'Badge', category: 'data', render: () => 'New', controls: [STATUS] },
-  { tag: 'b-tag', label: 'Tag', category: 'data', render: () => 'tag', controls: [STATUS] },
+  { tag: 'b-tag', label: 'Tag', category: 'data', render: () => 'tag', controls: [TAG_COLOR, SIZE, REMOVABLE] },
   { tag: 'b-stat', label: 'Stat', category: 'data', attrs: { label: 'Revenue', value: '$12.4k', delta: '+8%', trend: 'up', sentiment: 'positive' } },
   { tag: 'b-pagination', label: 'Pagination', category: 'data', attrs: { page: '2', 'total-pages': '10', 'total-count': '195', 'page-size': '20' } },
   { tag: 'b-pre', label: 'Pre', category: 'data', render: () => 'preformatted\n  text block' },
@@ -589,6 +762,9 @@ function renderTokenRow(name: string): HTMLElement {
   const colorish = isColor(base) && /^#/.test(current);
   const input = document.createElement(colorish ? 'b-color-picker' : 'b-input');
   input.setAttribute('value', current);
+  // Alpha-carrying hex (#rgba or #rrggbbaa) → show the opacity slider so the alpha byte is editable.
+  // rgba()/hsla() tokens still fall to a text b-input (b-color-picker is hex-based) — tracked follow-up.
+  if (colorish && /^#([0-9a-f]{4}|[0-9a-f]{8})$/i.test(current)) input.setAttribute('alpha', '');
   if (!colorish) input.setAttribute('size', 'sm');
   input.addEventListener('change', (e) => {
     const v = (e as CustomEvent<{ value?: string }>).detail?.value ?? '';

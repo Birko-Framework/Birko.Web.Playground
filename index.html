@@ -6,6 +6,14 @@
   <title>Birko.Web Playground</title>
   <link rel="stylesheet" href="css/reset.css" />
   <link rel="stylesheet" href="css/tokens.css" />
+  <!-- The shipped opt-in themes. build.js already copies css/themes/ into wwwroot, but these were never
+       linked, so the gallery could only ever be seen in base/light — which made "does this read correctly
+       in every theme?" untestable here. Each activates on `data-theme` on <html>; base/light is no
+       attribute (or data-theme="light"). Must come AFTER tokens.css, which holds the :root defaults. -->
+  <link rel="stylesheet" href="css/themes/dark.css" />
+  <link rel="stylesheet" href="css/themes/neon.css" />
+  <link rel="stylesheet" href="css/themes/finstat.css" />
+  <link rel="stylesheet" href="css/themes/inverse.css" />
   <link rel="manifest" href="/manifest.webmanifest" />
   <meta name="theme-color" content="#3b82f6" />
   <!-- Live edits are applied into this block at runtime (data-theme="playground"). -->

@@ -453,13 +453,38 @@ const CATALOGUE: ComponentDef[] = [
   { tag: 'pg-mobile-shell', label: 'Mobile app shell', category: 'nav',
     note: 'BMobileAppShell — fixed top-bar + safe-area bottom-nav driven by a Surface[] nav-model. Tap a bottom-nav item to switch surfaces; the active item highlights (updates window.location.hash).',
     render: () => '<div style="padding:1rem"><h3 style="margin:.2rem 0 .5rem">Today</h3><p style="margin:0;color:var(--b-text-secondary)">Content projects through the shell’s default slot. Tap the bottom-nav below to switch surfaces — the active item turns primary.</p></div>' },
-  { tag: 'b-ribbon', label: 'Ribbon', category: 'nav', attrs: { expanded: '' }, setup: (el) => el.setTabs([
+  // Deliberately dense — an Office-sized ribbon (8 tabs, 5 groups on the active tab), so the overflow
+  // behaviour is observable: narrow the browser and the tab-strip and panel chevrons appear
+  // (STORY-049/TASK-097). The old 2-tab / 2-group demo never overflowed, so the fix could not be
+  // reviewed by hand.
+  { tag: 'b-ribbon', label: 'Ribbon', category: 'nav', attrs: { expanded: '', pinned: '' }, setup: (el) => el.setTabs([
     { id: 'home', label: 'Home', groups: [
       { id: 'clip', label: 'Clipboard', items: [{ id: 'paste', label: 'Paste', icon: '📋' }, { id: 'cut', label: 'Cut', icon: '✂️' }, { id: 'copy', label: 'Copy', icon: '📄' }] },
       { id: 'font', label: 'Font', items: [{ id: 'bold', label: 'Bold', icon: '𝐁' }, { id: 'italic', label: 'Italic', icon: '𝑰' }] },
+      { id: 'records', label: 'Records', items: [{ id: 'new', label: 'New', icon: '➕' }, { id: 'del', label: 'Delete', icon: '🗑' }] },
+      { id: 'review', label: 'Review', items: [{ id: 'comment', label: 'Comment', icon: '💬' }, { id: 'track', label: 'Track', icon: '✓' }] },
+      { id: 'export', label: 'Export', items: [{ id: 'pdf', label: 'PDF', icon: '📄' }, { id: 'csv', label: 'CSV', icon: '📊' }, { id: 'print', label: 'Print', icon: '🖨' }] },
     ] },
     { id: 'insert', label: 'Insert', groups: [
       { id: 'media', label: 'Media', items: [{ id: 'image', label: 'Image', icon: '🖼️' }, { id: 'table', label: 'Table', icon: '▦' }] },
+    ] },
+    { id: 'design', label: 'Design', groups: [
+      { id: 'themes', label: 'Themes', items: [{ id: 'palette', label: 'Palette', icon: '🎨' }, { id: 'fonts', label: 'Fonts', icon: '🅰' }] },
+    ] },
+    { id: 'data', label: 'Data', groups: [
+      { id: 'query', label: 'Query', items: [{ id: 'filter', label: 'Filter', icon: '🔍' }, { id: 'sort', label: 'Sort', icon: '↕' }] },
+    ] },
+    { id: 'view', label: 'View', groups: [
+      { id: 'zoom', label: 'Zoom', items: [{ id: 'zin', label: 'Zoom In', icon: '🔍' }, { id: 'reset', label: 'Reset', icon: '↺' }] },
+    ] },
+    { id: 'automate', label: 'Automate', groups: [
+      { id: 'macros', label: 'Macros', items: [{ id: 'rec', label: 'Record', icon: '⏺' }, { id: 'run', label: 'Run', icon: '▶' }] },
+    ] },
+    { id: 'developer', label: 'Developer', groups: [
+      { id: 'tools', label: 'Tools', items: [{ id: 'console', label: 'Console', icon: '🖥' }, { id: 'inspect', label: 'Inspect', icon: '🔎' }] },
+    ] },
+    { id: 'help', label: 'Help', groups: [
+      { id: 'support', label: 'Support', items: [{ id: 'docs', label: 'Docs', icon: '📘' }, { id: 'contact', label: 'Contact', icon: '✉' }] },
     ] },
   ]) },
 

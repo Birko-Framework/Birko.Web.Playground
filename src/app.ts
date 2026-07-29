@@ -461,11 +461,16 @@ const CATALOGUE: ComponentDef[] = [
   // reviewed by hand.
   { tag: 'b-ribbon', label: 'Ribbon', category: 'nav', attrs: { expanded: '', pinned: '' }, setup: (el) => el.setTabs([
     { id: 'home', label: 'Home', groups: [
-      { id: 'clip', label: 'Clipboard', items: [{ id: 'paste', label: 'Paste', icon: '📋' }, { id: 'cut', label: 'Cut', icon: '✂️' }, { id: 'copy', label: 'Copy', icon: '📄' }] },
-      { id: 'font', label: 'Font', items: [{ id: 'bold', label: 'Bold', icon: '𝐁' }, { id: 'italic', label: 'Italic', icon: '𝑰' }] },
-      { id: 'records', label: 'Records', items: [{ id: 'new', label: 'New', icon: '➕' }, { id: 'del', label: 'Delete', icon: '🗑' }] },
-      { id: 'review', label: 'Review', items: [{ id: 'comment', label: 'Comment', icon: '💬' }, { id: 'track', label: 'Track', icon: '✓' }] },
-      { id: 'export', label: 'Export', items: [{ id: 'pdf', label: 'PDF', icon: '📄' }, { id: 'csv', label: 'CSV', icon: '📊' }, { id: 'print', label: 'Print', icon: '🖨' }] },
+      // Priorities set deliberately so the degrade ORDER is visible while resizing: a LOWER
+      // scalingPriority gives way first, so Export collapses long before Clipboard is touched. Clipboard
+      // is floored at 'small' so it never folds into a flyout however narrow it gets — the hero group
+      // stays directly clickable. Mirrors the Avalonia gallery's demo exactly, for side-by-side review.
+      { id: 'clip', label: 'Clipboard', icon: '📋', scalingPriority: 100, minSize: 'small', items: [{ id: 'paste', label: 'Paste', icon: '📋' }, { id: 'cut', label: 'Cut', icon: '✂️' }, { id: 'copy', label: 'Copy', icon: '📄' }] },
+      { id: 'records', label: 'Records', icon: '🗃', scalingPriority: 80, items: [{ id: 'new', label: 'New', icon: '➕' }, { id: 'del', label: 'Delete', icon: '🗑' }, { id: 'dup', label: 'Duplicate', icon: '⧉' }] },
+      { id: 'font', label: 'Font', icon: '🅰', scalingPriority: 60, items: [{ id: 'bold', label: 'Bold', icon: '𝐁' }, { id: 'italic', label: 'Italic', icon: '𝑰' }, { id: 'colour', label: 'Colour', icon: '🎨' }] },
+      { id: 'layout', label: 'Layout', icon: '▥', scalingPriority: 40, items: [{ id: 'cols', label: 'Columns', icon: '▥' }, { id: 'rows', label: 'Rows', icon: '▤' }] },
+      { id: 'review', label: 'Review', icon: '💬', scalingPriority: 20, items: [{ id: 'comment', label: 'Comment', icon: '💬' }, { id: 'track', label: 'Track', icon: '✓' }] },
+      { id: 'export', label: 'Export', icon: '📤', scalingPriority: 0, items: [{ id: 'pdf', label: 'PDF', icon: '📄' }, { id: 'csv', label: 'CSV', icon: '📊' }, { id: 'print', label: 'Print', icon: '🖨' }] },
     ] },
     { id: 'insert', label: 'Insert', groups: [
       { id: 'media', label: 'Media', items: [{ id: 'image', label: 'Image', icon: '🖼️' }, { id: 'table', label: 'Table', icon: '▦' }] },

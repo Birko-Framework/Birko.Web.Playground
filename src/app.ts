@@ -326,6 +326,10 @@ const DISABLED: ControlDef = { label: 'disabled', attr: 'disabled', options: [''
 // STORY-001/TASK-001 — flip the stacked .field chrome off to review the inline (toolbar / table-cell) form.
 const BARE: ControlDef = { label: 'bare', attr: 'bare', options: ['', 'bare'] };
 const PROGRESS_TYPE: ControlDef = { label: 'type', attr: 'type', options: ['linear', 'circular'] };
+// Overlay width ladder — flip before hitting the launch button. b-modal adds `full`
+// (viewport minus --b-modal-full-inset, both axes) for editor surfaces; b-drawer has no `full`.
+const OVERLAY_SIZE: ControlDef = { label: 'size', attr: 'size', options: ['', 'sm', 'lg', 'xl', 'xxl'] };
+const MODAL_SIZE: ControlDef = { label: 'size', attr: 'size', options: ['', 'sm', 'lg', 'xl', 'xxl', 'full'] };
 // b-tag has no `variant` — its real knobs are `color` (the leading dot), `size` and `removable`.
 const TAG_COLOR: ControlDef = { label: 'color', attr: 'color', options: ['', '#25ba7a', '#0091ff', '#f5a623', '#e5484d', '#8e4ec6'] };
 const REMOVABLE: ControlDef = { label: 'removable', attr: 'removable', options: ['', 'removable'] };
@@ -382,9 +386,11 @@ const CATALOGUE: ComponentDef[] = [
     setup: (el) => el.setItems([{ id: 'edit', label: 'Edit', icon: '✏️' }, { id: 'dup', label: 'Duplicate', icon: '📋' }, { id: 'sep', label: '', divider: true }, { id: 'del', label: 'Delete', icon: '🗑️', variant: 'danger' }]) },
   { tag: 'b-modal', label: 'Modal', category: 'layout', attrs: { title: 'Example modal' },
     render: () => '<p>Modal body content goes here.</p><b-button slot="footer" variant="primary">OK</b-button>',
+    controls: [MODAL_SIZE],
     launch: { label: 'Open modal', run: (el) => el.open() } },
   { tag: 'b-drawer', label: 'Drawer', category: 'layout', attrs: { title: 'Example drawer' },
     render: () => '<p>Drawer body content goes here.</p>',
+    controls: [OVERLAY_SIZE],
     launch: { label: 'Open drawer', run: (el) => el.open() } },
   { tag: 'b-confirm-dialog', label: 'Confirm dialog', category: 'layout', attrs: { title: 'Delete item?', message: 'This action cannot be undone.', variant: 'danger' },
     launch: { label: 'Open dialog', run: (el) => el.show() } },

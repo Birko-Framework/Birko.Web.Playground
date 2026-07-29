@@ -148,7 +148,55 @@ void (async () => {
       el.remove();
     }
 
-    // ── 8. Chevrons carry an accessible name (they are the only route to hidden commands) ──
+    // ── 8. An overflowing track reserves BOTH slots, so nothing reflows when a chevron toggles ──
+    // Second field report: still flickering, because the playground card is `overflow: auto` — the
+    // unpinned flyout makes it scrollable, the scrollbar steals ~15px, the ribbon narrows, and the
+    // chevron state flips. The component cannot stop a container jittering, but it CAN stop that
+    // jitter from moving the click target: once a track overflows, both slots hold their space and
+    // only visibility changes.
+    {
+      const el = await mount(CROWDED, 320);
+      const track = el.shadowRoot!.querySelector('.ribbon-tabs') as HTMLElement;
+      const left = el.shadowRoot!.querySelector('#scroll-left') as HTMLElement;
+      const right = el.shadowRoot!.querySelector('#scroll-right') as HTMLElement;
+
+      check('at scroll origin the back chevron is hidden but still occupies its slot',
+        !left.classList.contains('visible') && left.offsetWidth > 0);
+
+      const widthAtOrigin = track.clientWidth;
+      const rightBoxAtOrigin = right.getBoundingClientRect().left;
+
+      track.scrollLeft = 40; // now the back chevron becomes visible
+      await settle();
+
+      check('back chevron became visible', visible(el, '#scroll-left'));
+      check('the track did not resize when the chevron appeared', track.clientWidth === widthAtOrigin);
+      check('the forward chevron did not move (click target is stable)',
+        Math.abs(right.getBoundingClientRect().left - rightBoxAtOrigin) < 0.5);
+      el.remove();
+    }
+
+    // ── 9. A container that jitters by a scrollbar's width must not flip the reservation ──
+    {
+      const host = document.createElement('div');
+      host.style.cssText = 'position:absolute;left:-9999px;width:320px;';
+      document.body.appendChild(host);
+      const el = document.createElement('b-ribbon') as Ribbon;
+      el.setAttribute('expanded', ''); el.setAttribute('pinned', '');
+      host.appendChild(el);
+      await settle();
+      el.setTabs(CROWDED);
+      await settle();
+
+      const reservedBefore = visible(el, '#scroll-right');
+      host.style.width = '305px'; // exactly a scrollbar's worth, the observed jitter
+      await settle(80);
+      const reservedAfter = visible(el, '#scroll-right');
+      check('a 15px container jitter does not toggle the chevron', reservedBefore === reservedAfter);
+      host.remove();
+    }
+
+    // ── 10. Chevrons carry an accessible name (they are the only route to hidden commands) ──
     {
       const el = await mount(CROWDED, 320);
       const named = ['#scroll-left', '#scroll-right', '#panel-scroll-left', '#panel-scroll-right']

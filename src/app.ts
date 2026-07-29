@@ -861,6 +861,14 @@ function injectStyles(): void {
     .pg-item-label { font-size:.8rem; color:var(--b-text-secondary,#888); margin-bottom:.6rem; }
     .pg-stage { flex:1 1 auto; display:flex; flex-wrap:wrap; align-content:center; align-items:center; justify-content:center; gap:.75rem; min-height:200px; overflow:auto; padding:1.25rem; background:var(--b-bg-secondary,#fafafa); border-radius:var(--b-radius,6px); }
     .pg-stage > * { max-width:100%; }
+    /* The ribbon's unpinned panel is an absolutely-positioned flyout that deliberately escapes the
+       ribbon's own box. In an overflow:auto stage that makes the stage scrollable, and the resulting
+       vertical scrollbar steals ~15px of width from the ribbon every time the panel opens -- so
+       hovering the tabs jittered the ribbon's width. Real app shells host a ribbon at the top of the
+       page, not in a scrolling card, so the stage is what is unrealistic here. (b-ribbon is also
+       hardened against a jittering container -- see STORY-049/TASK-097 -- but the demo should not be
+       creating the jitter in the first place.) */
+    .pg-stage:has(> b-ribbon) { overflow:visible; }
     /* form inputs + wide display/nav components fill the available card width; small inline
        components (button, badge, tag, switch, spinner, …) keep their intrinsic size, centered. */
     .pg-stage > :is(b-input,b-textarea,b-select,b-search-input,b-multi-select,b-tag-input,b-color-picker,

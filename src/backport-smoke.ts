@@ -5,8 +5,9 @@ import { getFormatter, createWakeLockManager, createAudioCue, MirrorStore, readT
 import { BSyncStatus, type SyncSource } from 'birko-web-components/feedback';
 import { BTreeMenu, BRibbon, type RibbonTab } from 'birko-web-components/nav';
 import { BMarkdownEditor } from 'birko-web-components/inputs';
-import { BPagination, BKanban, BDataTable } from 'birko-web-components/data';
+import { BPagination, BKanban, BDataTable, BChart, niceScale, tickIntervalsForHeight, formatTick } from 'birko-web-components/data';
 import { confirm as dlgConfirm } from 'birko-web-components/dialogs';
+import { BCard } from 'birko-web-components/layout';
 import { BMobileAppShell, type Surface } from 'birko-web-shell';
 import { getVisibleOptions, hasPermission, resolveModuleFromHash, createEntitySearchProvider } from 'birko-web-shell';
 
@@ -669,6 +670,255 @@ void (async () => {
       panelItem?.click();
       check('ribbon unpinned hover→flyout click resolves to the hovered tab (t2, not active t1)', clicks.at(-1) === 't2');
       ribbon.remove();
+    }
+
+    // ── TASK-104 — b-chart axis polish for small charts ────────────────────────────────────────────────
+    //
+    // b-chart was tuned for a 300px canvas: a hard-coded 5 intervals and raw band fractions for labels, which
+    // on the 90–150px cards a phone-width surface is made of prints six crowded labels reading
+    // `0, 2271, 4543, 6814, 9086, 11357`. Two halves to the fix and both are pinned here — the pure scale maths
+    // (exported, so it is assertable without a DOM) and what the component actually renders at a given height.
+    {
+      // (a) tick density follows the plot height, and is CAPPED so a full-size chart keeps the axis it had.
+      check('tickIntervals: 300px chart (260px plot) still asks for 5 intervals', tickIntervalsForHeight(260) === 5);
+      check('tickIntervals: capped at 5 — a taller chart does not grow a denser axis', tickIntervalsForHeight(600) === 5);
+      check('tickIntervals: 130px chart (90px plot) asks for 2', tickIntervalsForHeight(90) === 2);
+      check('tickIntervals: 90px chart (50px plot) asks for 1', tickIntervalsForHeight(50) === 1);
+      check('tickIntervals: a zero/unmeasured height falls back to 5 rather than 0', tickIntervalsForHeight(0) === 5);
+
+      const labelsOf = (s: ReturnType<typeof niceScale>) => s.ticks.map((t) => formatTick(t, s.decimals)).join(',');
+
+      // (b) THE case from the field report: a steps series peaking at 11357.
+      const steps300 = niceScale(0, 11357, 5);
+      check('niceScale: 11357 peak at full size reads 0..12000 by 2000 (was 0,2271,4543,…)',
+        labelsOf(steps300) === '0,2000,4000,6000,8000,10000,12000');
+      check('niceScale: the band is extended to the rounded bound, not left at the data max',
+        steps300.min === 0 && steps300.max === 12000);
+
+      // The band is chosen at a FIXED density, so it does NOT loosen as the chart gets shorter — only the
+      // labels thin out. Tie the two together and a 90px chart rounds 11357 up to 20000 and draws its bars at
+      // 57% of an otherwise empty plot.
+      const steps130 = niceScale(0, 11357, 2);
+      const steps90 = niceScale(0, 11357, 1);
+      check('niceScale: a 130px chart keeps the same 0..12000 band, with 3 labels',
+        steps130.max === 12000 && labelsOf(steps130) === '0,5000,10000');
+      check('niceScale: a 90px chart keeps the same band and drops to 2 labels',
+        steps90.max === 12000 && labelsOf(steps90) === '0,10000');
+
+      // (c) a bound the CALLER pinned is never rounded outwards — the ticks move inside it instead. Reps' body
+      // charts pass a deliberately tight band (79.9→81.6 kg + 12% pad); widening it to 78–82 would show half
+      // the movement the chart exists to show.
+      const pinned = niceScale(79.696, 81.804, 1, { extendMin: false, extendMax: false });
+      check('niceScale: pinned bounds are left exactly as given',
+        pinned.min === 79.696 && pinned.max === 81.804);
+      check('niceScale: pinned band still gets round labels, placed inside it', labelsOf(pinned) === '80,81');
+
+      // (d) precision is derived from the step and applied to the WHOLE axis, so a fractional step does not
+      // produce a mixed `80, 80.5, 81` axis, and an integer step does not gain a decimal it does not need.
+      check('formatTick: a 0.5 step prints one decimal on every tick, including the whole ones',
+        labelsOf(niceScale(79.696, 81.804, 5, { extendMin: false, extendMax: false })) === '80.0,80.5,81.0,81.5');
+      check('formatTick: an integer step stays integer', labelsOf(niceScale(0, 11357, 5)).includes('.') === false);
+      check('formatTick: sub-milli data keeps enough precision to differ',
+        labelsOf(niceScale(0, 0.00047, 5)) === '0.0000,0.0001,0.0002,0.0003,0.0004,0.0005');
+      check('formatTick: -0 never reaches a label', formatTick(-0, 0) === '0' && formatTick(-0.0001, 2) === '0.00');
+
+      // (e) degenerate input still yields an axis rather than NaN geometry.
+      check('niceScale: max <= min degrades to an equal split, not NaN',
+        niceScale(5, 5, 5).ticks.every((t) => Number.isFinite(t)));
+      check('niceScale: a non-finite bound degrades safely',
+        niceScale(NaN, 10, 5).ticks.every((t) => Number.isFinite(t)));
+
+      // ── Rendered behaviour ──
+      // Y labels are the end-anchored ones; the x labels share the .axis-label class but are middle-anchored.
+      const yLabels = (el: BChart): string[] =>
+        [...(el.shadowRoot?.querySelectorAll('text.axis-label[text-anchor="end"]') ?? [])]
+          .map((t) => (t.textContent ?? '').trim());
+
+      const mkChart = async (height: string, type: string, opts: Parameters<BChart['setOptions']>[0], ys: number[]) => {
+        const el = document.createElement('b-chart') as BChart;
+        el.setAttribute('type', type);
+        el.setAttribute('height', height);
+        el.setAttribute('legend', 'false');
+        document.body.appendChild(el);
+        el.setOptions(opts);
+        el.setData({ labels: ys.map(() => ''), series: [{ id: 's', label: 'S', data: ys.map((y) => ({ y })) }] });
+        // Two ticks: the first render uses the default viewBox, then onUpdated measures the container and
+        // re-renders at the real height — which is the render whose tick count we are asserting.
+        await new Promise((r) => setTimeout(r, 60));
+        return el;
+      };
+
+      const stepsData = [3120, 8400, 11357, 6200, 9800, 4300, 7100];
+
+      {
+        const small = await mkChart('90', 'bar', { tooltip: false }, stepsData);
+        const big = await mkChart('300', 'bar', { tooltip: false }, stepsData);
+        check('b-chart: a 90px bar chart no longer prints six y labels', yLabels(small).length < 6);
+        check('b-chart: a 90px bar chart prints round labels', yLabels(small).every((l) => /^\d+000$|^0$/.test(l)));
+        check('b-chart: a 300px bar chart keeps a full-density axis', yLabels(big).length >= 6);
+        small.remove(); big.remove();
+      }
+
+      {
+        // yAxis.ticks is a LABEL count and overrides the height-derived one in both directions.
+        const few = await mkChart('300', 'bar', { yAxis: { ticks: 3 }, tooltip: false }, stepsData);
+        check('b-chart: yAxis.ticks:3 thins a full-size axis to ~3 labels', yLabels(few).length <= 4);
+        few.remove();
+      }
+
+      {
+        // The escape hatch back to the pre-nice-scale axis: equal fractions of the raw band, printed as they fall.
+        const raw = await mkChart('300', 'bar', { yAxis: { nice: false }, tooltip: false }, stepsData);
+        // The band stops at the data max instead of the rounded 12000, and the fractions are printed as they
+        // fall (the opt-out unifies on the line renderer's one-decimal rule, so it reads `11357.0`).
+        check('b-chart: yAxis.nice:false restores the raw equal-split band (top label = the data max)',
+          yLabels(raw).some((l) => l.startsWith('11357')) && !yLabels(raw).includes('12000'));
+        raw.remove();
+      }
+
+      {
+        // A threshold above every bar used to be drawn at a negative y — and an overflow:visible SVG does not
+        // clip that, it paints it on the card above the chart. It now pulls the band up to meet it.
+        const th = await mkChart('300', 'bar', { tooltip: false, thresholds: [{ value: 40000, label: 'goal' }] }, stepsData);
+        const line = th.shadowRoot?.querySelector('.threshold-line');
+        const y1 = Number(line?.getAttribute('y1') ?? -1);
+        check('b-chart: a threshold above the data pulls the band up (line lands inside the plot)',
+          y1 >= 0 && y1 <= 300);
+
+        // The paint order IS the "threshold label overlaps the leftmost bars" defect: the label used to be
+        // emitted with its line, before the bars, so a bar reaching the threshold was painted straight through
+        // the text. The line still belongs behind the data; the label does not.
+        const kids = [...(th.shadowRoot?.querySelector('svg')?.children ?? [])];
+        const lineAt = kids.findIndex((n) => n.classList.contains('threshold-line'));
+        const labelAt = kids.findIndex((n) => n.classList.contains('threshold-label'));
+        const firstBar = kids.findIndex((n) => n.classList.contains('bar-rect'));
+        check('b-chart: threshold LINE paints behind the bars', lineAt >= 0 && firstBar > lineAt);
+        check('b-chart: threshold LABEL paints in front of the bars', labelAt > firstBar && firstBar >= 0);
+        th.remove();
+      }
+
+      {
+        // The latest-value overlay: switchable WITHOUT opting into realTime, default unchanged, and the old
+        // realTime spelling still honoured.
+        const on = await mkChart('300', 'line', { tooltip: false }, [1, 2, 3]);
+        const off = await mkChart('300', 'line', { tooltip: false, showLatestValue: false }, [1, 2, 3]);
+        const rtOff = await mkChart('300', 'line', { tooltip: false, realTime: { showLatestValue: false } }, [1, 2, 3]);
+        check('b-chart: latest-value overlay still ON by default (unchanged for existing charts)',
+          !!on.shadowRoot?.querySelector('.latest-value'));
+        check('b-chart: showLatestValue:false turns it off without a realTime block',
+          !off.shadowRoot?.querySelector('.latest-value'));
+        check('b-chart: the realTime.showLatestValue spelling still works',
+          !rtOff.shadowRoot?.querySelector('.latest-value'));
+        on.remove(); off.remove(); rtOff.remove();
+      }
+
+      {
+        // Back-compat guard for TASK-093: overlay bars stay superimposed at full category width.
+        const el = document.createElement('b-chart') as BChart;
+        el.setAttribute('type', 'bar');
+        el.setAttribute('height', '300');
+        document.body.appendChild(el);
+        el.setOptions({ overlay: true, tooltip: false });
+        el.setData({ labels: ['a', 'b'], series: [
+          { id: 'target', label: 'Target', data: [{ y: 10 }, { y: 10 }] },
+          { id: 'done', label: 'Done', data: [{ y: 6 }, { y: 9 }] },
+        ] });
+        await new Promise((r) => setTimeout(r, 60));
+        const rects = [...(el.shadowRoot?.querySelectorAll('rect.bar-rect') ?? [])];
+        const first = rects.filter((r) => r.getAttribute('data-index') === '0');
+        check('b-chart: overlay bars still share one x at full category width',
+          first.length === 2 && first[0].getAttribute('x') === first[1].getAttribute('x')
+            && first[0].getAttribute('width') === first[1].getAttribute('width'));
+        el.remove();
+      }
+    }
+
+    // ── TASK-105 — b-card: the missing `md` padding rung + elevation as a token ────────────────────────
+    //
+    // Found adopting b-card in Reps (its TASK-089). Both are additive, and the assertions that matter most
+    // here are the ones pinning what did NOT change: b-card is already in use, so an existing card must render
+    // identically. Note what is deliberately absent — there is no layout/gap/direction check, because b-card
+    // deliberately gained no such option (see TASK-105's rejection note).
+    {
+      const host = document.createElement('div');
+      document.body.appendChild(host);
+
+      // Tokens are declared in rem, so compare against a probe carrying the same token rather than a px
+      // literal — a literal would silently pass if the scale were rescaled.
+      const probePad = (css: string): string => {
+        const d = document.createElement('div');
+        d.style.cssText = `padding: ${css}`;
+        host.appendChild(d);
+        const v = getComputedStyle(d).paddingTop;
+        d.remove();
+        return v;
+      };
+
+      const mkCard = (attrs: Record<string, string> = {}, style = ''): BCard => {
+        const c = document.createElement('b-card') as BCard;
+        for (const [k, v] of Object.entries(attrs)) c.setAttribute(k, v);
+        if (style) c.setAttribute('style', style);
+        host.appendChild(c);
+        return c;
+      };
+      const bodyPad = (c: BCard) => {
+        const el = c.shadowRoot?.querySelector('.card-body');
+        return el ? getComputedStyle(el).paddingTop : '(no body)';
+      };
+      const shadowOf = (c: BCard) => {
+        const el = c.shadowRoot?.querySelector('.card');
+        return el ? getComputedStyle(el).boxShadow : '(no card)';
+      };
+
+      await new Promise((r) => setTimeout(r, 30));
+
+      const cNone = mkCard({ padding: 'none' });
+      const cSm = mkCard({ padding: 'sm' });
+      const cMd = mkCard({ padding: 'md' });
+      const cLg = mkCard({ padding: 'lg' });
+      const cXl = mkCard({ padding: 'xl' });
+      const cDefault = mkCard();
+      const cBogus = mkCard({ padding: 'enormous' });
+      await new Promise((r) => setTimeout(r, 30));
+
+      // (1) the new rung resolves to --b-space-md, and lands where the ladder says it should.
+      check('b-card: padding="md" resolves to --b-space-md', bodyPad(cMd) === probePad('var(--b-space-md)'));
+      check('b-card: md sits strictly between sm and lg',
+        parseFloat(bodyPad(cSm)) < parseFloat(bodyPad(cMd)) && parseFloat(bodyPad(cMd)) < parseFloat(bodyPad(cLg)));
+      check('b-card: the whole ladder is monotonic none < sm < md < lg < xl',
+        [cNone, cSm, cMd, cLg, cXl].map((c) => parseFloat(bodyPad(c)))
+          .every((v, i, a) => i === 0 || a[i - 1] < v));
+
+      // (2) BACK-COMPAT: the default is untouched, and an unrecognised value still falls back to it.
+      check('b-card: default padding is still lg (an existing card is unchanged)',
+        bodyPad(cDefault) === probePad('var(--b-space-lg)'));
+      check('b-card: an unknown padding value still falls back to the default',
+        bodyPad(cBogus) === bodyPad(cDefault));
+      check('b-card: padding="none" is still 0px', bodyPad(cNone) === '0px');
+
+      // (3) elevation is a token now, and its default is the shadow the card always had.
+      const probeShadow = document.createElement('div');
+      probeShadow.style.cssText = 'box-shadow: var(--b-shadow-sm)';
+      host.appendChild(probeShadow);
+      const shadowSm = getComputedStyle(probeShadow).boxShadow;
+      check('b-card: default elevation is still --b-shadow-sm', shadowOf(cDefault) === shadowSm && shadowSm !== 'none');
+
+      const flat = mkCard({}, '--b-card-shadow: none');
+      await new Promise((r) => setTimeout(r, 30));
+      check('b-card: --b-card-shadow flattens the card', shadowOf(flat) === 'none');
+      check('b-card: overriding it does NOT touch --b-shadow-sm for anything else in scope',
+        getComputedStyle(probeShadow).boxShadow === shadowSm && shadowOf(cDefault) === shadowSm);
+
+      // It is a custom property, so it inherits — a section can flatten every card it contains at once.
+      const scope = document.createElement('div');
+      scope.style.cssText = '--b-card-shadow: none';
+      host.appendChild(scope);
+      const scoped = document.createElement('b-card') as BCard;
+      scope.appendChild(scoped);
+      await new Promise((r) => setTimeout(r, 30));
+      check('b-card: --b-card-shadow cascades from an ancestor', shadowOf(scoped) === 'none');
+
+      host.remove();
     }
   } catch (e) {
     check(`unexpected throw: ${(e as Error).message}`, false);

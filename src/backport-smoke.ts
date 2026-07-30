@@ -920,6 +920,191 @@ void (async () => {
 
       host.remove();
     }
+
+    // ── TASK-107 — b-button: tap-target tokens + form participation ────────────────────────────────────
+    //
+    // Reps stopped before converting 69 buttons because reading b-button turned up two silent regressions.
+    // The form half is the dangerous one: a <button type="submit"> inside a <form> became a b-button whose
+    // inner <button> lives in a shadow root, so it had no form owner and the save did NOTHING -- and read as
+    // intermittent, because Enter in a text field still submits (the form's own behaviour) and only the
+    // pointer path failed.
+    {
+      const host = document.createElement('div');
+      document.body.appendChild(host);
+      const mkForm = (inner: string): HTMLFormElement => {
+        const f = document.createElement('form');
+        f.innerHTML = inner;
+        f.addEventListener('submit', (e) => e.preventDefault()); // never navigate the playground away
+        host.appendChild(f);
+        return f;
+      };
+      const settle = () => new Promise((r) => setTimeout(r, 20));
+      const btnOf = (f: HTMLFormElement, sel = 'b-button') => f.querySelector<HTMLElement>(sel)!;
+
+      // (1) it joins the family's existing convention rather than inventing a second mechanism.
+      check('b-button declares formAssociated (same mechanism as the 15 value controls)',
+        (customElements.get('b-button') as unknown as { formAssociated?: boolean })?.formAssociated === true);
+      {
+        const f = mkForm('<b-button>Go</b-button>');
+        await settle();
+        check('b-button resolves its owning form across the shadow boundary',
+          (btnOf(f) as unknown as { form?: HTMLFormElement | null }).form === f);
+        check('b-button contributes NO FormData entry', [...new FormData(f).keys()].length === 0);
+        f.remove();
+      }
+
+      // (2) THE fix: type="submit" fires the form's submit event on a click.
+      {
+        const f = mkForm('<b-button type="submit">Save</b-button>');
+        await settle();
+        let submits = 0;
+        f.addEventListener('submit', () => submits++);
+        btnOf(f).click();
+        await settle();
+        check('b-button type="submit" fires the form submit event on click', submits === 1);
+        f.remove();
+      }
+
+      // (3) BACK-COMPAT, and the reason the default is `button` rather than native `submit`.
+      // A shipped consumer (Presenter) has b-buttons inside a <form> that ALSO listens for submit and does
+      // something different with it. A native-faithful default would make one tap run both paths.
+      {
+        const f = mkForm('<b-button id="save">Save</b-button>');
+        await settle();
+        let submits = 0;
+        let clicks = 0;
+        f.addEventListener('submit', () => submits++);
+        btnOf(f).addEventListener('click', () => clicks++);
+        btnOf(f).click();
+        await settle();
+        check('b-button default type does NOT submit (an existing in-form consumer is unchanged)', submits === 0);
+        check('...while its own click handler still runs exactly once', clicks === 1);
+        f.remove();
+      }
+
+      // (4) reset, and the guards.
+      {
+        const f = mkForm('<b-input name="q" value="start"></b-input><b-button type="reset">Reset</b-button>');
+        await settle();
+        const input = f.querySelector('b-input') as HTMLElement & { value: string };
+        input.value = 'typed';
+        await settle();
+        btnOf(f).click();
+        await settle();
+        check('b-button type="reset" resets the form', input.value === 'start');
+        f.remove();
+      }
+      {
+        const f = mkForm('<b-button type="submit" disabled>Save</b-button>');
+        await settle();
+        let submits = 0;
+        f.addEventListener('submit', () => submits++);
+        btnOf(f).click(); // programmatic: pointer-events:none would not block this path
+        await settle();
+        check('a disabled b-button does not submit even via a programmatic click', submits === 0);
+        f.remove();
+      }
+      {
+        const f = mkForm('<b-button type="submit" loading>Save</b-button>');
+        await settle();
+        let submits = 0;
+        f.addEventListener('submit', () => submits++);
+        btnOf(f).click();
+        await settle();
+        check('a loading b-button does not submit (no double-submit on a slow write)', submits === 0);
+        f.remove();
+      }
+      {
+        // requestSubmit(), not submit() -- so the form's constraint validation still gets to say no.
+        const f = mkForm('<b-input name="q" required></b-input><b-button type="submit">Save</b-button>');
+        await settle();
+        let submits = 0;
+        f.addEventListener('submit', () => submits++);
+        btnOf(f).click();
+        await settle();
+        check('b-button submit runs constraint validation (a required empty field blocks it)', submits === 0);
+        f.remove();
+      }
+      {
+        // No form at all must be a no-op, not a throw -- the overwhelmingly common case in Symbio (102 files
+        // of b-button and not one <form> in the app).
+        const el = document.createElement('b-button');
+        el.setAttribute('type', 'submit');
+        host.appendChild(el);
+        await settle();
+        let threw = false;
+        try { el.click(); } catch { threw = true; }
+        check('a type="submit" b-button outside any form is a silent no-op, not a throw', !threw);
+        el.remove();
+      }
+
+      // (5) the tap-target tokens.
+      {
+        const probe = (css: string): string => {
+          const d = document.createElement('div');
+          d.style.cssText = `padding: ${css}`;
+          host.appendChild(d);
+          const v = getComputedStyle(d).paddingTop;
+          d.remove();
+          return v;
+        };
+        const padOf = (el: HTMLElement, side: 'paddingTop' | 'paddingLeft') => {
+          const inner = el.shadowRoot?.querySelector('button');
+          return inner ? getComputedStyle(inner)[side] : '(none)';
+        };
+        const mk = (attrs = '', style = ''): HTMLElement => {
+          const el = document.createElement('b-button');
+          if (attrs) for (const a of attrs.split(' ')) { const [k, v] = a.split('='); el.setAttribute(k, v ?? ''); }
+          if (style) el.setAttribute('style', style);
+          el.textContent = 'X';
+          host.appendChild(el);
+          return el;
+        };
+        const dflt = mk();
+        const sm = mk('size=sm');
+        const lg = mk('size=lg');
+        const tall = mk('', '--b-button-padding-y: var(--b-space-md)');
+        const tallSm = mk('size=sm', '--b-button-padding-y: var(--b-space-md)');
+        await settle();
+
+        check('b-button default vertical padding is unchanged (--b-space-sm)',
+          padOf(dflt, 'paddingTop') === probe('var(--b-space-sm)'));
+        check('b-button size="sm" vertical padding is unchanged (--b-space-xs)',
+          padOf(sm, 'paddingTop') === probe('var(--b-space-xs)'));
+        check('b-button size="lg" vertical padding is unchanged (--b-space-sm, it only widens)',
+          padOf(lg, 'paddingTop') === probe('var(--b-space-sm)'));
+        check('--b-button-padding-y raises the tap target',
+          padOf(tall, 'paddingTop') === probe('var(--b-space-md)'));
+        check('...and reaches size="sm" too, so one rule covers every call site',
+          padOf(tallSm, 'paddingTop') === probe('var(--b-space-md)'));
+        check('the y token leaves the x padding alone',
+          padOf(tall, 'paddingLeft') === padOf(dflt, 'paddingLeft'));
+        // Heights go in the check NAME: a bare pass/fail on a magic 44 tells you nothing when it fails, and
+        // the number depends on the consumer's own font scale.
+        const hDefault = Math.round(dflt.getBoundingClientRect().height);
+        const hTall = Math.round(tall.getBoundingClientRect().height);
+        check(`the default button is under a 44px tap target (measured ${hDefault}px) — the reason the token exists`,
+          hDefault < 44);
+        check(`--b-button-padding-y: md raises it (measured ${hTall}px, +${hTall - hDefault}px)`,
+          hTall > hDefault);
+
+        // How far the token has to be turned up to clear 44px depends on the consumer's own font scale, so
+        // assert that SOME rung reaches it rather than hard-coding which one.
+        const tallest = mk('', '--b-button-padding-y: var(--b-space-lg)');
+        const lgPlusToken = mk('size=lg', '--b-button-padding-y: var(--b-space-md)');
+        await settle();
+        const hTallest = Math.round(tallest.getBoundingClientRect().height);
+        const hLgToken = Math.round(lgPlusToken.getBoundingClientRect().height);
+        check(`the token can reach a 44px tap target (--b-space-lg measured ${hTallest}px)`, hTallest >= 44);
+        // The token is orthogonal to `size`, so a consumer can compose rather than needing a fourth rung.
+        // Recorded with its number because b-button fixes font-size at --b-text-sm with a tight line-height,
+        // so padding alone reaches less height than the same padding on a `font: inherit` button.
+        check(`size="lg" composes with the token (measured ${hLgToken}px, vs ${hTall}px at default size)`,
+          hLgToken > hTall);
+      }
+
+      host.remove();
+    }
   } catch (e) {
     check(`unexpected throw: ${(e as Error).message}`, false);
   }

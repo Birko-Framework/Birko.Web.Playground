@@ -1,7 +1,7 @@
 // EPIC-002 web backport smoke — exercises the new Birko.Web.Core APIs in a real browser via the
 // playground's headless verify (verify.mjs surfaces `[playground]` console logs + page errors).
 // This is how the framework's frontend backports are verified (no in-framework unit runner).
-import { getFormatter, createWakeLockManager, createAudioCue, MirrorStore, readThrough, readWindowThrough, syncWindow, inWindow, define, registerServiceWorker, I18n, signal, setPersistPrefix, SyncManager, Store, unwrapList, apiErrorMessage, ApiClient } from 'birko-web-core';
+import { parseDecimal, getFormatter, createWakeLockManager, createAudioCue, MirrorStore, readThrough, readWindowThrough, syncWindow, inWindow, define, registerServiceWorker, I18n, signal, setPersistPrefix, SyncManager, Store, unwrapList, apiErrorMessage, ApiClient } from 'birko-web-core';
 import { BSyncStatus, type SyncSource } from 'birko-web-components/feedback';
 import { BTreeMenu, BRibbon, type RibbonTab } from 'birko-web-components/nav';
 import { BMarkdownEditor } from 'birko-web-components/inputs';
@@ -1102,6 +1102,266 @@ void (async () => {
         check(`size="lg" composes with the token (measured ${hLgToken}px, vs ${hTall}px at default size)`,
           hLgToken > hTall);
       }
+
+      host.remove();
+    }
+
+    // TASK-105 — b-input type="decimal": a comma-locale keypad must be able to type a separator, and the
+    // component (not the consumer) owns min/max/step, because a type="text" inner control reports valid
+    // for everything and this control is form-associated.
+    {
+      const { BInput } = await import('birko-web-components/inputs');
+      // parseDecimal now lives in Core beside the Formatter (it is the same locale problem, inverted).
+      const host = document.createElement('div');
+      host.style.cssText = 'position:absolute;left:-9999px;top:0';
+      document.body.appendChild(host);
+      const mk = (attrs: string) => {
+        host.innerHTML = `<b-input ${attrs}></b-input>`;
+        return host.querySelector('b-input') as InstanceType<typeof BInput>;
+      };
+      const inner = (el: Element) => el.shadowRoot?.querySelector('input') as HTMLInputElement;
+
+      const d = mk('type="decimal" label="Weight"');
+      await new Promise((r) => setTimeout(r, 0));
+      check('decimal renders a TEXT inner input (type=number cannot accept a comma)',
+        inner(d)?.getAttribute('type') === 'text');
+      check('decimal defaults inputmode="decimal" (numeric keypad, comma allowed)',
+        inner(d)?.getAttribute('inputmode') === 'decimal');
+
+      const dOverride = mk('type="decimal" inputmode="numeric"');
+      await new Promise((r) => setTimeout(r, 0));
+      check('an explicit inputmode still wins over the decimal default',
+        inner(dOverride)?.getAttribute('inputmode') === 'numeric');
+
+      const dSup = mk('type="decimal" min="0" max="10" step="0.5"');
+      await new Promise((r) => setTimeout(r, 0));
+      check('min/max/step are NOT forwarded to a text input that would ignore them',
+        !inner(dSup)?.hasAttribute('min') && !inner(dSup)?.hasAttribute('max') && !inner(dSup)?.hasAttribute('step'));
+
+      // Parsing: both separators, and stricter than parseFloat.
+      check('parseDecimal accepts a comma', parseDecimal('81,8') === 81.8);
+      check('parseDecimal accepts a period', parseDecimal('81.8') === 81.8);
+      check('parseDecimal rejects trailing junk (parseFloat would return 12)', parseDecimal('12abc') === null);
+      check('parseDecimal rejects two separators', parseDecimal('1.2.3') === null);
+      check('parseDecimal rejects a lone separator', parseDecimal(',') === null);
+      check('parseDecimal treats blank as null, not 0', parseDecimal('   ') === null);
+
+      const numeric = mk('type="decimal"');
+      await new Promise((r) => setTimeout(r, 0));
+      numeric.value = '81,8';
+      check('numericValue parses the live comma value', numeric.numericValue === 81.8);
+
+      // Validity — the whole point: a text inner control has no constraints of its own.
+      const ranged = mk('type="decimal" min="0" max="100"');
+      await new Promise((r) => setTimeout(r, 0));
+      ranged.value = '-5';
+      check('a value below min reports rangeUnderflow', ranged.validity.rangeUnderflow === true);
+      check('...with a message', ranged.validationMessage.length > 0);
+      ranged.value = '250';
+      check('a value above max reports rangeOverflow', ranged.validity.rangeOverflow === true);
+      ranged.value = '81,8';
+      check('an in-range comma value is valid', ranged.checkValidity() === true);
+      ranged.value = 'abc';
+      check('unparseable input reports badInput', ranged.validity.badInput === true);
+      ranged.value = '';
+      check('blank is left to `required`, not reported as bad', ranged.validity.badInput === false);
+
+      const stepped = mk('type="decimal" step="0.5"');
+      await new Promise((r) => setTimeout(r, 0));
+      stepped.value = '81,8';
+      check('step="0.5" makes 81.8 a stepMismatch (step is a CONSTRAINT, not an increment)',
+        stepped.validity.stepMismatch === true);
+      stepped.value = '81,5';
+      check('...and 81.5 is aligned', stepped.checkValidity() === true);
+
+      const noStep = mk('type="decimal"');
+      await new Promise((r) => setTimeout(r, 0));
+      noStep.value = '81,8';
+      check('no step attribute means NO step constraint (the common case)', noStep.checkValidity() === true);
+
+      const floaty = mk('type="decimal" step="0.1"');
+      await new Promise((r) => setTimeout(r, 0));
+      floaty.value = '0,3';
+      check('0.3 against step=0.1 is aligned (naive % would say mismatch)', floaty.checkValidity() === true);
+
+      const appErr = mk('type="decimal" min="0" error="Server said no"');
+      await new Promise((r) => setTimeout(r, 0));
+      appErr.value = '-5';
+      check('an explicit error attribute still wins over our range check',
+        appErr.validationMessage === 'Server said no');
+
+      host.remove();
+    }
+
+    // TASK-091 code-review finding — `renderError` was the one field row that did NOT escape, while label,
+    // hint and description all did. 13 of the 14 controls hand it `this.attr('error')` directly, and an
+    // attribute read back with attr() is already DECODED by the browser, so a consumer escaping at the call
+    // site (b-form does, via escapeAttr) had its work undone. b-form.setFieldError() takes an arbitrary
+    // string, which is where a server-echoed validation message enters.
+    {
+      const host = document.createElement('div');
+      host.style.cssText = 'position:absolute;left:-9999px;top:0';
+      document.body.appendChild(host);
+
+      const payload = '<img src=x onerror="window.__bwcErrorXss=1">';
+      host.innerHTML = `<b-input label="Weight" error='${payload}'></b-input>`;
+      await new Promise((r) => setTimeout(r, 0));
+      const el = host.querySelector('b-input') as HTMLElement;
+      const span = el.shadowRoot?.querySelector('.error') as HTMLElement | null;
+
+      check('an error message is not parsed as markup', span?.querySelector('img') === null);
+      check('...and reaches the user as text', span?.textContent === payload);
+      check('...so the injected handler never ran',
+        (window as unknown as Record<string, unknown>).__bwcErrorXss === undefined);
+
+      // The other half of the fix: no double-encoding. b-markdown-editor used to pre-escape.
+      host.innerHTML = '<b-markdown-editor label="Notes" error="a &amp; b"></b-markdown-editor>';
+      await new Promise((r) => setTimeout(r, 0));
+      const md = host.querySelector('b-markdown-editor') as HTMLElement;
+      const mdErr = md.shadowRoot?.querySelector('.error') as HTMLElement | null;
+      check('a literal ampersand in an error is shown once, not double-encoded',
+        mdErr?.textContent === 'a & b');
+
+      host.remove();
+    }
+
+    // TASK-105 follow-up — `decimal` reached through a b-form SCHEMA, not just a hand-written tag.
+    // This is the path consumers actually build forms on, and it was broken while every check above
+    // passed: b-form's field-type switch had no `decimal` case, so it emitted no `type` attribute at
+    // all, b-input fell back to `text`, and the entire mode vanished silently — no numeric keypad, no
+    // range check, no badInput, on a field that looked correct and accepted anything. Nothing here
+    // duplicates the direct-tag checks; it verifies the wiring between the two components.
+    {
+      const host = document.createElement('div');
+      host.style.cssText = 'position:absolute;left:-9999px;top:0';
+      document.body.appendChild(host);
+      const settle = () => new Promise((r) => setTimeout(r, 30));
+
+      const form = document.createElement('b-form') as HTMLElement & {
+        setSchema(s: unknown): void;
+        setFieldError(p: string, e: string): void;
+        validate(): { valid: boolean; errors: Record<string, string> };
+      };
+      host.appendChild(form);
+      await settle();
+      form.setSchema({
+        name: 'root',
+        children: [
+          { name: 'weight', type: 'decimal', label: 'Weight', min: 0, max: 500, step: 0.1 },
+          { name: 'ruled', type: 'decimal', label: 'Ruled', rules: [{ type: 'max', value: 100 }] },
+        ],
+      });
+      await settle();
+
+      const field = (n: string) =>
+        (form.shadowRoot?.querySelector(`[data-path="${n}"]`) ?? form.querySelector(`[data-path="${n}"]`)) as
+          (HTMLElement & { numericValue: number | null; checkValidity(): boolean }) | null;
+      const innerOf = (n: string) => field(n)?.shadowRoot?.querySelector('input') as HTMLInputElement | undefined;
+      const type = (n: string) => innerOf(n)?.getAttribute('type');
+
+      check('b-form emits type="decimal", so the mode engages at all',
+        field('weight')?.getAttribute('type') === 'decimal');
+      check('...giving a TEXT inner input through the schema path', type('weight') === 'text');
+      check('...and the decimal inputmode, so a comma keypad appears', innerOf('weight')?.getAttribute('inputmode') === 'decimal');
+      check('b-form forwards min/max/step onto the HOST, where b-input enforces them',
+        field('weight')?.getAttribute('min') === '0' && field('weight')?.getAttribute('max') === '500'
+        && field('weight')?.getAttribute('step') === '0.1');
+      check('...and NOT onto the inner text input, which would ignore them',
+        innerOf('weight')?.hasAttribute('min') === false && innerOf('weight')?.hasAttribute('max') === false);
+
+      const setVal = async (n: string, v: string) => {
+        const i = innerOf(n)!;
+        i.value = v;
+        i.dispatchEvent(new Event('input', { bubbles: true }));
+        await settle();
+      };
+
+      await setVal('weight', '81,8');
+      check('a comma value survives the schema path and parses', field('weight')?.numericValue === 81.8);
+      check('...and is valid, being inside min/max', field('weight')?.checkValidity() === true);
+
+      await setVal('weight', '9999');
+      check('an over-max value is refused via b-form (it reported VALID before this wiring)',
+        field('weight')?.checkValidity() === false);
+
+      await setVal('weight', 'abc');
+      check('unparseable input is refused via b-form', field('weight')?.checkValidity() === false);
+
+      // b-form's own rule engine, a different mechanism from the min/max attributes above: it coerces
+      // with Number(), which is NaN for '120,5', and every numeric comparison against NaN is false --
+      // so a `max` RULE silently passed for any comma value while the `max` ATTRIBUTE was enforced.
+      await setVal('ruled', '120,5');
+      const res = form.validate();
+      check('a max RULE fires on a comma decimal (Number() would make it NaN and pass)',
+        res.valid === false && !!res.errors['ruled']);
+      await setVal('ruled', '99,5');
+      check('...and a comma value under the rule limit passes', form.validate().valid === true);
+
+      host.remove();
+    }
+
+    // `percent` is a decimal by definition and used to render type="number", so it carried the same
+    // comma bug — with a worse tail: the 0-100 ⇄ 0-1 conversion coerced with Number(), so for '12,5' it
+    // got NaN, its !isNaN guard skipped the branch, and the RAW STRING was handed out as the stored
+    // value. Mis-validation is recoverable; handing a string to something expecting 0-1 is corruption.
+    {
+      const host = document.createElement('div');
+      host.style.cssText = 'position:absolute;left:-9999px;top:0';
+      document.body.appendChild(host);
+      const settle = () => new Promise((r) => setTimeout(r, 30));
+
+      const form = document.createElement('b-form') as HTMLElement & {
+        setSchema(s: unknown): void;
+        setValues(v: Record<string, unknown>): void;
+        getValues(): Record<string, unknown>;
+        validate(): { valid: boolean; data: Record<string, unknown>; errors: Record<string, string> };
+      };
+      host.appendChild(form);
+      await settle();
+      form.setSchema({
+        name: 'root',
+        children: [
+          { name: 'rate', type: 'percent', label: 'Rate' },
+          { name: 'capped', type: 'percent', label: 'Capped', rules: [{ type: 'max', value: 50 }] },
+        ],
+      });
+      await settle();
+
+      const field = (n: string) =>
+        (form.shadowRoot?.querySelector(`[data-path="${n}"]`) ?? form.querySelector(`[data-path="${n}"]`)) as HTMLElement | null;
+      const innerOf = (n: string) => field(n)?.shadowRoot?.querySelector('input') as HTMLInputElement | undefined;
+      const setVal = async (n: string, v: string) => {
+        const i = innerOf(n)!;
+        i.value = v;
+        i.dispatchEvent(new Event('input', { bubbles: true }));
+        await settle();
+      };
+
+      check('percent renders through the decimal mode, so a comma can be typed at all',
+        field('rate')?.getAttribute('type') === 'decimal' && innerOf('rate')?.getAttribute('type') === 'text');
+      check('...and still carries the % suffix (keyed on the schema type, not the rendered one)',
+        !!form.shadowRoot?.querySelector('.b-form-percent-sign'));
+
+      await setVal('rate', '12,5');
+      const res = form.validate();
+      check('a comma percent converts to storage as a NUMBER, not the raw string',
+        typeof res.data['rate'] === 'number');
+      check('...and converts correctly (12,5 % -> 0.125)', res.data['rate'] === 0.125);
+
+      await setVal('rate', '12.5');
+      check('a period percent still converts identically (no regression)',
+        form.validate().data['rate'] === 0.125);
+
+      // storage -> display, the other direction through the same branch
+      form.setValues({ rate: 0.075 });
+      await settle();
+      check('a stored 0.075 displays as 7.5', innerOf('rate')?.value === '7.5');
+
+      await setVal('capped', '62,5');
+      check('a max RULE fires on a comma percent (Number() made it NaN and passed)',
+        form.validate().valid === false);
+      await setVal('capped', '42,5');
+      check('...and a comma percent under the limit passes', form.validate().valid === true);
 
       host.remove();
     }

@@ -34,3 +34,25 @@ npm install && npm run build   # -> wwwroot/app.js (+ css/), resolves Birko\Web
 npm run watch                  # rebuild on save
 # serve wwwroot/ or open index.html in a browser
 ```
+
+## Verifying a Birko.Web.* change
+`Birko.Web.*` has no unit-test runner, so this playground is the verification vehicle. Build first —
+both scripts read `wwwroot/`, so an unbuilt edit silently verifies the previous bundle.
+
+```bash
+node build.js
+node verify.mjs             # every section renders, no EMPTY component, no page error, all *-smoke suites
+node device-fix-check.mjs   # geometry + contrast at viewports/themes verify.mjs never visits (exit 1 on FAIL)
+```
+
+`verify.mjs` loads **one** 800x600 light-theme page, which is blind to a whole class of defect — the
+2026-08-01 device pass found three at once that it could not have seen. `device-fix-check.mjs` covers that
+gap by driving the same bundle at a **390px phone viewport** (overlay widths only misbehave *below* the
+`max-width` cap), under **`data-theme="dark"`** (tint-vs-text contrast), and with **touch emulation** for
+`pointer: coarse` rules. Add a case here whenever a fix depends on viewport, theme, or input modality.
+
+Two things that make its results trustworthy, worth preserving in anything added to it:
+- **Assert the precondition, not just the outcome.** A `<dialog>` that never opened measures 0x0 and every
+  geometry assertion passes vacuously; an emulation API that silently no-ops reports a desktop value as a
+  broken fix. Both happened while writing it, so each group asserts it is really in the state it claims.
+- **Put the measured number in the check NAME** (as `backport-smoke` does), so a failure reports what it saw.

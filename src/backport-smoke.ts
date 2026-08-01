@@ -1294,6 +1294,10 @@ void (async () => {
       const res = form.validate();
       check('a max RULE fires on a comma decimal (Number() would make it NaN and pass)',
         res.valid === false && !!res.errors['ruled']);
+      // `weight` still holds the 'abc' from the badInput check above, and since validate() now surfaces a
+      // control's own verdict (TASK-105 follow-up 2) that junk counts against the FORM. Clear it first —
+      // the claim here is about the rule on `ruled`, not about the form being clean by accident.
+      await setVal('weight', '81,8');
       await setVal('ruled', '99,5');
       check('...and a comma value under the rule limit passes', form.validate().valid === true);
 
@@ -1362,6 +1366,200 @@ void (async () => {
         form.validate().valid === false);
       await setVal('capped', '42,5');
       check('...and a comma percent under the limit passes', form.validate().valid === true);
+
+      host.remove();
+    }
+
+    // TASK-105 follow-up 2 — `b-form.validate()` ran SCHEMA RULES ONLY, so a control's own verdict was
+    // invisible to the one path every consumer uses. `b-input type="decimal"` reported `badInput` for
+    // `abc` correctly and `validate()` still answered `{ valid: true, data: { percentage: 'abc' } }` —
+    // measured in Symbio as a create that 400s and, worse, an edit that reports success while keeping the
+    // old value (NaN serializes to null, the update DTO's field is nullable, the service guards on
+    // HasValue). The fix is deliberately NOT a blanket checkValidity() gate; see the trap check below.
+    {
+      const host = document.createElement('div');
+      host.style.cssText = 'position:absolute;left:-9999px;top:0';
+      document.body.appendChild(host);
+      const settle = () => new Promise((r) => setTimeout(r, 30));
+
+      type Form = HTMLElement & {
+        setSchema(s: unknown): void;
+        setValues(v: Record<string, unknown>): void;
+        setFieldDisabled(p: string, d: boolean): void;
+        validate(): { valid: boolean; data: Record<string, unknown>; errors: Record<string, string> };
+      };
+      const mkForm = async (children: unknown[]) => {
+        host.innerHTML = '';
+        const f = document.createElement('b-form') as Form;
+        host.appendChild(f);
+        await settle();
+        f.setSchema({ name: 'root', children });
+        await settle();
+        return f;
+      };
+      const field = (f: Form, n: string) =>
+        f.shadowRoot?.querySelector(`[data-path="${n}"]`) as
+          (HTMLElement & { checkValidity(): boolean; validationMessage: string }) | null;
+      const innerOf = (f: Form, n: string) => field(f, n)?.shadowRoot?.querySelector('input') as HTMLInputElement | undefined;
+      const setVal = async (f: Form, n: string, v: string) => {
+        const i = innerOf(f, n)!;
+        i.value = v;
+        i.dispatchEvent(new Event('input', { bubbles: true }));
+        await settle();
+      };
+
+      // ── the hole itself ──
+      {
+        const f = await mkForm([
+          { name: 'rate', type: 'percent', label: 'Rate', rules: [{ type: 'required' }, { type: 'min', value: 0 }, { type: 'max', value: 100 }] },
+          { name: 'note', type: 'text', label: 'Note' },
+        ]);
+        await setVal(f, 'rate', 'abc');
+        // The control was ALWAYS right about this — the form just never asked.
+        check('the control itself already reported the junk as invalid (unchanged)',
+          field(f, 'rate')?.checkValidity() === false);
+        const res = f.validate();
+        check('badInput now fails validate() through the schema path', res.valid === false);
+        check('...with the error on the junk field and nothing on its sibling',
+          !!res.errors['rate'] && res.errors['note'] === undefined);
+        check('...applied as the error attribute on that field, so the user sees where',
+          field(f, 'rate')?.getAttribute('error') === res.errors['rate']);
+        check('...carrying the control\'s own message, not a generic one',
+          res.errors['rate'] === 'Enter a number.');
+        check('data nulls a badInput field rather than handing out the typed string',
+          res.data['rate'] === null);
+
+        // Re-validating without touching the field must reach the same verdict. It did not: `_applyErrors`
+        // had left `error` on the control, which makes it report `customError` and MASK its own badInput,
+        // so a second Save click passed the form.
+        const again = f.validate();
+        check('validating twice without changing anything stays invalid (stale error attribute masked it)',
+          again.valid === false && !!again.errors['rate']);
+
+        // And the fix must clear: the same field, corrected.
+        await setVal(f, 'rate', '12,5');
+        const fixed = f.validate();
+        check('correcting the value clears the verdict and stores the number',
+          fixed.valid === true && fixed.data['rate'] === 0.125);
+      }
+
+      // ── the trap: a blanket checkValidity() gate would have broken every consumer number field ──
+      {
+        const f = await mkForm([{ name: 'scrap', type: 'number', label: 'Scrap %' }]);
+        await setVal(f, 'scrap', '12.5');
+        // Premise, asserted rather than assumed: type="number" has an implicit step of 1, so the browser
+        // ALREADY calls 12.5 invalid ("the two nearest valid values are 12 and 13") and b-form has always
+        // ignored it. If this half ever stops holding, the guard below is vacuous and should be re-derived.
+        check('premise: 12.5 in a plain type="number" field is natively invalid (implicit step=1)',
+          field(f, 'scrap')?.checkValidity() === false
+          && field(f, 'scrap')?.validationMessage.length !== 0);
+        check('...and validate() still PASSES it — stepMismatch is not adopted outside decimal mode',
+          f.validate().valid === true);
+        check('...and the value is untouched in data', f.validate().data['scrap'] === '12.5');
+      }
+
+      // Same reasoning, the other flag a blanket gate would have brought in: an `email` field is left to
+      // the schema `email` rule. Ignored on purpose — turning typeMismatch on is the stepMismatch trap
+      // again, one field type at a time.
+      {
+        const f = await mkForm([{ name: 'mail', type: 'email', label: 'Mail' }]);
+        await setVal(f, 'mail', 'foo@');
+        check('premise: type="email" already reports typeMismatch for "foo@"',
+          field(f, 'mail')?.checkValidity() === false);
+        check('...and validate() still passes it, with no email rule in the schema',
+          f.validate().valid === true);
+      }
+
+      // ── decimal-mode range/step ARE adopted: they are b-input's own, from min/max the schema asked for ──
+      {
+        const f = await mkForm([
+          { name: 'weight', type: 'decimal', label: 'Weight', min: 0, max: 500 },
+          { name: 'ruled', type: 'decimal', label: 'Ruled', max: 100, rules: [{ type: 'max', value: 100 }] },
+        ]);
+        await setVal(f, 'weight', '9999');
+        const over = f.validate();
+        check('a decimal over its max ATTRIBUTE now fails validate() (it only blocked native submit before)',
+          over.valid === false && !!over.errors['weight']);
+        check('...and its value is kept in data, being a real number (only badInput is nulled)',
+          over.data['weight'] === '9999');
+        await setVal(f, 'weight', '81,8');
+        check('...and an in-range comma value passes', f.validate().valid === true);
+
+        // The duplicate-reporting question: a `max` RULE and a `max` ATTRIBUTE are two spellings of one
+        // constraint. The control is consulted only after the rules, so one field reports one message.
+        await setVal(f, 'ruled', '120,5');
+        const both = f.validate();
+        check('a max rule and a max attribute on one field report ONCE, with the rule\'s wording',
+          both.errors['ruled'] === 'Ruled must be at most 100');
+      }
+
+      // ── what still belongs to `required`, and to nobody else ──
+      {
+        const f = await mkForm([{ name: 'rate', type: 'percent', label: 'Rate', rules: [{ type: 'required' }] }]);
+        await setVal(f, 'rate', '');
+        const res = f.validate();
+        check('blank reports `required` and nothing else (one message, the schema\'s)',
+          Object.keys(res.errors).length === 1 && res.errors['rate'] === 'Rate is required');
+        check('...and blank is not treated as badInput, so data keeps the empty string',
+          res.data['rate'] === '');
+      }
+
+      // `valueMissing` is the one exclusion that is NOT just "required already covers it". Required
+      // returns before the control is consulted, so adopting the flag would be a no-op almost
+      // everywhere — except here, where the two genuinely disagree: b-form's emptiness test counts
+      // `false` as a filled value, so an unchecked required checkbox passes its rule and never reaches
+      // the control, while the control reports valueMissing. Pinned as-is: a real, pre-existing gap
+      // that this change deliberately does not close, because closing it starts blocking forms that
+      // have always submitted.
+      {
+        const f = await mkForm([{ name: 'agree', type: 'checkbox', label: 'Agree', required: true }]);
+        check('premise: an unchecked required checkbox reports ITSELF invalid',
+          field(f, 'agree')?.checkValidity() === false);
+        check('...and validate() still passes it — a known b-form gap, left alone here on purpose',
+          f.validate().valid === true);
+      }
+
+      // Found while building the above, and fixed alongside it: a field emptied by the user must STAY
+      // empty across a re-render. `b-input` restored `this._value || this.attr('value')`, so `''` fell
+      // through to the schema-declared value — and re-renders arrive from ordinary things, dropping the
+      // `error` attribute here among them. The old text sprang back into the box, `required` did not
+      // fire, and the form saved the value the user had just deleted.
+      {
+        const f = await mkForm([{ name: 'rate', type: 'percent', label: 'Rate', value: '20', rules: [{ type: 'required' }] }]);
+        check('a schema-declared value is still shown initially', innerOf(f, 'rate')?.value === '20');
+        await setVal(f, 'rate', 'abc');
+        check('a junk value over a schema-declared one is refused', f.validate().valid === false);
+        await setVal(f, 'rate', '');
+        check('clearing a field with a declared value leaves the box empty across the re-render',
+          innerOf(f, 'rate')?.value === '');
+        const res = f.validate();
+        check('...so validate() reports required instead of collecting the resurrected value',
+          res.valid === false && res.errors['rate'] === 'Rate is required');
+      }
+
+      // A disabled field is barred from constraint validation natively; b-form disables fields for
+      // `readonly` / `disabled` / `field.disabled`, so its junk must not block the form either.
+      {
+        const f = await mkForm([{ name: 'weight', type: 'decimal', label: 'Weight' }]);
+        await setVal(f, 'weight', 'abc');
+        check('premise: the junk fails while the field is enabled', f.validate().valid === false);
+        f.setFieldDisabled('weight', true);
+        await settle();
+        check('a DISABLED field\'s badInput does not block the form (willValidate is honoured)',
+          f.validate().valid === true);
+      }
+
+      // Nested groups: the verdict has to land on the dot-path, and the null has to reach into the branch.
+      {
+        const f = await mkForm([
+          { name: 'inner', label: 'Inner', children: [{ name: 'rate', type: 'percent', label: 'Rate' }] },
+        ]);
+        await setVal(f, 'inner.rate', 'abc');
+        const res = f.validate();
+        check('a nested field reports under its dot-path', res.valid === false && !!res.errors['inner.rate']);
+        check('...and the null lands inside the nested branch, not as a flat key',
+          (res.data['inner'] as Record<string, unknown>)['rate'] === null && !('inner.rate' in res.data));
+      }
 
       host.remove();
     }

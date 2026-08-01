@@ -64,6 +64,32 @@ const report = await page.evaluate(async () => {
   return { perSection, total, empties, tokenGroups: groups };
 });
 
+// Each smoke suite reports `[playground] <name>: N/M passed`, then one `<name> PASS|FAIL <check>` line
+// per check. WAIT for all of it rather than trusting a fixed sleep — twice now the sleep has been the
+// thing under test:
+//   - when backport-smoke grew past the sleep budget it stopped reporting AT ALL, which reads as green,
+//     because a suite that never ran leaves no FAIL lines to grep;
+//   - and the per-check lines arrive AFTER their own summary, so grepping for FAIL the moment the
+//     summary lands found none of them and reported "0 failing" over a 223/224 suite.
+// So: wait for every summary, then wait for every suite's detail lines to be all in, and take the
+// verdict from the summary counts, which cannot race.
+const SUITES = [
+  'backport-smoke', 'bare-smoke', 'description-smoke',
+  'form-assoc-smoke', 'ribbon-overflow-smoke', 'ribbon-scaling-smoke',
+];
+const SUMMARY = /\] ([a-z-]+): (\d+)\/(\d+) passed/;
+const summaries = () => new Map(logs.flatMap((l) => {
+  const m = SUMMARY.exec(l);
+  return m && SUITES.includes(m[1]) ? [[m[1], { passed: +m[2], total: +m[3] }]] : [];
+}));
+const details = (suite) => logs.filter((l) => l.includes(`] ${suite} PASS `) || l.includes(`] ${suite} FAIL `)).length;
+const settled = () => {
+  const s = summaries();
+  return s.size === SUITES.length && SUITES.every((n) => details(n) >= s.get(n).total);
+};
+const deadline = Date.now() + 60_000;
+while (!settled() && Date.now() < deadline) await new Promise((r) => setTimeout(r, 200));
+
 console.log('=== Playground headless verification ===');
 console.log('Per-section component counts:', JSON.stringify(report.perSection));
 console.log('Total components rendered:', report.total);
@@ -71,6 +97,20 @@ console.log('Token groups:', report.tokenGroups);
 console.log('Components that rendered EMPTY (no shadow content, no note):', report.empties.length ? report.empties.join(', ') : '(none)');
 console.log('--- [playground] console messages ---');
 console.log(logs.length ? logs.join('\n') : '(none)');
+
+const final = summaries();
+const absent = SUITES.filter((s) => !final.has(s));
+const truncated = SUITES.filter((s) => final.has(s) && details(s) < final.get(s).total);
+const failedCount = [...final.values()].reduce((n, { passed, total }) => n + (total - passed), 0);
+const failedLines = logs.filter((l) => l.includes(' FAIL '));
+
+console.log('--- summary ---');
+for (const [name, { passed, total }] of final) console.log(`${name}: ${passed}/${total} passed`);
+if (absent.length) console.log(`SUITES THAT NEVER REPORTED: ${absent.join(', ')}`);
+if (truncated.length) console.log(`SUITES WHOSE DETAIL LINES DID NOT ALL ARRIVE: ${truncated.join(', ')}`);
+console.log(`Failing checks: ${failedCount}`);
+for (const l of failedLines) console.log(l.replace(/^\w+: \[playground\] /, '  '));
+if (absent.length || truncated.length || failedCount) process.exitCode = 1;
 
 await browser.close();
 server.close();

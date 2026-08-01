@@ -1570,6 +1570,11 @@ void (async () => {
   const passed = results.filter((r) => r.startsWith('PASS')).length;
   console.log(`[playground] backport-smoke: ${passed}/${results.length} passed`);
   for (const r of results) console.log(`[playground] backport-smoke ${r}`);
+
+  // i18n-message-smoke registers messages on the GLOBAL i18n singleton, which would change the English
+  // validation strings this suite asserts above ('Enter a number.', 'Rate is required'). `addMessages`
+  // cannot be undone, so that suite waits on this flag rather than racing us.
+  (window as unknown as { __backportSmokeDone?: boolean }).__backportSmokeDone = true;
 })();
 
 // Visible review moved to first-class gallery cards (b-sync-status + pg-device-demo) in app.ts.

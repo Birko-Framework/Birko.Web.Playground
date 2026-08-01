@@ -76,8 +76,12 @@ const report = await page.evaluate(async () => {
 const SUITES = [
   'backport-smoke', 'bare-smoke', 'description-smoke',
   'form-assoc-smoke', 'ribbon-overflow-smoke', 'ribbon-scaling-smoke',
+  // Serialises itself after backport-smoke (global i18n registration), so it always reports LAST.
+  'i18n-message-smoke',
 ];
-const SUMMARY = /\] ([a-z-]+): (\d+)\/(\d+) passed/;
+// `[a-z0-9-]+`, not `[a-z-]+`: a digit in a suite name (i18n-message-smoke) made the summary unmatchable,
+// so a fully green suite was reported as SUITES THAT NEVER REPORTED — a hard fail for a passing run.
+const SUMMARY = /\] ([a-z0-9-]+): (\d+)\/(\d+) passed/;
 const summaries = () => new Map(logs.flatMap((l) => {
   const m = SUMMARY.exec(l);
   return m && SUITES.includes(m[1]) ? [[m[1], { passed: +m[2], total: +m[3] }]] : [];

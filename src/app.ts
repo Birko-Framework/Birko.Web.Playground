@@ -21,6 +21,9 @@ if (new URLSearchParams(location.search).has('smoke')) {
   void import('./ribbon-overflow-smoke.js');
   // STORY-049 / TASK-099 — the scaling policy (parity with the C# original) and the rendered variants.
   void import('./ribbon-scaling-smoke.js');
+  // STORY-052 / TASK-137 — control-side validation messages resolve through i18n. Registers global
+  // translations, so it serialises itself after backport-smoke (which asserts them in English).
+  void import('./i18n-message-smoke.js');
 }
 
 // ── BMobileAppShell demo (EPIC-016 / TASK-049) ───────────────────────────────

@@ -196,8 +196,8 @@ class PgDescription extends HTMLElement {
         <div class="pgd-case">
           <p class="pgd-q">4 — Help-row colour legible in every shipped theme? Switch below and compare the
              help row against the error row and the label. Measured: AA in light / dark / neon / inverse,
-             3.77:1 in finstat (theme-token limit, shared with the label). (The switcher sets
-             <code>data-theme</code> on &lt;html&gt;, so it re-themes the whole gallery, not just this card.)</p>
+             3.77:1 in finstat (theme-token limit, shared with the label). (Same control as the one in the
+             header — it sets <code>data-theme</code> on &lt;html&gt;, so it re-themes the whole gallery.)</p>
           <div class="pgd-row" style="margin-bottom:.5rem">
             <b-segmented id="pgd-theme"></b-segmented>
           </div>
@@ -245,24 +245,9 @@ class PgDescription extends HTMLElement {
     this.querySelector('[data-act="err-off"]')?.addEventListener('click',
       () => field?.removeAttribute('error'));
 
-    // Theme switcher for case 4. The shipped themes are linked in index.html and each activates on a
-    // `data-theme` value on <html>; base/light is the absence of one.
-    type Seg = HTMLElement & { setOptions(o: { value: string; label: string }[]): void; value: string };
-    const theme = this.querySelector('#pgd-theme') as Seg | null;
-    if (theme) {
-      theme.setOptions([
-        { value: 'light', label: 'Light' },
-        { value: 'dark', label: 'Dark' },
-        { value: 'neon', label: 'Neon' },
-        { value: 'finstat', label: 'Finstat' },
-        { value: 'inverse', label: 'Inverse' },
-      ]);
-      theme.value = document.documentElement.getAttribute('data-theme') ?? 'light';
-      theme.addEventListener('change', (e) => {
-        const v = (e as CustomEvent<{ value?: string }>).detail?.value ?? 'light';
-        document.documentElement.setAttribute('data-theme', v);
-      });
-    }
+    // Theme switcher for case 4 — the same control the header carries, bound through the one setter so
+    // the two stay in step whichever you use.
+    bindThemeSwitcher(this.querySelector<Seg>('#pgd-theme'));
 
     // Options are data — set them imperatively, as a consumer would.
     type Opts = HTMLElement & { setOptions(o: { value: string; label: string }[]): void };
@@ -515,6 +500,51 @@ const CATEGORY_LABELS: Record<string, string> = {
   inputs: 'Inputs', layout: 'Layout', data: 'Data', feedback: 'Feedback', nav: 'Navigation', command: 'Command',
 };
 
+// ── Theme switch ─────────────────────────────────────────────────────────────
+// The shipped themes are linked in index.html and each activates on a `data-theme` value on <html>
+// (base/light is the :root block in tokens.css, i.e. no override). ONE setter owns the attribute, so
+// the header switcher, the description-card switcher and the token editor cannot disagree — everything
+// else binds through `bindThemeSwitcher` / `onThemeChange` rather than reading or writing the DOM.
+type Seg = HTMLElement & { setOptions(o: { value: string; label: string }[]): void; value: string };
+
+const PG_THEMES: { value: string; label: string }[] = [
+  { value: 'light', label: '☀ Light' },
+  { value: 'dark', label: '☾ Dark' },
+  { value: 'neon', label: '⚡ Neon' },
+  { value: 'finstat', label: '◆ Finstat' },
+  // Partial theme: surfaces/text only, brand colours inherit — shipped for SCOPED regions (dark header
+  // on a light page), not really a page theme. Offered here anyway because checking contrast under it
+  // is exactly what a gallery is for.
+  { value: 'inverse', label: '◐ Inverse' },
+];
+const THEME_KEY = 'pg-theme'; // mirrors the shell's `{storagePrefix}-theme` convention
+
+function activeTheme(): string {
+  return document.documentElement.getAttribute('data-theme') ?? 'light';
+}
+
+function setTheme(id: string): void {
+  if (activeTheme() === id) return;
+  document.documentElement.setAttribute('data-theme', id);
+  try { localStorage.setItem(THEME_KEY, id); } catch { /* storage disabled — the switch still works */ }
+  document.dispatchEvent(new CustomEvent('pg-theme', { detail: { value: id } }));
+}
+
+function onThemeChange(fn: (id: string) => void): void {
+  document.addEventListener('pg-theme', (e) => fn((e as CustomEvent<{ value: string }>).detail.value));
+}
+
+// Two-way bind for any b-segmented used as a theme switch. `.value` is a plain attribute setter (no
+// `change` re-emit), so echoing the event back into the control cannot loop.
+function bindThemeSwitcher(seg: Seg | null): void {
+  if (!seg) return;
+  seg.setOptions(PG_THEMES);
+  seg.value = activeTheme();
+  seg.addEventListener('change', (e) =>
+    setTheme((e as CustomEvent<{ value?: string }>).detail?.value ?? 'light'));
+  onThemeChange((id) => { if (seg.value !== id) seg.value = id; });
+}
+
 // ── App shell ────────────────────────────────────────────────────────────────
 function el<K extends keyof HTMLElementTagNameMap>(tag: K, cls?: string, html?: string): HTMLElementTagNameMap[K] {
   const n = document.createElement(tag);
@@ -531,6 +561,10 @@ function renderApp(root: HTMLElement): void {
         <span class="pg-sub">component gallery · live token editor</span>
       </div>
       <b-segmented id="pg-nav" class="pg-nav"></b-segmented>
+      <div class="pg-themes" title="Every shipped theme, applied to the whole gallery via data-theme on <html>. Inverse is a partial theme (surfaces only) meant for scoped regions.">
+        <span class="pg-themes-label">Theme</span>
+        <b-segmented id="pg-theme" label="Theme"></b-segmented>
+      </div>
       <div class="pg-actions">
         <b-button id="open-tokens" size="sm">🎨 Design tokens</b-button>
         <b-button id="open-export" size="sm" variant="primary">Generate CSS</b-button>
@@ -562,6 +596,7 @@ function renderApp(root: HTMLElement): void {
       </div>
     </b-modal>`;
   injectStyles();
+  requestAnimationFrame(() => bindThemeSwitcher(root.querySelector<Seg>('#pg-theme')));
   setupGallery(root);
   void initTokenEditor(root);
   reportMissing();
@@ -687,24 +722,33 @@ function reportMissing(): void {
 }
 
 // ── Token editor ─────────────────────────────────────────────────────────────
-const baseTokens = new Map<string, string>();    // name -> base value (from tokens.css :root)
-const edits = new Map<string, string>();         // name -> edited value
-const tokenGroups = new Map<string, string[]>(); // group label -> token names
+const baseTokens = new Map<string, string>();               // name -> base value (tokens.css :root)
+const themeTokens = new Map<string, Map<string, string>>(); // theme id -> the tokens THAT theme overrides
+const edits = new Map<string, string>();                    // name -> edited value
+const tokenGroups = new Map<string, string[]>();            // group label -> token names
 let exportMode = 'theme';
 let tokensBuilt = false;
+let tokenListEl: HTMLElement | null = null;
 const GROUP_ORDER = ['Color & surface', 'Typography', 'Spacing', 'Radius', 'Sizing', 'Shadow', 'Motion', 'Z-index', 'Other'];
 
 async function initTokenEditor(root: HTMLElement): Promise<void> {
   const listEl = root.querySelector<HTMLElement>('#token-list')!;
+  tokenListEl = listEl;
   const drawer = root.querySelector<HTMLElement & { open?: () => void }>('#tokens-drawer');
   const modal = root.querySelector<HTMLElement & { open?: () => void }>('#export-modal');
   try {
     const css = await (await fetch('css/tokens.css')).text();
-    parseRootTokens(css);
+    for (const [k, v] of parseTokenBlock(css, /:root\s*\{([\s\S]*?)\}/)) baseTokens.set(k, v);
     listEl.textContent = '';
   } catch (e) {
     listEl.textContent = `Could not load css/tokens.css (${(e as Error).message}). Run the build first.`;
   }
+  await loadThemeTokens();
+
+  // A theme change moves what "base" means for every token it overrides, so the rows have to be
+  // re-read — otherwise the drawer shows light's values while the page is dark. Only if already built
+  // (this costs the accordion's open/filter state, which is why it isn't done eagerly).
+  onThemeChange(() => { if (tokensBuilt) buildTokenAccordion(listEl); });
 
   const out = root.querySelector<HTMLElement>('#export-out')!;
   const placeholder = 'Edit a token, then Generate CSS…';
@@ -732,7 +776,7 @@ async function initTokenEditor(root: HTMLElement): Promise<void> {
   });
   root.querySelector('#export-btn')?.addEventListener('click', () => { out.textContent = generateCss(exportMode); });
   root.querySelector('#reset-btn')?.addEventListener('click', () => {
-    edits.clear(); applyTheme(); tokensBuilt = false; buildTokenAccordion(listEl); out.textContent = placeholder;
+    edits.clear(); applyTokenEdits(); tokensBuilt = false; buildTokenAccordion(listEl); out.textContent = placeholder;
   });
   root.querySelector('#copy-btn')?.addEventListener('click', () => {
     const t = out.textContent ?? '';
@@ -740,12 +784,31 @@ async function initTokenEditor(root: HTMLElement): Promise<void> {
   });
 }
 
-function parseRootTokens(css: string): void {
-  const root = css.match(/:root\s*\{([\s\S]*?)\}/);
-  if (!root) return;
+// Comments are stripped first: the block is matched up to its first `}`, and the theme files carry long
+// prose comments — one `}` inside one of them would silently truncate the token list.
+function parseTokenBlock(css: string, selector: RegExp): Map<string, string> {
+  const out = new Map<string, string>();
+  const block = css.replace(/\/\*[\s\S]*?\*\//g, '').match(selector);
+  if (!block) return out;
   const re = /(--b-[a-z0-9-]+)\s*:\s*([^;]+);/gi;
   let m: RegExpExecArray | null;
-  while ((m = re.exec(root[1])) !== null) baseTokens.set(m[1], m[2].trim());
+  while ((m = re.exec(block[1])) !== null) out.set(m[1], m[2].trim());
+  return out;
+}
+
+// Each alternate theme is a diff over :root, so its file holds only the tokens it changes.
+async function loadThemeTokens(): Promise<void> {
+  await Promise.all(PG_THEMES.filter((t) => t.value !== 'light').map(async (t) => {
+    try {
+      const css = await (await fetch(`css/themes/${t.value}.css`)).text();
+      themeTokens.set(t.value, parseTokenBlock(css, new RegExp(`\\[data-theme="${t.value}"\\]\\s*\\{([\\s\\S]*?)\\}`)));
+    } catch { /* theme CSS absent from this build — its tokens simply fall through to the base */ }
+  }));
+}
+
+/** What the token is worth in the ACTIVE theme, before any live edit. */
+function baseValue(name: string): string {
+  return themeTokens.get(activeTheme())?.get(name) ?? baseTokens.get(name) ?? '';
 }
 
 function isColor(v: string): boolean {
@@ -796,7 +859,7 @@ function buildTokenAccordion(container: HTMLElement): void {
 }
 
 function renderTokenRow(name: string): HTMLElement {
-  const base = baseTokens.get(name)!;
+  const base = baseValue(name);
   const current = edits.get(name) ?? base;
   const row = el('div', 'pg-token');
   row.dataset.name = name;
@@ -812,7 +875,7 @@ function renderTokenRow(name: string): HTMLElement {
   input.addEventListener('change', (e) => {
     const v = (e as CustomEvent<{ value?: string }>).detail?.value ?? '';
     if (v === base) edits.delete(name); else edits.set(name, v);
-    applyTheme();
+    applyTokenEdits();
   });
   row.appendChild(input);
   return row;
@@ -828,23 +891,27 @@ function applyFilter(container: HTMLElement, q: string): void {
   });
 }
 
-function applyTheme(): void {
+// Live edits layer ON TOP of the selected theme, so they must not own `data-theme` — an element has only
+// one, and claiming it (as this did) dropped the user back to light the moment they touched a token, and
+// let a theme switch wipe the edits. They get their own attribute instead: `:root[data-pg-edits]` is
+// (0,2,0) against the themes' `[data-theme="x"]` (0,1,0), and the block is last in <head> either way.
+function applyTokenEdits(): void {
   const style = document.getElementById('playground-theme')!;
   if (edits.size === 0) {
     style.textContent = '';
-    document.documentElement.removeAttribute('data-theme');
+    document.documentElement.removeAttribute('data-pg-edits');
     return;
   }
   const body = [...edits].map(([n, v]) => `  ${n}: ${v};`).join('\n');
-  style.textContent = `[data-theme="playground"] {\n${body}\n}`;
-  document.documentElement.setAttribute('data-theme', 'playground');
+  style.textContent = `:root[data-pg-edits] {\n${body}\n}`;
+  document.documentElement.setAttribute('data-pg-edits', '');
 }
 
 function generateCss(mode: string): string {
   if (edits.size === 0) return '/* No token edits — change a token, then Generate CSS. */';
   const body = [...edits].map(([n, v]) => `  ${n}: ${v};`).join('\n');
   const header =
-    `/* Birko.Web theme export — ${edits.size} token(s) changed from base.\n` +
+    `/* Birko.Web theme export — ${edits.size} token(s) changed from the "${activeTheme()}" base.\n` +
     (mode === 'theme'
       ? `   Drop into your app CSS, then: registerThemes([{ id: 'my-brand', label: 'My Brand', icon: '🎨' }]). */\n`
       : `   Drop into your app's :root (overrides the base tokens.css). */\n`);
@@ -862,6 +929,8 @@ function injectStyles(): void {
     .pg-brand { display:flex; flex-direction:column; line-height:1.2; }
     .pg-sub { color:var(--b-text-secondary,#888); font-size:.78rem; }
     .pg-nav { flex:1 1 auto; min-width:0; overflow-x:auto; }
+    .pg-themes { display:flex; align-items:center; gap:.4rem; flex:0 0 auto; }
+    .pg-themes-label { font-size:.68rem; letter-spacing:.06em; text-transform:uppercase; color:var(--b-text-secondary,#888); }
     .pg-actions { display:flex; gap:.4rem; margin-left:auto; }
     .pg-main { padding:1.25rem; }
     .pg-gallery { min-width:0; }

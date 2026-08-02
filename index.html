@@ -16,7 +16,13 @@
   <link rel="stylesheet" href="css/themes/inverse.css" />
   <link rel="manifest" href="/manifest.webmanifest" />
   <meta name="theme-color" content="#3b82f6" />
-  <!-- Live edits are applied into this block at runtime (data-theme="playground"). -->
+  <!-- Restore the last-picked theme BEFORE first paint. app.js is a module (deferred), so doing it there
+       would flash the light gallery first. Blocking + inline is the point; keep it tiny. -->
+  <script>
+    try { var t = localStorage.getItem('pg-theme'); if (t) document.documentElement.setAttribute('data-theme', t); } catch (e) { /* storage disabled */ }
+  </script>
+  <!-- Live token edits are applied into this block at runtime, under `data-pg-edits` on <html> — a
+       separate attribute from `data-theme`, so edits layer over the selected theme instead of replacing it. -->
   <style id="playground-theme"></style>
   <style>
     body { margin: 0; font-family: var(--b-font, system-ui, sans-serif); background: var(--b-bg-secondary, #f3f3f3); color: var(--b-text, #222); }

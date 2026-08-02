@@ -25,7 +25,18 @@ harness). Created in TASK-038 (EPIC-013 reference consumers).
 ## Conventions
 - The gallery is driven by a manifest (`src/catalogue.ts` when split out) so new `b-*` components don't silently go missing; keep it in sync with the `Birko.Web.Components` catalogue.
 - The token editor parses `wwwroot/css/tokens.css` at runtime so the editable token list stays in sync with the framework automatically.
-- Live edits write to the `#playground-theme` `[data-theme="playground"]` block; export emits only tokens that differ from the chosen base (clean diff, like `dark.css`/`neon.css`).
+- **One setter owns `data-theme`.** The header switcher, the description-card switcher and anything else
+  added later bind via `bindThemeSwitcher()` / `onThemeChange()` in `app.ts` — never by reading or writing
+  the attribute directly. Two controls writing it independently is how they silently drift apart. The pick
+  persists under the `pg-theme` localStorage key and is re-applied by a blocking inline script in
+  `index.html` (before first paint — a deferred module would flash the light gallery first).
+- **Live token edits are a layer, not a theme.** They write to the `#playground-theme` block under
+  `:root[data-pg-edits]` — a *separate* attribute from `data-theme`, because an element has only one
+  `data-theme` and the editor claiming it dropped the page back to light the moment a token was touched.
+  Specificity works out: `:root[data-pg-edits]` is (0,2,0) vs the themes' `[data-theme="x"]` (0,1,0).
+- The editor's "base" for a token is **the active theme's value**, not always light's — each theme file is
+  a diff over `:root`, so `baseValue()` falls back to `tokens.css` for anything the theme doesn't override.
+  Export emits only tokens that differ from that base (clean diff, like `dark.css`/`neon.css`).
 - No live network calls; this is a pure static frontend.
 
 ## Building / running

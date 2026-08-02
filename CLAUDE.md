@@ -62,6 +62,18 @@ gap by driving the same bundle at a **390px phone viewport** (overlay widths onl
 `max-width` cap), under **`data-theme="dark"`** (tint-vs-text contrast), and with **touch emulation** for
 `pointer: coarse` rules. Add a case here whenever a fix depends on viewport, theme, or input modality.
 
+It also owns the **shadow-depth** group (added 2026-08-02), which measures `--b-shadow-*` off rendered
+pixels in all five themes. Shadows have no DOM, no ARIA and no geometry, so `verify.mjs` and every in-page
+smoke suite are blind to them *by construction* — which is how `dark`/`neon`/`inverse` shipped without ever
+overriding `--b-shadow-xl`, leaving the level every overlay uses weaker than `--b-shadow`. Two rules for
+anything added there:
+- **Screenshot, then hand the PNG back into the page** and read it off a canvas. Real CSS rendering, and no
+  PNG decoder needed on the node side.
+- **Measure ink (delta summed down the column), not the deepest pixel.** Peak punishes a wide soft shadow:
+  finstat's `xl` is deliberately broad (`0 20px 70px -25px`) and reads as its deepest level while measuring
+  a *lower* peak than its `md`. Judging on peak would have "fixed" a token that was correct. And assert the
+  **ordering**, not absolute numbers — the scale being monotonic is the contract; the depth is decoration.
+
 Two things that make its results trustworthy, worth preserving in anything added to it:
 - **Assert the precondition, not just the outcome.** A `<dialog>` that never opened measures 0x0 and every
   geometry assertion passes vacuously; an emulation API that silently no-ops reports a desktop value as a

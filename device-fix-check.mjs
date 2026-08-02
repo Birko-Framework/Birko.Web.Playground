@@ -279,6 +279,90 @@ const inModal = await page.evaluate(async () => {
 check(`b-date-picker native field stays inside a size=sm modal on a phone (input ${inModal.input}px right ${inModal.inputRight}px vs card ${inModal.card}px right ${inModal.cardRight}px)`,
   inModal.inputRight <= inModal.cardRight);
 
+// ── 5. Shadow depth across every theme ────────────────────────────────────────────────────────────────
+// Why here: a shadow token is only wrong *in a theme*, which is exactly the blind spot this file exists
+// for. dark/neon/inverse had never overridden --b-shadow-xl, so the level every overlay uses (b-modal,
+// b-drawer, b-confirm-dialog, b-command-palette, b-tour) fell through to the light :root value and landed
+// WEAKER than --b-shadow four rungs below it. Nothing could see that: --b-shadow-* has no DOM, no ARIA and
+// no geometry, so verify.mjs and every in-page smoke suite are blind to it by construction. It has to be
+// measured off rendered pixels.
+//
+// The metric is INK — the delta summed down the column below the box — not the single deepest pixel. Peak
+// alone punishes a wide, soft shadow: finstat's xl is deliberately broad and diffuse (0 20px 70px -25px)
+// and reads as the theme's deepest level to the eye while measuring a lower peak than its md. Ink credits
+// spread and depth together, and it is the ordering, not the absolute number, that is the contract.
+const THEMES = ['light', 'dark', 'neon', 'finstat', 'inverse'];
+const LEVELS = ['--b-shadow-sm', '--b-shadow', '--b-shadow-md', '--b-shadow-lg', '--b-shadow-xl'];
+const SW = 140, SH = 90, GAP = 90, TOP = 80;
+
+// Screenshot the page, then hand the PNG back INTO it and read pixels off a canvas. Real CSS rendering
+// rather than a re-implementation of the blur, and no PNG decoder needed on the node side.
+const sampleStage = async () => {
+  const uri = `data:image/png;base64,${await page.screenshot({ encoding: 'base64' })}`;
+  return page.evaluate(async (uri, LEVELS, SW, SH, GAP, TOP) => {
+    const img = new Image();
+    await new Promise((res) => { img.onload = res; img.src = uri; });
+    const cv = document.createElement('canvas');
+    cv.width = img.width; cv.height = img.height;
+    const ctx = cv.getContext('2d', { willReadFrequently: true });
+    ctx.drawImage(img, 0, 0);
+    const px = (x, y) => [...ctx.getImageData(Math.round(x), Math.round(y), 1, 1).data].slice(0, 3);
+    const bg = px(10, img.height - 10);                       // stage background, clear of every swatch
+    const dev = (p) => Math.max(...p.map((c, k) => Math.abs(c - bg[k])));
+
+    const levels = LEVELS.map((lv, i) => {
+      const cx = Math.round(GAP + i * (SW + GAP) + SW / 2);
+      let ink = 0, peak = 0;
+      for (let dy = 1; dy <= 60; dy++) { const d = dev(px(cx, TOP + SH + dy)); ink += d; peak = Math.max(peak, d); }
+      return { lv, ink, peak };
+    });
+    // What separates a real b-card from the page: surface step, 1px border and shadow together. dark and
+    // inverse set --b-bg-secondary == --b-bg-elevated, so their cards have NO surface step and the border
+    // carries the whole job — measured as legible as light's, but nothing else would notice if it stopped.
+    const card = document.querySelector('#shadow-stage b-card')?.getBoundingClientRect();
+    let edge = 0;
+    if (card) for (let dy = -6; dy <= 6; dy++) edge = Math.max(edge, dev(px(card.x + card.width / 2, card.y + dy)));
+    return { levels, edge, stageBg: `rgb(${bg.join(',')})` };
+  }, uri, LEVELS, SW, SH, GAP, TOP);
+};
+
+await load('light', { width: 1200, height: 460, deviceScaleFactor: 1 });
+await page.evaluate((LEVELS, SW, SH, GAP, TOP) => {
+  const stage = document.createElement('div');
+  stage.id = 'shadow-stage';
+  stage.style.cssText = 'position:fixed; inset:0; z-index:99999; background:var(--b-bg-secondary);';
+  stage.innerHTML = LEVELS.map((lv, i) => `
+    <div style="position:absolute; left:${GAP + i * (SW + GAP)}px; top:${TOP}px; width:${SW}px; height:${SH}px;
+      background:var(--b-bg); border-radius:8px; box-shadow:var(${lv});"></div>`).join('')
+    + `<b-card style="position:absolute; left:${GAP}px; top:${TOP + SH + 120}px; width:260px;">card</b-card>`;
+  document.body.appendChild(stage);
+}, LEVELS, SW, SH, GAP, TOP);
+await new Promise((r) => setTimeout(r, 400));
+
+// Precondition: a stage that never rendered measures 0 everywhere and every ordering assertion below
+// would pass vacuously — the same trap as a <dialog> that never opened.
+const lightStage = await sampleStage();
+check(`premise: the shadow stage renders and the levels are non-zero (ink ${lightStage.levels.map((l) => l.ink).join('/')} on ${lightStage.stageBg})`,
+  lightStage.levels.every((l) => l.ink > 0));
+
+for (const theme of THEMES) {
+  await page.evaluate((t) => document.documentElement.setAttribute('data-theme', t), theme);
+  await new Promise((r) => setTimeout(r, 200));
+  const { levels, edge } = await sampleStage();
+
+  const inks = levels.map((l) => l.ink);
+  const inverted = levels.slice(1).map((l, i) => (l.ink < levels[i].ink ? `${levels[i].lv} > ${l.lv}` : null)).filter(Boolean);
+  check(`${theme}: shadow scale rises sm -> xl (ink ${inks.join(' < ')})${inverted.length ? ` — INVERTED: ${inverted.join(', ')}` : ''}`,
+    inverted.length === 0);
+
+  // xl is the overlay level; on a dark page it is the one that silently fell back to light's value.
+  const xl = levels.at(-1);
+  check(`${theme}: --b-shadow-xl is the deepest level and reads (ink ${xl.ink}, peak ${xl.peak})`,
+    xl.ink === Math.max(...inks) && xl.peak >= 6);
+
+  check(`${theme}: a b-card is delineated from the page (edge delta ${edge})`, edge >= 8);
+}
+
 check(`no page errors during the run (${pageErrors.length})`, pageErrors.length === 0);
 if (pageErrors.length) for (const e of pageErrors) console.log(`  PAGEERROR: ${e}`);
 

@@ -1,14 +1,14 @@
 // EPIC-002 web backport smoke — exercises the new Birko.Web.Core APIs in a real browser via the
 // playground's headless verify (verify.mjs surfaces `[playground]` console logs + page errors).
 // This is how the framework's frontend backports are verified (no in-framework unit runner).
-import { parseDecimal, getFormatter, createWakeLockManager, createAudioCue, MirrorStore, readThrough, readWindowThrough, syncWindow, inWindow, define, registerServiceWorker, I18n, signal, setPersistPrefix, SyncManager, Store, unwrapList, apiErrorMessage, ApiClient } from 'birko-web-core';
+import { parseDecimal, getFormatter, createWakeLockManager, createAudioCue, MirrorStore, readThrough, readWindowThrough, syncWindow, inWindow, createListMirror, readAllClassifiedThrough, peekList, define, registerServiceWorker, I18n, signal, setPersistPrefix, SyncManager, Store, unwrapList, apiErrorMessage, ApiClient } from 'birko-web-core';
 import { BSyncStatus, type SyncSource } from 'birko-web-components/feedback';
 import { BTreeMenu, BRibbon, type RibbonTab } from 'birko-web-components/nav';
 import { BMarkdownEditor } from 'birko-web-components/inputs';
 import { BPagination, BKanban, BDataTable, BChart, niceScale, tickIntervalsForHeight, formatTick } from 'birko-web-components/data';
 import { confirm as dlgConfirm } from 'birko-web-components/dialogs';
 import { BCard } from 'birko-web-components/layout';
-import { BMobileAppShell, type Surface } from 'birko-web-shell';
+import { BMobileAppShell, BasePage, type Surface } from 'birko-web-shell';
 import { getVisibleOptions, hasPermission, resolveModuleFromHash, createEntitySearchProvider } from 'birko-web-shell';
 
 void (async () => {
@@ -159,6 +159,112 @@ void (async () => {
 
       await dated.clear();
       await byDay.clear();
+    }
+
+    // TASK-116 — the classified collection read (createListMirror / readAllClassifiedThrough / peekList).
+    //
+    // The behaviour under test is the one `readAllThrough` CANNOT express: it returns `T[]`, so a device that
+    // has never synced and an account with nothing recorded both answer `[]`. Any screen that says something
+    // about emptiness then tells one of them something false. The distinction is only detectable because the
+    // cache is one wrapper row — an entity-keyed store has nowhere to record "a fetch succeeded and returned
+    // nothing" — which is why the mirror factory and the read ship together.
+    {
+      interface Item { id: string; v: number }
+      const list = createListMirror<Item>({ dbName: 'pg_classified_smoke', storeName: 'rows' });
+      await list.clear();
+
+      // Never synced: NOT an empty list.
+      const cold = await readAllClassifiedThrough<Item>({
+        fetch: async () => ({ ok: false, status: 0, data: null }), mirror: list,
+      });
+      check('never synced reads as unavailable, not as empty', cold.state === 'unavailable');
+      check('peekList is undefined before anything is cached', (await peekList(list)) === undefined);
+
+      // A successful read caches and reports its source.
+      const online = await readAllClassifiedThrough<Item>({
+        fetch: async () => ({ ok: true, status: 200, data: [{ id: 'a', v: 1 }] }), mirror: list,
+      });
+      check('server read is loaded/server', online.state === 'loaded' && online.source === 'server');
+      check('server read returns its items', online.state === 'loaded' && online.items.length === 1);
+
+      // Offline afterwards: the cache answers, and says so.
+      const offline = await readAllClassifiedThrough<Item>({
+        fetch: async () => ({ ok: false, status: 0, data: null }), mirror: list,
+      });
+      check('offline after a sync is loaded/mirror', offline.state === 'loaded' && offline.source === 'mirror');
+      check('peekList returns the cached items without a fetch', (await peekList(list))?.length === 1);
+
+      // THE case the whole primitive exists for: a successful read of an EMPTY collection must stay a real
+      // answer offline — "nothing recorded", not "never synced".
+      await readAllClassifiedThrough<Item>({
+        fetch: async () => ({ ok: true, status: 200, data: [] }), mirror: list,
+      });
+      const emptyOffline = await readAllClassifiedThrough<Item>({
+        fetch: async () => ({ ok: false, status: 0, data: null }), mirror: list,
+      });
+      check('a synced-but-empty list stays loaded offline (NOT unavailable)',
+        emptyOffline.state === 'loaded' && emptyOffline.items.length === 0);
+      check('peekList distinguishes synced-empty ([]) from never-synced (undefined)',
+        Array.isArray(await peekList(list)));
+
+      // A transient server error must not make a synced device claim it never synced.
+      const flaky = await readAllClassifiedThrough<Item>({
+        fetch: async () => ({ ok: false, status: 500, data: null }), mirror: list,
+      });
+      check('a 500 with a cached row falls back to the mirror, not to unavailable',
+        flaky.state === 'loaded' && flaky.source === 'mirror');
+
+      // A thrown fetch (hard offline) behaves as a miss, not an exception.
+      const threw = await readAllClassifiedThrough<Item>({
+        fetch: async () => { throw new Error('network'); }, mirror: list,
+      });
+      check('a thrown fetch falls back to the mirror', threw.state === 'loaded' && threw.source === 'mirror');
+
+      // The key override exists ONLY so an existing cache can be adopted — a different key must read as a
+      // different (never-synced) store rather than silently sharing rows.
+      const adopted = createListMirror<Item>({ dbName: 'pg_classified_smoke', storeName: 'rows', key: 'legacy' });
+      const adoptedRead = await readAllClassifiedThrough<Item>({
+        fetch: async () => ({ ok: false, status: 0, data: null }), mirror: adopted,
+      });
+      check('a mirror on a different key does not see the default key row',
+        adoptedRead.state === 'unavailable');
+
+      await list.clear();
+    }
+
+    // TASK-122 — `hidden` must survive a page's own `display` rule.
+    //
+    // The UA's [hidden] rule and a class selector share specificity (0,1,0), and a page's styles are
+    // concatenated AFTER BasePage's, so source order hands the win to the page. This shipped a real defect:
+    // a form field the code believed was hidden stayed on screen, and a four-week date range was recorded as
+    // one day with a success message. The assertion is on COMPUTED display — an attribute check was green all
+    // the way through that bug, which is exactly why it survived to a device.
+    {
+      class PgHiddenPage extends BasePage {
+        static get styles(): string {
+          // The shape that caused it: an author display rule on a class, after the base styles.
+          return super.styles + ' .field { display: flex; }';
+        }
+        protected renderContent(): string {
+          return '<div class="field" id="pg-plain">plain</div>'
+            + '<div class="field" id="pg-hidden" hidden>hidden</div>';
+        }
+      }
+      customElements.define('pg-hidden-page', PgHiddenPage);
+
+      const page = document.createElement('pg-hidden-page');
+      document.body.appendChild(page);
+      await new Promise((r) => setTimeout(r, 0));
+
+      const root = (page as HTMLElement).shadowRoot;
+      const plain = root?.getElementById('pg-plain');
+      const hidden = root?.getElementById('pg-hidden');
+      check('premise: the page display rule applies to a plain element',
+        !!plain && getComputedStyle(plain).display === 'flex');
+      check('an element marked hidden computes to display:none despite the page rule',
+        !!hidden && getComputedStyle(hidden).display === 'none');
+
+      page.remove();
     }
 
     // TASK-037 — <b-sync-status> chip bound to a fake SyncSource (headless is online, so we exercise

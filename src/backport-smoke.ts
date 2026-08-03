@@ -1669,6 +1669,29 @@ void (async () => {
 
       host.remove();
     }
+
+    // WorkoutTracker TASK-129 — a DECLARATION guard, deliberately not a reproduction.
+    //
+    // The defect is a `vh`-sized body under BCoreAppShell's `dvh` :host, which on Android Chrome in a tab
+    // makes the body exactly the URL-bar height (measured 56px) taller than the shell — dead scroll that
+    // drags the bottom nav behind the system navigation bar. It CANNOT be reproduced headlessly: with no
+    // retractable browser chrome `vh == dvh`, so any assertion on a computed height or on scrollHeight
+    // passes whether or not the bug is present, at every viewport size. That is why this reads the shipped
+    // stylesheet text rather than calling getComputedStyle — the text is the only thing that still differs
+    // once the platform condition is gone. It catches a future edit dropping the line; it does not prove
+    // the defect fixed, and must not be reported as covering it.
+    {
+      const resetCss = (await (await fetch('css/reset.css')).text()).replace(/\/\*[\s\S]*?\*\//g, '');
+      const bodyDecls = /(?:^|\})\s*body\s*\{([^}]*)\}/.exec(resetCss)?.[1] ?? '';
+      const minHeights = [...bodyDecls.matchAll(/min-height\s*:\s*([^;]+)/g)].map((m) => m[1].trim());
+      check('reset.css body declares a dvh min-height (WorkoutTracker TASK-129)',
+        minHeights.some((v) => v.includes('dvh')));
+      // Ordering is part of the fix, not a style preference: a browser without dvh support drops the second
+      // declaration, so vh must come first or such a browser gets no body height at all.
+      check('...with the vh fallback declared first, so a no-dvh browser still gets a height',
+        minHeights.findIndex((v) => v.includes('vh') && !v.includes('dvh')) === 0
+        && minHeights.findIndex((v) => v.includes('dvh')) > 0);
+    }
   } catch (e) {
     check(`unexpected throw: ${(e as Error).message}`, false);
   }

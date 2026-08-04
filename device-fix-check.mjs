@@ -363,6 +363,44 @@ for (const theme of THEMES) {
   check(`${theme}: a b-card is delineated from the page (edge delta ${edge})`, edge >= 8);
 }
 
+// ── 6. b-segmented clears the 44 x 44 touch floor under a coarse pointer ──────────────────────────────
+// The floor itself is a framework fix, but for its first two months its ONLY regression test lived in a
+// consumer repo (Reps' layout-invariants family E). That is backwards for a shared component, and it cost
+// something concrete: the consumer's suite runs the `sk` locale, where every label is long enough to clear
+// the floor from padding alone, so the height-only version of the fix stayed green there while the English
+// "All" pill shipped at 36.6 x 44. This group measures the component directly, with a deliberately
+// SHORT label, so the framework can no longer ship the regression and wait for a consumer to notice.
+//
+// Both axes, because that is the criterion (Apple HIG / WCAG 2.1 SC 2.5.5 — not SC 2.5.8, which is 24 x 24).
+const segmentedUnder = async (pointer) => {
+  await emulatePointer(pointer);
+  return page.evaluate(async () => {
+    const el = document.createElement('b-segmented');
+    document.body.appendChild(el);
+    // "All" / "On" is the shape that fails: a short label leaves a padding-derived width under the floor.
+    el.setOptions([{ value: 'all', label: 'All' }, { value: 'thirty', label: '30 days' }]);
+    el.setAttribute('value', 'all');
+    await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+    const bs = [...el.shadowRoot.querySelectorAll('button')].map((b) => {
+      const r = b.getBoundingClientRect();
+      return { label: b.textContent.trim(), w: Math.round(r.width * 10) / 10, h: Math.round(r.height * 10) / 10 };
+    });
+    el.remove();
+    return bs;
+  });
+};
+const segCoarse = await segmentedUnder('coarse');
+const segFine = await segmentedUnder('fine');
+const worst = (bs, k) => Math.min(...bs.map((b) => b[k]));
+check(`b-segmented clears 44px in HEIGHT under pointer:coarse (narrowest ${worst(segCoarse, 'h')}px of ${segCoarse.map((b) => b.h).join('/')})`,
+  worst(segCoarse, 'h') >= 43.5);
+check(`b-segmented clears 44px in WIDTH under pointer:coarse — the "All" case (narrowest ${worst(segCoarse, 'w')}px of ${segCoarse.map((b) => `${b.label}=${b.w}`).join(' ')})`,
+  worst(segCoarse, 'w') >= 43.5);
+// The other half of the policy: this is a coarse-pointer rule, so a desktop toolbar must stay dense. A fix
+// that floored every pointer type would pass the two checks above and silently re-size every consumer.
+check(`b-segmented stays dense under pointer:fine — the rule is coarse-only (${segFine.map((b) => `${b.w}x${b.h}`).join(' ')})`,
+  worst(segFine, 'h') < 43.5);
+
 check(`no page errors during the run (${pageErrors.length})`, pageErrors.length === 0);
 if (pageErrors.length) for (const e of pageErrors) console.log(`  PAGEERROR: ${e}`);
 

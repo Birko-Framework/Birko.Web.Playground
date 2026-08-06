@@ -8,7 +8,7 @@ import { BMarkdownEditor } from 'birko-web-components/inputs';
 import { BPagination, BKanban, BDataTable, BChart, niceScale, tickIntervalsForHeight, formatTick } from 'birko-web-components/data';
 import { confirm as dlgConfirm } from 'birko-web-components/dialogs';
 import { BCard } from 'birko-web-components/layout';
-import { BMobileAppShell, BasePage, type Surface } from 'birko-web-shell';
+import { BMobileAppShell, BasePage, activeSurface, type Surface } from 'birko-web-shell';
 import { getVisibleOptions, hasPermission, resolveModuleFromHash, createEntitySearchProvider } from 'birko-web-shell';
 
 void (async () => {
@@ -283,6 +283,38 @@ void (async () => {
     const chipText = chip.shadowRoot?.querySelector('.chip')?.textContent ?? '';
     check('sync chip shows syncing count', !chip.hasAttribute('hidden') && chipText.includes('3'));
     chip.remove();
+
+    // TASK-150 — `Surface.alsoMatches`: a surface can claim a route outside its own subtree, for the nav
+    // highlight only. Found in Reps, whose exercise library sits at a top-level `/library` reached from the Plans
+    // surface: the exact-or-nested rule could not attribute it, so it fell to the root catch-all and every visit
+    // highlighted *Today*. Moving the route under `/plans` would have fixed it and broken existing deep links.
+    //
+    // Asserted here rather than in the framework repo because there is no in-framework JS unit runner — the same
+    // reason `readWindowThrough` et al. are checked in this file.
+    const navSurfaces: Surface[] = [
+      { id: 'home', route: '/', icon: '⌂', label: 'Home' },
+      { id: 'plans', route: '/plans', icon: '🗂', label: 'Plans', alsoMatches: ['/library'] },
+    ];
+    const claims = (hash: string) => activeSurface(hash, navSurfaces)?.id;
+    check('alsoMatches claims the sibling route', claims('#/library') === 'plans');
+    check('alsoMatches covers its subtree', claims('#/library/new') === 'plans'
+      && claims('#/library/abc-123') === 'plans');
+    check('the surface still owns its own route', claims('#/plans') === 'plans'
+      && claims('#/plans/new') === 'plans');
+    check('an unclaimed route still falls to the root', claims('#/somewhere-else') === 'home');
+    // A prefix that is not a path boundary must NOT match: `/librarian` is a different route entirely, and a naive
+    // `startsWith('/library')` would hand it to Plans.
+    check('alsoMatches does not match a mere string prefix', claims('#/librarian') === 'home');
+    // First match wins, in array order — deterministic rather than an error, since a duplicated claim is a
+    // highlight mistake and throwing would take the whole app down over one.
+    // The root surface is here to make the check falsifiable, not for realism: with only the two claimants the
+    // last-resort fallback is `surfaces[0]`, which is ALSO 'a', so the check passed with `alsoMatches` reverted
+    // and pinned nothing. With a root present the unfixed answer is 'root'.
+    check('a doubly-claimed route resolves to the earlier surface', activeSurface('#/library', [
+      { id: 'root', route: '/', label: 'R' },
+      { id: 'a', route: '/a', label: 'A', alsoMatches: ['/library'] },
+      { id: 'b', route: '/b', label: 'B', alsoMatches: ['/library'] },
+    ])?.id === 'a');
 
     // TASK-038 — BMobileAppShell: subclass with surfaces, mount, assert bottom-nav + active state.
     const surfaces: Surface[] = [

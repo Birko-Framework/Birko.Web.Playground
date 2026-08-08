@@ -401,6 +401,102 @@ check(`b-segmented clears 44px in WIDTH under pointer:coarse — the "All" case 
 check(`b-segmented stays dense under pointer:fine — the rule is coarse-only (${segFine.map((b) => `${b.w}x${b.h}`).join(' ')})`,
   worst(segFine, 'h') < 43.5);
 
+// ── 7. EVERY text-entry control in the catalogue clears the iOS 16px floor ────────────────────────────
+// This is the sweep TASK-126 asked for, and the reason it is a sweep rather than another patch: iOS zooming
+// a focused sub-16px control has now been fixed FOUR times in this library and its consumers — TASK-050 added
+// the `--b-input-font-size` token, TASK-085 covered the hand-rolled forms, TASK-107 the session surfaces, and
+// TASK-126 the searchable combobox. Every one of those fixed the controls that existed at the time. None
+// established that the whole catalogue sits above the floor, so the fifth instance was always going to arrive.
+//
+// The mechanism every escape shares is CSS specificity, not a missing token. `formControlSheet` bumps
+// `input, select, textarea` to max(16px, ...) under `@media (pointer: coarse)` — a bare element selector, at
+// (0,0,1). ANY rule that names a class or the host outranks it, inside that media query too:
+//   · `.combo-input { font-size: ... }` in b-select              → 12.25px (TASK-126, the reported defect)
+//   · `:host([size="sm"]) input` in the shared sheet             → 11.4px  (found by this sweep)
+//   · `:host([size="lg"]) input` in the shared sheet             → 14px    (found by this sweep — still under)
+//   · b-tag-input's own copies of the two size rules             → same
+// So a component author does not have to do anything unusual to opt out of the floor; writing an ordinary
+// size rule is enough. That is why the guard has to measure the rendered catalogue rather than review diffs.
+//
+// Deliberately NOT swept, with the reason, so the exclusions stop being rediscovered:
+//   · b-range / b-checkbox / b-radio / b-switch / b-segmented / b-option-group / b-button — not text entry;
+//     iOS zooms on focused TEXT input only. (b-segmented has its own floor: section 6, a touch-target rule.)
+//   · b-file-upload — its `input type=file` opens a system picker and is never focused for typing.
+//   · b-inline-edit — renders no field until activated; covered by the b-input case it delegates to.
+const TEXT_ENTRY_CASES = [
+  ['b-input', { label: 'L' }],
+  ['b-input', { label: 'L', type: 'decimal' }],
+  ['b-input', { label: 'L', type: 'number' }],
+  ['b-input', { label: 'L', size: 'sm' }],
+  ['b-input', { label: 'L', size: 'lg' }],
+  ['b-textarea', { label: 'L' }],
+  ['b-textarea', { label: 'L', size: 'sm' }],
+  ['b-select', { label: 'L' }],
+  ['b-select', { label: 'L', searchable: '' }],
+  ['b-select', { label: 'L', searchable: '', size: 'sm' }],
+  ['b-search-input', {}],
+  ['b-tag-input', { label: 'L' }],
+  ['b-tag-input', { label: 'L', size: 'sm' }],
+  // Its search field is rendered only when `searchable` AND the panel is open, so both are needed or the
+  // case measures nothing. That is not a defect in the component — it is the harness having to ask correctly.
+  ['b-multi-select', { label: 'L', searchable: '' }, { open: true }],
+  ['b-date-picker', { label: 'L', native: '' }],
+  ['b-date-range-picker', { label: 'L' }],
+  ['b-datetime-picker', { label: 'L' }],
+  ['b-time', { label: 'L' }],
+  ['b-color-picker', { label: 'L' }],
+  ['b-markdown-editor', { label: 'L' }],
+];
+
+const sweepTextEntry = async (pointer) => {
+  await emulatePointer(pointer);
+  return page.evaluate(async (cases) => {
+    // The same exclusions the consumer-side invariant uses: a control iOS never zooms into is not a finding.
+    const SKIP = new Set(['hidden', 'checkbox', 'radio', 'range', 'color', 'file', 'submit', 'button', 'reset']);
+    const out = [];
+    for (const [tag, attrs, opts = {}] of cases) {
+      const el = document.createElement(tag);
+      for (const [k, v] of Object.entries(attrs)) el.setAttribute(k, v);
+      document.body.appendChild(el);
+      await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+      if (opts.open) {
+        el.setOptions?.([{ value: 'a', label: 'A' }, { value: 'b', label: 'B' }]);
+        el.shadowRoot?.querySelector('.container')?.click();
+        await new Promise((r) => setTimeout(r, 120));
+      }
+      const label = tag + (attrs.searchable !== undefined ? '[searchable]' : '')
+        + (attrs.size ? `[size=${attrs.size}]` : '') + (attrs.type ? `[type=${attrs.type}]` : '');
+      const fields = [...(el.shadowRoot?.querySelectorAll('input, textarea, select') ?? [])]
+        .filter((f) => !SKIP.has(f.type));
+      // A component that renders no field measures nothing — which must not read as "measured and fine",
+      // the exact vacuity that let the combobox ship. Recorded as a size of 0 so it fails the floor loudly.
+      if (!fields.length) out.push({ label, field: 'NO FIELD RENDERED', size: 0 });
+      for (const f of fields) {
+        out.push({ label, field: f.tagName.toLowerCase() + (f.className ? `.${f.className}` : ''),
+          size: Math.round(parseFloat(getComputedStyle(f).fontSize) * 100) / 100 });
+      }
+      el.remove();
+    }
+    return out;
+  }, TEXT_ENTRY_CASES);
+};
+
+const coarseFields = await sweepTextEntry('coarse');
+const undersized = coarseFields.filter((f) => f.size < 16);
+// The full list is printed on every run, pass or fail: "which controls are covered" is the thing TASK-126
+// says gets rediscovered each time, and a number nobody prints is a number nobody can check.
+console.log(`\n  --- text-entry sweep under pointer:coarse (${coarseFields.length} fields) ---`);
+for (const f of coarseFields) console.log(`      ${f.size >= 16 ? ' ok ' : 'UNDER'} ${f.size}px  ${f.label} > ${f.field}`);
+check(`every text-entry control clears the iOS 16px floor under pointer:coarse `
+  + `(${coarseFields.length} measured, ${undersized.length} under: ${undersized.map((f) => `${f.label}=${f.size}px`).join(', ') || 'none'})`,
+  undersized.length === 0);
+// Same policy half as section 6: the floor is a coarse-pointer rule. If it leaked to every pointer, desktop
+// forms would silently grow, and the check above would still be green.
+const fineFields = await sweepTextEntry('fine');
+const fineBase = fineFields.find((f) => f.label === 'b-input' && f.field.startsWith('input'));
+check(`the floor stays coarse-only — a desktop b-input keeps the base size (${fineBase?.size}px)`,
+  fineBase != null && fineBase.size < 16);
+
 check(`no page errors during the run (${pageErrors.length})`, pageErrors.length === 0);
 if (pageErrors.length) for (const e of pageErrors) console.log(`  PAGEERROR: ${e}`);
 

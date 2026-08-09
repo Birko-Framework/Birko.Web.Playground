@@ -1702,6 +1702,94 @@ void (async () => {
       host.remove();
     }
 
+    // Symbio TASK-301 — b-chart's time axis was always a clock.
+    //
+    // `_formatTime` only ever produced HH:mm, mm:ss or HH:mm:ss; there was no date format at all. The
+    // axis was built for streaming charts (realTime.windowMs defaults to five minutes, where a clock
+    // tick is right), but ANY series with timestamp x values reuses it. A month of daily samples
+    // rendered as 02:00:00 · 16:25:13 · 06:50:26 — no date, and because time-of-day WRAPS the labels
+    // did not even read as increasing.
+    //
+    // Asserted off the RENDERED tick text rather than by calling a helper: `_timeFormatFor` is private,
+    // and the defect was what the user saw on the axis. X ticks are the `text-anchor="middle"`
+    // `.axis-label`s (the y ticks are the `end`-anchored ones).
+    {
+      const DAY = 86_400_000;
+      const chartHost = document.createElement('div');
+      chartHost.style.cssText = 'position:absolute;left:-9999px;width:600px;height:300px';
+      document.body.appendChild(chartHost);
+
+      const xLabels = async (spanMs: number, points: number, opts?: Record<string, unknown>) => {
+        const el = document.createElement('b-chart') as BChart;
+        el.style.cssText = 'width:600px;height:300px;display:block';
+        // `type` is an ATTRIBUTE, not a ChartOptions field — passing it to setOptions is silently
+        // ignored and you get the default bar renderer, whose thinned category labels look enough like
+        // an axis to fool an assertion. That is the same footgun this fix's own commit message flags
+        // about `xAxis: { type: 'time' }`, and it made the first version of these checks pass for the
+        // wrong reason: "no label is a clock" is trivially true of "0","3","6",…
+        el.setAttribute('type', 'line');
+        chartHost.appendChild(el);
+        const t0 = Date.UTC(2026, 6, 1, 2, 0, 0);   // fixed epoch: no Date.now() in an assertion
+        el.setOptions({ ...(opts ?? {}) } as never);
+        el.setData({
+          series: [{
+            id: 's', label: 'Stock',
+            data: Array.from({ length: points }, (_, i) => ({
+              x: t0 + (i / (points - 1)) * spanMs, y: 10 + i,
+            })),
+          }],
+        } as never);
+        await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+        const texts = [...(el.shadowRoot?.querySelectorAll('text.axis-label') ?? [])]
+          .filter((t) => t.getAttribute('text-anchor') === 'middle')
+          .map((t) => (t.textContent ?? '').trim())
+          .filter(Boolean);
+        el.remove();
+        return texts;
+      };
+
+      const CLOCK = /^\d{2}:\d{2}:\d{2}$/;
+      // Two digits, a locale separator, two digits — `07/19`, `19.07`. Deliberately NOT the exact
+      // pattern for one locale: the axis follows <html lang>, so pinning `MM/DD` would make this check
+      // a locale assertion rather than a format one.
+      const DATEISH = /^\d{2}[./-]\d{2}$/;
+
+      // The reported case: 30 daily samples.
+      const monthly = await xLabels(30 * DAY, 30);
+      check('b-chart: a month of daily samples produces axis labels at all', monthly.length > 0);
+      check('b-chart: ...and every tick is a DATE (the reported defect rendered them as clock times)',
+        monthly.length > 0 && monthly.every((l) => DATEISH.test(l)));
+      check('b-chart: ...so no tick is a bare wall-clock time',
+        monthly.every((l) => !CLOCK.test(l)));
+      check('b-chart: ...and the labels are distinct, so the axis reads as progressing',
+        new Set(monthly).size === monthly.length);
+
+      // Back-compat: the streaming window this axis was designed for must be untouched.
+      const streaming = await xLabels(5 * 60_000, 30);
+      check('b-chart: a 5-minute streaming window still labels HH:mm:ss',
+        streaming.length > 0 && streaming.every((l) => CLOCK.test(l)));
+
+      // An explicit timeFormat still wins — a streaming caller that says HH:mm:ss keeps it even on a
+      // span where the new default would disagree.
+      const forced = await xLabels(30 * DAY, 30, { realTime: { timeFormat: 'HH:mm:ss' } });
+      check('b-chart: an explicit realTime.timeFormat still overrides the span-aware default',
+        forced.length > 0 && forced.every((l) => CLOCK.test(l)));
+
+      // Multi-year, where dates alone would collide.
+      const multiYear = await xLabels(3 * 365 * DAY, 24);
+      check('b-chart: a multi-year span drops to month/year rather than colliding on dates',
+        multiYear.length > 0 && multiYear.every((l) => /^\d{2}[./-]\s?\d{4}$/.test(l))
+        && new Set(multiYear).size === multiYear.length);
+
+      // Within a single day the clock IS the useful axis, but seconds are noise — this is the rung
+      // that changed for existing charts, so it is asserted rather than left implicit.
+      const intraDay = await xLabels(6 * 3_600_000, 30);
+      check('b-chart: a several-hour span labels HH:mm — no date, and no seconds',
+        intraDay.length > 0 && intraDay.every((l) => /^\d{2}:\d{2}$/.test(l)));
+
+      chartHost.remove();
+    }
+
     // WorkoutTracker TASK-129 — a DECLARATION guard, deliberately not a reproduction.
     //
     // The defect is a `vh`-sized body under BCoreAppShell's `dvh` :host, which on Android Chrome in a tab

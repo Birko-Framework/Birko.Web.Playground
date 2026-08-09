@@ -607,6 +607,69 @@ void (async () => {
       host.remove();
     }
 
+    // ── 9b. A control BARRED from constraint validation reports clean, it does not throw ──
+    //
+    // Symbio TASK-368. `_syncValidity` mirrored the inner control's ValidityState AND its
+    // validationMessage into `setValidity`. A disabled control (or one inside a disabled fieldset)
+    // KEEPS its validity flags but reports an EMPTY validationMessage, and that exact pair is what
+    // setValidity rejects: "The second argument should not be empty if one or more flags in the first
+    // argument are true." So a required-and-disabled control threw on every render.
+    //
+    // Latent for as long as nothing disabled a form containing a required field — then BaseCrudPage's
+    // _openEdit started doing precisely that to stop the edit modal accepting input it was about to
+    // discard, and every CRUD page reached the state.
+    //
+    // The `required` matters: without it no flag is set, the message is legitimately empty, and
+    // setValidity is happy. A check on a disabled-but-optional control passes with the fix reverted.
+    {
+      const errors: string[] = [];
+      const onError = (e: ErrorEvent) => errors.push(e.message);
+      window.addEventListener('error', onError);
+
+      // Every control the report named, plus a plain b-input. Which ones actually reach the throw
+      // depends on whether the inner control reports a flag while barred, and that differs per control
+      // — so the set is asserted rather than one representative picked.
+      const f = form(
+        '<b-input name="who" required disabled></b-input>',
+        '<b-select name="pick" required disabled></b-select>',
+        '<b-select name="pick2" searchable required disabled></b-select>',
+        '<b-textarea name="note" required disabled></b-textarea>',
+      );
+      await settle();
+      const controls = [...f.querySelectorAll('b-input,b-select,b-textarea')] as (HTMLElement & {
+        checkValidity?: () => boolean;
+      })[];
+      // Force another render, since the throw was on the sync path.
+      controls.forEach((el) => el.setAttribute('label', 'X'));
+      await settle();
+
+      check('a required + disabled control renders without throwing',
+        errors.length === 0);
+      check('...for every control shape, not just the one that was reported',
+        errors.length === 0 && controls.length === 4);
+      check('...and each reports itself valid, because a barred control is not being validated',
+        controls.every((el) => el.checkValidity?.() === true));
+      check('...so the form they sit in is submittable', f.checkValidity() === true);
+
+      window.removeEventListener('error', onError);
+      f.remove();
+    }
+
+    // ── 9c. Re-enabling restores the real verdict — the guard must not latch ──
+    {
+      const f = form('<b-input name="who2" required disabled></b-input>');
+      await settle();
+      const el = f.querySelector('b-input') as HTMLElement & { checkValidity?: () => boolean };
+      check('barred control starts valid', el.checkValidity?.() === true);
+
+      el.removeAttribute('disabled');
+      await settle();
+      check('once enabled, an empty required control is invalid again',
+        el.checkValidity?.() === false);
+      check('...and the form becomes unsubmittable with it', f.checkValidity() === false);
+      f.remove();
+    }
+
     // ── 10. Not-in-a-form is still fine (the overwhelmingly common case) ──
     {
       const el = document.createElement('b-input') as HTMLElement & { value: string; form?: HTMLFormElement | null };

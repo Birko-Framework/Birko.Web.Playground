@@ -1,7 +1,7 @@
 // EPIC-002 web backport smoke — exercises the new Birko.Web.Core APIs in a real browser via the
 // playground's headless verify (verify.mjs surfaces `[playground]` console logs + page errors).
 // This is how the framework's frontend backports are verified (no in-framework unit runner).
-import { parseDecimal, getFormatter, createWakeLockManager, createAudioCue, MirrorStore, readThrough, readWindowThrough, syncWindow, inWindow, createListMirror, readAllClassifiedThrough, peekList, define, registerServiceWorker, I18n, signal, setPersistPrefix, SyncManager, Store, unwrapList, apiErrorMessage, ApiClient } from 'birko-web-core';
+import { parseDecimal, getFormatter, createWakeLockManager, createAudioCue, MirrorStore, readThrough, readWindowThrough, syncWindow, inWindow, createListMirror, readAllClassifiedThrough, peekList, define, registerServiceWorker, I18n, signal, setPersistPrefix, SyncManager, Store, unwrapList, apiErrorMessage, ApiClient, DEFAULT_REQUEST_TIMEOUT_MS } from 'birko-web-core';
 import { BSyncStatus, type SyncSource } from 'birko-web-components/feedback';
 import { BTreeMenu, BRibbon, type RibbonTab } from 'birko-web-components/nav';
 import { BMarkdownEditor } from 'birko-web-components/inputs';
@@ -1700,6 +1700,115 @@ void (async () => {
       }
 
       host.remove();
+    }
+
+    // Reps device pass 2026-08-10 — `fetch` has no timeout of its own, so a connection that dies
+    // without sending a reset (a sleeping phone, a dropped tunnel, a captive portal black-holing the
+    // packet) leaves the promise pending for the life of the page. It cost a fully-performed workout:
+    // the write never reached the server, was never queued — queueing keys off a REJECTED fetch — and
+    // every caller awaiting it wedged, because an `await` on a never-settling promise does not continue,
+    // not even into a `finally`.
+    //
+    // Every assertion below is bounded by `settleWithin`, deliberately: the regression these guard
+    // against is a promise that never settles, so an unbounded `await` would hang the whole suite
+    // instead of reporting a failure.
+    {
+      const realFetch2 = globalThis.fetch;
+      const PENDING = Symbol('pending');
+      const settleWithin = async <R>(p: Promise<R>, ms: number): Promise<R | typeof PENDING> =>
+        Promise.race([p, new Promise<typeof PENDING>((r) => setTimeout(() => r(PENDING), ms))]);
+
+      /** Rejects the way a real aborted `fetch` does, so the client sees a genuine AbortError. */
+      const abortError = () => new DOMException('The operation was aborted.', 'AbortError');
+      const onAbort = (signal: AbortSignal | null | undefined, reject: (e: unknown) => void) => {
+        if (!signal) return;
+        if (signal.aborted) reject(abortError());
+        else signal.addEventListener('abort', () => reject(abortError()));
+      };
+
+      try {
+        // (a) The reported case: a fetch that never answers.
+        globalThis.fetch = ((_u: unknown, init?: RequestInit) =>
+          new Promise((_res, rej) => onAbort(init?.signal, rej))) as typeof fetch;
+        const stalled = new ApiClient({ baseUrl: 'https://smoke.test', timeoutMs: 60 });
+        const rStalled = await settleWithin(stalled.get('items'), 1500);
+        check('ApiClient: a fetch that never answers still SETTLES (it used to hang forever)',
+          rStalled !== PENDING);
+        check('...and reports the network-error envelope, so a read falls back to its mirror',
+          rStalled !== PENDING && rStalled.ok === false && rStalled.status === 0);
+
+        // (b) A write must reach the outbox. It keys off the failure envelope, so this is the check that
+        // actually corresponds to the lost workout.
+        let queued = '';
+        const writer = new ApiClient({
+          baseUrl: 'https://smoke.test',
+          timeoutMs: 60,
+          onQueueAction: async () => { queued = 'queued-1'; return queued; },
+        });
+        const rWrite = await settleWithin(
+          writer.post('sets', { reps: 5 }, { moduleId: 'workout', action: 'create', entity: 'set' } as never),
+          1500,
+        );
+        check('ApiClient: a timed-out WRITE is queued for retry rather than lost',
+          rWrite !== PENDING && queued === 'queued-1');
+
+        // (c) The half the original fix missed: headers arrive, the BODY stalls. The abort then throws
+        // from `response.json()`, not from `fetch`, and the body-read catch used to swallow it as a
+        // malformed body — returning the response's own `ok: true, status: 200, data: null`. A write
+        // would be reported as SUCCEEDED and never queued: the same silent wrong answer, one layer down.
+        globalThis.fetch = ((_u: unknown, init?: RequestInit) => Promise.resolve({
+          ok: true,
+          status: 200,
+          headers: new Headers({ 'Content-Type': 'application/json' }),
+          json: () => new Promise((_res, rej) => onAbort(init?.signal, rej)),
+          text: () => new Promise((_res, rej) => onAbort(init?.signal, rej)),
+        } as unknown as Response)) as typeof fetch;
+
+        const bodyStall = new ApiClient({ baseUrl: 'https://smoke.test', timeoutMs: 60 });
+        const rBody = await settleWithin(bodyStall.get('items'), 1500);
+        check('ApiClient: a stalled response BODY settles too', rBody !== PENDING);
+        check('...and is reported as a failure, NOT as ok:200 with null data',
+          rBody !== PENDING && rBody.ok === false && rBody.status === 0);
+
+        let queuedBody = '';
+        const bodyWriter = new ApiClient({
+          baseUrl: 'https://smoke.test',
+          timeoutMs: 60,
+          onQueueAction: async () => { queuedBody = 'queued-2'; return queuedBody; },
+        });
+        const rBodyWrite = await settleWithin(
+          bodyWriter.post('sets', { reps: 5 }, { moduleId: 'workout', action: 'create', entity: 'set' } as never),
+          1500,
+        );
+        check('ApiClient: a write whose body stalls is queued, not reported as saved',
+          rBodyWrite !== PENDING && queuedBody === 'queued-2');
+
+        // (d) Back-compat: a prompt response must not be disturbed by the timer.
+        globalThis.fetch = (async () => new Response(JSON.stringify({ id: 7 }), {
+          status: 200, headers: { 'Content-Type': 'application/json' },
+        })) as typeof fetch;
+        const fast = new ApiClient({ baseUrl: 'https://smoke.test', timeoutMs: 60 });
+        const rFast = await settleWithin(fast.get<{ id: number }>('items'), 1500);
+        check('ApiClient: a fast response is untouched by the timeout',
+          rFast !== PENDING && rFast.ok === true && (rFast.data as { id: number })?.id === 7);
+
+        // (e) The documented escape hatch: `timeoutMs: 0` restores the old unbounded behaviour. Asserted
+        // as still-PENDING, which is the only observable difference — and it is why this check must be
+        // bounded rather than awaited.
+        globalThis.fetch = ((_u: unknown, init?: RequestInit) =>
+          new Promise((_res, rej) => onAbort(init?.signal, rej))) as typeof fetch;
+        const disabled = new ApiClient({ baseUrl: 'https://smoke.test', timeoutMs: 0 });
+        const rDisabled = await settleWithin(disabled.get('items'), 300);
+        check('ApiClient: timeoutMs 0 disables the timeout, as documented', rDisabled === PENDING);
+
+        // (f) The default is a contract — a consumer relying on the outbox should not have it retuned
+        // silently. Generous on purpose: firing early is cheap because an abort is handled like any
+        // network error.
+        check('ApiClient: the default request timeout is 20s',
+          DEFAULT_REQUEST_TIMEOUT_MS === 20_000);
+      } finally {
+        globalThis.fetch = realFetch2;
+      }
     }
 
     // Symbio TASK-301 — b-chart's time axis was always a clock.

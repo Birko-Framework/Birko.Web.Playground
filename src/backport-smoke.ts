@@ -1,7 +1,7 @@
 // EPIC-002 web backport smoke — exercises the new Birko.Web.Core APIs in a real browser via the
 // playground's headless verify (verify.mjs surfaces `[playground]` console logs + page errors).
 // This is how the framework's frontend backports are verified (no in-framework unit runner).
-import { parseDecimal, getFormatter, createWakeLockManager, createAudioCue, MirrorStore, readThrough, readWindowThrough, syncWindow, inWindow, createListMirror, readAllClassifiedThrough, peekList, define, registerServiceWorker, I18n, signal, setPersistPrefix, SyncManager, Store, unwrapList, apiErrorMessage, ApiClient, DEFAULT_REQUEST_TIMEOUT_MS } from 'birko-web-core';
+import { parseDecimal, getFormatter, createWakeLockManager, createAudioCue, MirrorStore, readThrough, readWindowThrough, syncWindow, inWindow, createListMirror, readAllClassifiedThrough, peekList, define, registerServiceWorker, I18n, signal, setPersistPrefix, SyncManager, ActionQueue, Store, unwrapList, apiErrorMessage, appendQuery, ApiClient, DEFAULT_REQUEST_TIMEOUT_MS } from 'birko-web-core';
 import { BSyncStatus, type SyncSource } from 'birko-web-components/feedback';
 import { BTreeMenu, BRibbon, type RibbonTab } from 'birko-web-components/nav';
 import { BMarkdownEditor } from 'birko-web-components/inputs';
@@ -1865,6 +1865,137 @@ void (async () => {
           seen.endsWith('api/warehouse/stock?warehouseConfigId=W1'));
       } finally {
         globalThis.fetch = realFetch3;
+      }
+    }
+
+    // Review of the ApiClient timeout fix (2026-08-11) — `SyncManager` had no name for an outbox entry
+    // whose write had ALREADY LANDED, so it read two such cases as something else:
+    //
+    //   DELETE -> 404   the row is gone, which is what the action wanted. Read as `failed`, and since
+    //                   getPending() includes `failed` it was re-sent on EVERY sync forever.
+    //   POST   -> 409   for a create whose id the client minted, the clash IS this create. Read as a
+    //                   conflict: the user was told their SUCCESSFUL write conflicted, and the entry
+    //                   wedged, because a `conflict` entry is neither retried nor removed by anything.
+    //
+    // Grounded in two consumers that fail in opposite directions. Reps mints guids client-side and its
+    // server answers 409 on a pinned-id clash (MapOwnedCrud + RequestGuid), so it hit the false conflict.
+    // Symbio mints no ids at all, so its 409s are business rules only — which is exactly why `idPinned`
+    // is declared per write instead of inferred: draining a business 409 would discard a rejected write
+    // and report success.
+    //
+    // A real ActionQueue on real IndexedDB, one database per case so nothing leaks between them.
+    {
+      const realFetch4 = globalThis.fetch;
+      let dbSeq = 0;
+      /** Enqueue one action, replay it against a stubbed status, and report what the queue did. */
+      const replay = async (
+        method: 'POST' | 'PUT' | 'DELETE',
+        status: number,
+        metadata: Record<string, unknown>,
+        options: Record<string, unknown> = {},
+      ) => {
+        dbSeq += 1;
+        const queue = new ActionQueue({ dbName: `pg_replay_${dbSeq}` });
+        await queue.clear();
+        await queue.enqueue({ method, path: 'things', body: { a: 1 }, metadata: metadata as never });
+        globalThis.fetch = (async () => new Response(JSON.stringify({ error: 'x' }), {
+          status, headers: { 'Content-Type': 'application/json' },
+        })) as typeof fetch;
+        const mgr = new SyncManager(queue, new ApiClient({ baseUrl: 'https://smoke.test' }), options);
+        let conflicted = false;
+        const un = mgr.onConflict(() => { conflicted = true; });
+        const result = await mgr.sync();
+        un();
+        mgr.dispose();
+        const left = await queue.getAll();
+        return { result, conflicted, left };
+      };
+
+      try {
+        const meta = { moduleId: 'm', description: 'd' };
+
+        // (a) The retry-forever loop. Symbio filed this symptom as TASK-151 on 2026-07-08 and scoped the
+        // cause out of it ("409 conflict resolution — already handled"), so it is still open.
+        const delGone = await replay('DELETE', 404, meta);
+        check('SyncManager: a DELETE whose row is already gone DRAINS from the outbox',
+          delGone.left.length === 0 && delGone.result.synced === 1);
+        check('...and is not reported as a failure to retry', delGone.result.failed === 0);
+
+        // (b) The false conflict, and the reason `idPinned` exists.
+        const pinned = await replay('POST', 409, { ...meta, idPinned: true });
+        check('SyncManager: an id-pinned POST whose id already exists DRAINS (the create landed)',
+          pinned.left.length === 0 && pinned.result.synced === 1);
+        check('...and raises NO conflict against a write that succeeded', !pinned.conflicted);
+
+        // (c) Back-compat, and the check that matters most: an UNPINNED POST's 409 is a business
+        // rejection (Symbio's whole 409 surface, and Reps' slot-uniqueness rule). Draining it would
+        // discard a rejected write and report success. Green before and after the fix, by design.
+        const unpinned = await replay('POST', 409, meta);
+        check('SyncManager: an unpinned POST 409 is still a CONFLICT, not drained (back-compat)',
+          unpinned.conflicted && unpinned.result.conflicts === 1 && unpinned.left.length === 1);
+
+        // (d) PUT is deliberately excluded even when pinned: it is addressed by id already, so its 409 is
+        // about the entity's STATE — an optimistic-concurrency clash for the user to resolve.
+        const putPinned = await replay('PUT', 409, { ...meta, idPinned: true });
+        check('SyncManager: a PUT 409 stays a conflict even when idPinned is set',
+          putPinned.conflicted && putPinned.left.length === 1);
+
+        // (e) A DELETE that fails for a reason a retry COULD fix must still be retried.
+        const delErr = await replay('DELETE', 500, meta);
+        check('SyncManager: a DELETE 500 is still a failure to retry (back-compat)',
+          delErr.result.failed === 1 && delErr.left.length === 1);
+
+        // (f) The escape hatch, for an API whose 404-on-DELETE means something else.
+        const delOptOut = await replay('DELETE', 404, meta, { deleteMissingIsApplied: false });
+        check('SyncManager: deleteMissingIsApplied false restores the previous behaviour',
+          delOptOut.result.failed === 1 && delOptOut.left.length === 1);
+      } finally {
+        globalThis.fetch = realFetch4;
+      }
+    }
+
+    // Review follow-up — the '?'-vs-'&' separator now has ONE home. `SseClient` and `WsClient` had been
+    // choosing it correctly for as long as `ApiClient.get` had been getting it wrong, three lines apart in
+    // the same folder; `appendQuery` is that shared idiom, and it is exported so a consumer can reuse it.
+    check('appendQuery: first param gets "?"', appendQuery('api/x', 'a=1') === 'api/x?a=1');
+    check('appendQuery: a later param gets "&"', appendQuery('api/x?a=1', 'b=2') === 'api/x?a=1&b=2');
+    check('appendQuery: an empty query leaves the url untouched', appendQuery('api/x?a=1', '') === 'api/x?a=1');
+
+    // Review follow-up — a timed-out POST-REFRESH RETRY was the one completely silent failure in the
+    // client: that catch returned the status-0 envelope with no log at all, while the other two arms
+    // distinguish "Timed out" from "Network error". It shares ONE timeout budget with the first fetch and
+    // the refresh call, so it is the arm most likely to be the one that aborts. The log is the only
+    // observable, so the log is what this asserts.
+    {
+      const realFetch5 = globalThis.fetch;
+      const realError = console.error;
+      const logged: string[] = [];
+      try {
+        console.error = (...args: unknown[]) => { logged.push(String(args[0])); };
+        let call = 0;
+        globalThis.fetch = ((_u: unknown, init?: RequestInit) => {
+          call += 1;
+          if (call === 1) return Promise.resolve(new Response('', { status: 401 }));
+          // The retry stalls until the client's own timer aborts it.
+          return new Promise((_res, rej) => {
+            const s = init?.signal;
+            s?.addEventListener('abort', () => rej(new DOMException('aborted', 'AbortError')));
+          });
+        }) as typeof fetch;
+        const refresher = new ApiClient({
+          baseUrl: 'https://smoke.test',
+          timeoutMs: 60,
+          getToken: () => 'stale',
+          onRefreshToken: async () => 'fresh',
+        });
+        const resp = await refresher.get('items');
+        check('ApiClient: a timed-out post-refresh retry still reports the network envelope',
+          resp.ok === false && resp.status === 0);
+        check('ApiClient: ...and SAYS it timed out on the retry, instead of failing silently',
+          logged.some((m) => m.includes('Timed out') && m.includes('post-refresh retry')));
+      } finally {
+        console.error = realError;
+        globalThis.fetch = realFetch5;
       }
     }
 

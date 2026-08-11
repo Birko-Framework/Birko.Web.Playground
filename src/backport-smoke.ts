@@ -1811,6 +1811,63 @@ void (async () => {
       }
     }
 
+    // Symbio (2026-07-31) — `ApiClient.get` appended '?' UNCONDITIONALLY, so a caller combining an
+    // endpoint that already carries a query string with `params` produced two '?' in one URL:
+    //
+    //   api/warehouse/stock?warehouseConfigId=W1  +  { page: '1', pageSize: '20' }
+    //   -> api/warehouse/stock?warehouseConfigId=W1?page=1&pageSize=20
+    //
+    // The server then read warehouseConfigId as `W1?page=1` and returned an EMPTY list — no error, no
+    // console message, no failing request, just a list rendering "No data" while the API has rows. Latent
+    // for as long as no caller did both; it became reachable from ordinary code the moment b-data-table
+    // began sending page/pageSize on a first load, and a scoped list endpoint carrying its own query
+    // string is a normal pattern.
+    //
+    // Guarded consumer-side only until now (Symbio's list-paging-consistency-check spec), which is the
+    // wrong home for it: the defect is in a shared client, so every other consumer was unguarded.
+    //
+    // Asserted by parsing the URL the client actually handed to `fetch` and reading the inline param back
+    // BY NAME — that is the server's own reading of it, and it is the assertion the defect fails. A
+    // '?'-count check alone would bless any fix that merely relocated the corruption.
+    {
+      const realFetch3 = globalThis.fetch;
+      let seen = '';
+      try {
+        globalThis.fetch = ((u: unknown) => {
+          seen = String(u);
+          return Promise.resolve(new Response('[]', {
+            status: 200, headers: { 'Content-Type': 'application/json' },
+          }));
+        }) as typeof fetch;
+        const qc = new ApiClient({ baseUrl: 'https://smoke.test' });
+
+        // (a) The reported case. `warehouseConfigId` must read back as exactly 'W1'.
+        await qc.get('api/warehouse/stock?warehouseConfigId=W1', { page: '1', pageSize: '20' });
+        const scoped = new URL(seen).searchParams;
+        check('ApiClient.get: an inline query param survives added params intact',
+          scoped.get('warehouseConfigId') === 'W1');
+        check('...and the added params are readable alongside it, not swallowed by the inline one',
+          scoped.get('page') === '1' && scoped.get('pageSize') === '20');
+        check('...so the URL carries exactly one "?"',
+          (seen.match(/\?/g) ?? []).length === 1);
+
+        // (b) Back-compat: a bare path still gets its '?'. Green on a revert, by design.
+        await qc.get('api/warehouse/stock', { page: '2' });
+        check('ApiClient.get: a path with no query string still gets "?" (back-compat)',
+          new URL(seen).searchParams.get('page') === '2' && (seen.match(/\?/g) ?? []).length === 1);
+
+        // (c) Back-compat: neither an absent nor an empty params object may append a separator.
+        await qc.get('api/warehouse/stock?warehouseConfigId=W1');
+        check('ApiClient.get: absent params leave the path untouched (back-compat)',
+          seen.endsWith('api/warehouse/stock?warehouseConfigId=W1'));
+        await qc.get('api/warehouse/stock?warehouseConfigId=W1', {});
+        check('ApiClient.get: an empty params object appends no separator (back-compat)',
+          seen.endsWith('api/warehouse/stock?warehouseConfigId=W1'));
+      } finally {
+        globalThis.fetch = realFetch3;
+      }
+    }
+
     // Symbio TASK-301 — b-chart's time axis was always a clock.
     //
     // `_formatTime` only ever produced HH:mm, mm:ss or HH:mm:ss; there was no date format at all. The

@@ -593,6 +593,7 @@ function renderApp(root: HTMLElement): void {
       <div slot="footer" class="pg-modal-foot">
         <b-button id="export-btn" size="sm" variant="primary">Generate CSS</b-button>
         <b-button id="copy-btn" size="sm">Copy</b-button>
+        <b-button id="download-btn" size="sm">Download .css</b-button>
       </div>
     </b-modal>`;
   injectStyles();
@@ -781,6 +782,22 @@ async function initTokenEditor(root: HTMLElement): Promise<void> {
   root.querySelector('#copy-btn')?.addEventListener('click', () => {
     const t = out.textContent ?? '';
     if (t && t !== placeholder) void navigator.clipboard?.writeText(t);
+  });
+  // TASK-038's export criterion is "copy-to-clipboard AND download-as-file"; only the clipboard half
+  // existed. Named for the shape being exported, because the two are wired differently at the far end:
+  // a theme block needs registerThemes(), a :root override needs only to be linked.
+  root.querySelector('#download-btn')?.addEventListener('click', () => {
+    const t = out.textContent ?? '';
+    if (!t || t === placeholder) return;
+    const url = URL.createObjectURL(new Blob([t], { type: 'text/css' }));
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = exportMode === 'theme' ? 'my-brand.theme.css' : 'tokens.override.css';
+    a.click();
+    // Revoked on the next turn rather than immediately. DEFENSIVE, not witnessed: a synchronous revoke
+    // is documented to be able to beat a click the browser has not yet processed, but no empty file was
+    // observed here — said explicitly so nobody later reads this as a fixed bug.
+    setTimeout(() => URL.revokeObjectURL(url), 0);
   });
 }
 

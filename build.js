@@ -1,48 +1,20 @@
 // esbuild build for the Birko.Web Playground.
 //
 // Bundles src/app.ts -> wwwroot/app.js and copies the Birko base CSS into wwwroot/css/.
-// Resolves the Birko.Web.* TypeScript sources from the Birko\Web bucket WITHOUT a
-// machine-specific path: prefer the BIRKO_SRC env var (CI/Docker), otherwise walk up
-// from this file to find the Birko/Web checkout. Safe to commit.
+//
+// The checkout resolution and the alias map live in `birko-src.mjs`, because this is no longer their
+// only caller: `theme-roundtrip-check.mjs` bundles a throwaway consumer against the same sources, and
+// two copies of "which Birko\Web am I testing?" is how they come to disagree.
 import * as esbuild from 'esbuild';
 import { existsSync, mkdirSync, copyFileSync, readdirSync, unlinkSync, writeFileSync } from 'node:fs';
-import { dirname, resolve } from 'node:path';
-import { fileURLToPath, pathToFileURL } from 'node:url';
-
-const __dirname = dirname(fileURLToPath(import.meta.url));
-
-function resolveBirkoWeb() {
-  const env = process.env.BIRKO_SRC;
-  if (env) return env.replace(/[\\/]+$/, '').replaceAll('\\', '/');
-  for (let d = __dirname; d !== dirname(d); d = dirname(d)) {
-    const c = resolve(d, 'Birko/Web');
-    if (existsSync(resolve(c, 'Birko.Web.Core'))) return c.replaceAll('\\', '/');
-  }
-  throw new Error('Cannot locate Birko\\Web. Set the BIRKO_SRC env var to its path.');
-}
+import { resolve } from 'node:path';
+import { pathToFileURL } from 'node:url';
+import { resolveBirkoWeb, birkoAliases } from './birko-src.mjs';
 
 const BIRKO_SRC = resolveBirkoWeb();
 const WATCH = process.argv.includes('--watch');
 
-const aliases = {
-  'birko-web-core':          `${BIRKO_SRC}/Birko.Web.Core/src/index.ts`,
-  'birko-web-core/base':     `${BIRKO_SRC}/Birko.Web.Core/src/base/index.ts`,
-  'birko-web-core/state':    `${BIRKO_SRC}/Birko.Web.Core/src/state/index.ts`,
-  'birko-web-core/http':     `${BIRKO_SRC}/Birko.Web.Core/src/http/index.ts`,
-  'birko-web-core/router':   `${BIRKO_SRC}/Birko.Web.Core/src/router/index.ts`,
-  'birko-web-core/i18n':     `${BIRKO_SRC}/Birko.Web.Core/src/i18n/index.ts`,
-  'birko-web-core/offline':  `${BIRKO_SRC}/Birko.Web.Core/src/offline/index.ts`,
-  'birko-web-components':            `${BIRKO_SRC}/Birko.Web.Components/src/index.ts`,
-  'birko-web-components/inputs':     `${BIRKO_SRC}/Birko.Web.Components/src/inputs/index.ts`,
-  'birko-web-components/layout':     `${BIRKO_SRC}/Birko.Web.Components/src/layout/index.ts`,
-  'birko-web-components/data':       `${BIRKO_SRC}/Birko.Web.Components/src/data/index.ts`,
-  'birko-web-components/feedback':   `${BIRKO_SRC}/Birko.Web.Components/src/feedback/index.ts`,
-  'birko-web-components/dialogs':     `${BIRKO_SRC}/Birko.Web.Components/src/dialogs/index.ts`,
-  'birko-web-components/nav':        `${BIRKO_SRC}/Birko.Web.Components/src/nav/index.ts`,
-  'birko-web-components/command':    `${BIRKO_SRC}/Birko.Web.Components/src/command/index.ts`,
-  'birko-web-components/form-utils': `${BIRKO_SRC}/Birko.Web.Components/src/form-utils/index.ts`,
-  'birko-web-shell':       `${BIRKO_SRC}/Birko.Web.Shell/src/index.ts`,
-};
+const aliases = birkoAliases(BIRKO_SRC);
 
 // Copy base + theme CSS so <link> and the token editor can read them.
 function copyCss() {

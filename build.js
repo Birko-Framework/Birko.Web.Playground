@@ -5,7 +5,7 @@
 // machine-specific path: prefer the BIRKO_SRC env var (CI/Docker), otherwise walk up
 // from this file to find the Birko/Web checkout. Safe to commit.
 import * as esbuild from 'esbuild';
-import { existsSync, mkdirSync, copyFileSync, readdirSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, copyFileSync, readdirSync, unlinkSync, writeFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
@@ -58,13 +58,19 @@ function copyCss() {
   }
 }
 
+// A published build minifies and drops the source map; a local one does neither, because the whole
+// point of the playground is that you can read the framework source you are looking at in devtools.
+// Set by the Pages workflow, never by `npm run build`/`watch`.
+const RELEASE = process.argv.includes('--release') || process.env.BIRKO_RELEASE === '1';
+
 const options = {
   entryPoints: ['src/app.ts'],
   bundle: true,
   outfile: 'wwwroot/app.js',
   format: 'esm',
   target: 'es2022',
-  sourcemap: true,
+  minify: RELEASE,
+  sourcemap: !RELEASE,
   alias: aliases,
   loader: { '.ts': 'ts', '.css': 'text' },
   logLevel: 'info',
@@ -106,6 +112,10 @@ if (WATCH) {
   console.log(`watching src/ … (BIRKO_SRC=${BIRKO_SRC})`);
 } else {
   await esbuild.build(options);
+  // A release build emits no map, so a stale one from an earlier dev build would otherwise be
+  // deployed: 2.1mb of dead weight that also hands a reader the un-minified source they were not
+  // offered.
+  if (RELEASE) { try { unlinkSync('wwwroot/app.js.map'); } catch { /* absent is fine */ } }
   writeServiceWorker(swOptions);
   console.log(`✓ Built + service worker (BIRKO_SRC=${BIRKO_SRC})`);
 }

@@ -583,6 +583,33 @@ function renderApp(root: HTMLElement): void {
       </div>
     </header>
     <main class="pg-main">
+      <!-- Published at https://birko-framework.github.io/Birko.Web.Playground/, so most people who
+           open this have never seen Birko.Web and arrive with no context: the gallery alone looks
+           like a component dump. This says what they are looking at and where to get it, in the
+           three sentences somebody will actually read. Dismissed state is per-browser and
+           deliberately NOT synced anywhere — a returning developer should not see it, a first-time
+           visitor always should. -->
+      <section id="pg-intro" class="pg-intro" hidden>
+        <div class="pg-intro-body">
+          <h1 class="pg-intro-title">Birko.Web — the component library, running</h1>
+          <p class="pg-intro-text">
+            Every <code>b-*</code> component below is the real thing, built from source: flip its
+            attributes and watch the live instance react. <strong>Design tokens</strong> opens the
+            <code>--b-*</code> set and restyles the whole gallery as you edit; <strong>Generate
+            CSS</strong> hands you a paste-ready theme file from whatever you changed.
+          </p>
+          <p class="pg-intro-text pg-intro-muted">
+            Framework-agnostic custom elements — no build step required to consume them, and no
+            runtime dependency to take on.
+          </p>
+          <div class="pg-intro-links">
+            <a class="pg-intro-link" href="https://github.com/Birko-Framework/Birko.Web">Birko.Web source</a>
+            <a class="pg-intro-link" href="https://github.com/Birko-Framework/Birko.Framework/wiki/Web-UI">Usage guide</a>
+            <a class="pg-intro-link" href="https://github.com/Birko-Framework/Birko.Web.Playground">This playground</a>
+          </div>
+        </div>
+        <button id="pg-intro-close" class="pg-intro-close" aria-label="Dismiss introduction">&times;</button>
+      </section>
       <div id="pg-gallery" class="pg-gallery"></div>
     </main>
 
@@ -775,6 +802,21 @@ async function initTokenEditor(root: HTMLElement): Promise<void> {
   mode?.addEventListener('change', (e) => { exportMode = (e as CustomEvent<{ value?: string }>).detail?.value ?? 'theme'; });
 
   // Tokens live in a drawer; build the accordion the first time it opens.
+  // The intro is shown unless this browser dismissed it before. Rendered `hidden` and revealed here
+  // rather than the reverse, so a browser with storage disabled — where the read throws — gets the
+  // banner rather than a flash of it disappearing, and a reader who has dismissed it never sees it
+  // appear at all.
+  const intro = root.querySelector<HTMLElement>('#pg-intro');
+  if (intro) {
+    let dismissed = false;
+    try { dismissed = localStorage.getItem('pg-intro-dismissed') === '1'; } catch { /* storage disabled */ }
+    if (!dismissed) intro.hidden = false;
+    root.querySelector('#pg-intro-close')?.addEventListener('click', () => {
+      intro.hidden = true;
+      try { localStorage.setItem('pg-intro-dismissed', '1'); } catch { /* storage disabled: it comes back next load */ }
+    });
+  }
+
   root.querySelector('#open-tokens')?.addEventListener('click', () => {
     if (baseTokens.size && !tokensBuilt) buildTokenAccordion(listEl);
     drawer?.open?.();
@@ -954,6 +996,18 @@ function injectStyles(): void {
   const s = document.createElement('style');
   s.id = 'pg-styles';
   s.textContent = `
+    .pg-intro { display:flex; gap:1rem; align-items:flex-start; margin:0 0 1rem; padding:1rem 1.1rem;
+      background:var(--b-bg,#fff); border:1px solid var(--b-border,#ddd); border-radius:var(--b-radius,8px); }
+    .pg-intro-title { margin:0 0 .45rem; font-size:1.05rem; }
+    .pg-intro-text { margin:0 0 .5rem; max-width:64ch; line-height:1.5; font-size:.88rem; }
+    .pg-intro-muted { color:var(--b-text-secondary,#888); }
+    .pg-intro code { background:var(--b-bg-secondary,#f3f3f3); padding:.05rem .3rem; border-radius:4px; font-size:.85em; }
+    .pg-intro-links { display:flex; flex-wrap:wrap; gap:.9rem; margin-top:.2rem; font-size:.85rem; }
+    .pg-intro-link { color:var(--b-primary,#3b82f6); text-decoration:none; }
+    .pg-intro-link:hover { text-decoration:underline; }
+    .pg-intro-close { flex:0 0 auto; background:none; border:0; font-size:1.4rem; line-height:1;
+      cursor:pointer; color:var(--b-text-secondary,#888); padding:0 .2rem; }
+    .pg-intro-close:hover { color:var(--b-text,#222); }
     .pg-header { display:flex; align-items:center; gap:1rem; padding:.6rem 1rem; background:var(--b-bg,#fff); border-bottom:1px solid var(--b-border,#ddd); position:sticky; top:0; z-index:10; flex-wrap:wrap; }
     .pg-brand { display:flex; flex-direction:column; line-height:1.2; }
     .pg-sub { color:var(--b-text-secondary,#888); font-size:.78rem; }

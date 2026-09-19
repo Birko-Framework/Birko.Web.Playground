@@ -3,7 +3,15 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Birko.Web Playground</title>
+  <title>Birko.Web Playground — component gallery &amp; live design-token editor</title>
+  <!-- This is published, so it gets linked and shared: without a description a search result or a
+       chat unfurl shows a slice of the page's markup instead. og:* is what Slack/Teams/Discord read;
+       the plain description is what search engines do. -->
+  <meta name="description" content="Every Birko.Web b-* component running live, with a design-token editor that restyles the whole gallery as you type and exports a paste-ready theme CSS file." />
+  <meta property="og:title" content="Birko.Web Playground" />
+  <meta property="og:description" content="The Birko.Web component library, running — flip attributes on live instances, edit design tokens, export a theme." />
+  <meta property="og:type" content="website" />
+  <meta property="og:url" content="https://birko-framework.github.io/Birko.Web.Playground/" />
   <link rel="stylesheet" href="css/reset.css" />
   <link rel="stylesheet" href="css/tokens.css" />
   <!-- The shipped opt-in themes. build.js already copies css/themes/ into wwwroot, but these were never
@@ -14,12 +22,12 @@
   <link rel="stylesheet" href="css/themes/neon.css" />
   <link rel="stylesheet" href="css/themes/finstat.css" />
   <link rel="stylesheet" href="css/themes/inverse.css" />
-  <!-- Relative, not "/manifest.webmanifest": this app is published to a project GitHub Page at
-       /Birko.Web.Playground/, where a root-absolute href 404s. -->
   <!-- Without this the browser asks for /favicon.ico on every load, which 404s — noise in the
        console and in the server log, and on a published page it is the first thing a visitor's
        devtools shows them. icon.svg is emitted by build.js beside this file. -->
   <link rel="icon" href="icon.svg" type="image/svg+xml" />
+  <!-- Relative, not "/manifest.webmanifest": this app is published to a project GitHub Page at
+       /Birko.Web.Playground/, where a root-absolute href 404s. -->
   <link rel="manifest" href="manifest.webmanifest" />
   <meta name="theme-color" content="#3b82f6" />
   <!-- Restore the last-picked theme BEFORE first paint. app.js is a module (deferred), so doing it there

@@ -1,0 +1,91 @@
+# Publishes the playground to https://birko-framework.github.io/Birko.Web.Playground/
+#
+# WHY THE CHECKS RUN BEFORE THE DEPLOY: this is the public face of Birko.Web, and a broken deploy is
+# worse than a stale one -- a visitor who opens it and sees an empty gallery concludes the framework
+# is broken, not the page. So the job builds, runs every harness, and only uploads if they all pass.
+#
+# subpath-check.mjs is the one that matters here and is easy to think redundant: verify.mjs serves
+# wwwroot/ at the WEB ROOT, which is exactly the configuration that hides a subpath defect. All 667
+# of its checks passed against a build whose service worker could not register at all on this URL.
+name: pages
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+# One in-flight deploy at a time, and never cancel one halfway: a cancelled Pages deploy can leave
+# the site mid-swap. Queue instead.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out the playground
+        uses: actions/checkout@v4
+        with:
+          path: birko/Consumers/Birko.Web.Playground
+
+      # build.js resolves the framework sources by walking up for a `Birko/Web` directory, or from
+      # BIRKO_SRC. Checking out into the documented bucket layout means CI resolves it the same way a
+      # developer's machine does, rather than through a CI-only override that could hide a layout
+      # change.
+      - name: Check out Birko.Web (the sources the bundle is built from)
+        uses: actions/checkout@v4
+        with:
+          repository: Birko-Framework/Birko.Web
+          path: birko/Web
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: birko/Consumers/Birko.Web.Playground/package-lock.json
+
+      - name: Install
+        working-directory: birko/Consumers/Birko.Web.Playground
+        run: npm ci
+
+      # --release minifies and drops the source map: 1.0mb -> 672kb, and the 2.1mb map is not shipped.
+      # Measured safe for these components -- every harness below also passes against the minified
+      # bundle, which is not obvious, since minifying renames classes and custom elements are
+      # name-sensitive in places.
+      - name: Build (release)
+        working-directory: birko/Consumers/Birko.Web.Playground
+        run: node build.js --release
+
+      - name: Gallery + component harness (667 checks)
+        working-directory: birko/Consumers/Birko.Web.Playground
+        run: node verify.mjs
+
+      - name: Device/viewport harness (68 checks)
+        working-directory: birko/Consumers/Birko.Web.Playground
+        run: node device-fix-check.mjs
+
+      - name: Subpath harness — the one that proves THIS deploy works
+        working-directory: birko/Consumers/Birko.Web.Playground
+        run: node subpath-check.mjs
+
+      - uses: actions/configure-pages@v5
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: birko/Consumers/Birko.Web.Playground/wwwroot
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

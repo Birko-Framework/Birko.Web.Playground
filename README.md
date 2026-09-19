@@ -17,6 +17,13 @@ no machine-specific path committed).
    a `[data-theme="my-brand"] { … }` block or a `:root` `tokens.css`-style override (changed tokens
    only), wired the same way as the framework's modular `css/themes/*.css` + `registerThemes()` system.
 
+## Published
+
+**<https://birko-framework.github.io/Birko.Web.Playground/>** — deployed from `main` by
+`.github/workflows/pages.yml`, which runs all three harnesses first and only publishes if they pass.
+A broken deploy is worse than a stale one here: a visitor who opens an empty gallery concludes the
+*framework* is broken, not the page.
+
 ## Running
 
 ```bash
@@ -24,9 +31,23 @@ npm install          # once
 npm run build        # bundle -> wwwroot/app.js + copy css/
 # then serve wwwroot/ (any static server) or open index.html
 npm run watch        # rebuild on save
+node build.js --release   # what CI publishes: minified, no source map (1.0mb -> 672kb)
 ```
 
 `BIRKO_SRC` defaults to the sibling `Birko\Web` bucket; override for non-standard layouts.
+
+## Checks
+
+```bash
+node verify.mjs           # 667 — the gallery, every component, the token editor and the export
+node device-fix-check.mjs #  68 — device/viewport behaviour
+node subpath-check.mjs    #       serves under /Birko.Web.Playground/ and drives the app there
+```
+
+`subpath-check.mjs` is the one that looks redundant and is not. The other two serve `wwwroot/` at the
+**web root**, which is exactly the configuration that hides a subpath defect — all 667 checks passed
+against a build whose service worker could not register at all on the published URL. It fails on any
+404, any console error, or a precache list that did not resolve.
 
 ## License
 

@@ -10,7 +10,7 @@
     "serve": "node serve.mjs"
   },
   "devDependencies": {
-    "esbuild": "^0.24.0",
-    "puppeteer": "^25.2.0"
+    "esbuild": "^0.28.2",
+    "puppeteer": "^25.11.0"
   }
 }

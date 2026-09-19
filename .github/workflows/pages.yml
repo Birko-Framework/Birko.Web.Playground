@@ -32,26 +32,32 @@ jobs:
       - name: Check out the playground
         uses: actions/checkout@v4
         with:
-          path: birko/Consumers/Birko.Web.Playground
+          path: Birko/Consumers/Birko.Web.Playground
 
       # build.js resolves the framework sources by walking up for a `Birko/Web` directory, or from
       # BIRKO_SRC. Checking out into the documented bucket layout means CI resolves it the same way a
       # developer's machine does, rather than through a CI-only override that could hide a layout
       # change.
+      #
+      # ⚠ The capital B matters. These paths were `birko/...` on the first run -- which is what the
+      # framework's own .NET workflows use, and which works there because MSBuild resolves BirkoSrc
+      # from an explicit property rather than by name. Here the walk-up looks for a directory
+      # literally called `Birko/Web`, and the runner is Linux, so `birko/Web` is a different path:
+      # the build failed with "Cannot locate Birko\Web" while the same layout works on Windows.
       - name: Check out Birko.Web (the sources the bundle is built from)
         uses: actions/checkout@v4
         with:
           repository: Birko-Framework/Birko.Web
-          path: birko/Web
+          path: Birko/Web
 
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
           cache: npm
-          cache-dependency-path: birko/Consumers/Birko.Web.Playground/package-lock.json
+          cache-dependency-path: Birko/Consumers/Birko.Web.Playground/package-lock.json
 
       - name: Install
-        working-directory: birko/Consumers/Birko.Web.Playground
+        working-directory: Birko/Consumers/Birko.Web.Playground
         run: npm ci
 
       # --release minifies and drops the source map: 1.0mb -> 672kb, and the 2.1mb map is not shipped.
@@ -59,26 +65,26 @@ jobs:
       # bundle, which is not obvious, since minifying renames classes and custom elements are
       # name-sensitive in places.
       - name: Build (release)
-        working-directory: birko/Consumers/Birko.Web.Playground
+        working-directory: Birko/Consumers/Birko.Web.Playground
         run: node build.js --release
 
       - name: Gallery + component harness (667 checks)
-        working-directory: birko/Consumers/Birko.Web.Playground
+        working-directory: Birko/Consumers/Birko.Web.Playground
         run: node verify.mjs
 
       - name: Device/viewport harness (68 checks)
-        working-directory: birko/Consumers/Birko.Web.Playground
+        working-directory: Birko/Consumers/Birko.Web.Playground
         run: node device-fix-check.mjs
 
       - name: Subpath harness — the one that proves THIS deploy works
-        working-directory: birko/Consumers/Birko.Web.Playground
+        working-directory: Birko/Consumers/Birko.Web.Playground
         run: node subpath-check.mjs
 
       - uses: actions/configure-pages@v5
 
       - uses: actions/upload-pages-artifact@v3
         with:
-          path: birko/Consumers/Birko.Web.Playground/wwwroot
+          path: Birko/Consumers/Birko.Web.Playground/wwwroot
 
   deploy:
     needs: build

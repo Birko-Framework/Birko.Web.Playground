@@ -321,6 +321,17 @@ interface ComponentDef {
   setup?: (el: any) => void;        // populate via JS data methods (setData/setItems/…); deferred + guarded
   note?: string;                    // shown when the component needs runtime config to populate
   launch?: { label: string; run: (el: any) => void }; // overlay opener (modal/drawer/dialog show themselves on demand)
+  /**
+   * Give this component the full row instead of one ~400px grid cell.
+   *
+   * For a ribbon, a data table or a kanban board the width IS the component: squeezed into a
+   * quarter-width card a ribbon spends the whole time in its most-degraded state, so the gallery
+   * shows the fallback and never the thing itself. Reviewing "does this look right?" against that
+   * is reviewing the wrong artefact.
+   *
+   * Used sparingly — every wide card pushes the rest of the catalogue further down the page.
+   */
+  wide?: boolean;
 }
 
 const SIZE: ControlDef = { label: 'size', attr: 'size', options: ['', 'sm', 'lg'] };
@@ -382,7 +393,7 @@ const CATALOGUE: ComponentDef[] = [
     render: () => '<div slot="a1">First section body.</div><div slot="a2">Second section body.</div><div slot="a3">Disabled section body.</div>',
     setup: (el) => el.setItems([{ id: 'a1', header: 'Section one', open: true }, { id: 'a2', header: 'Section two' }, { id: 'a3', header: 'Section three (disabled)', disabled: true }]) },
   { tag: 'b-toolbar', label: 'Toolbar', category: 'layout', render: () => '<b-button-group><b-button>A</b-button><b-button>B</b-button></b-button-group>' },
-  { tag: 'b-split-panel', label: 'Split panel', category: 'layout', render: () => '<div slot="master" style="padding:.75rem;min-height:140px;background:var(--b-bg-secondary)">Master pane</div><div slot="detail" style="padding:.75rem;min-height:140px">Detail pane</div>' },
+  { tag: 'b-split-panel', label: 'Split panel', category: 'layout', wide: true, render: () => '<div slot="master" style="padding:.75rem;min-height:140px;background:var(--b-bg-secondary)">Master pane</div><div slot="detail" style="padding:.75rem;min-height:140px">Detail pane</div>' },
   { tag: 'b-tooltip', label: 'Tooltip', category: 'layout', attrs: { text: 'I am a tooltip' }, render: () => 'Hover me' },
   { tag: 'b-tabs', label: 'Tabs', category: 'layout', setup: (el) => el.setTabs([{ id: 't1', label: 'Overview' }, { id: 't2', label: 'Details' }, { id: 't3', label: 'Activity' }], 't1') },
   { tag: 'b-dropdown-menu', label: 'Dropdown menu', category: 'layout',
@@ -398,7 +409,7 @@ const CATALOGUE: ComponentDef[] = [
     launch: { label: 'Open drawer', run: (el) => el.open() } },
   { tag: 'b-confirm-dialog', label: 'Confirm dialog', category: 'layout', attrs: { title: 'Delete item?', message: 'This action cannot be undone.', variant: 'danger' },
     launch: { label: 'Open dialog', run: (el) => el.show() } },
-  { tag: 'b-chat', label: 'Chat', category: 'layout', setup: (el) => el.setMessages([{ id: '1', role: 'assistant', content: 'Hi! How can I help?' }, { id: '2', role: 'user', content: 'Show me the gallery.' }]) },
+  { tag: 'b-chat', label: 'Chat', category: 'layout', wide: true, setup: (el) => el.setMessages([{ id: '1', role: 'assistant', content: 'Hi! How can I help?' }, { id: '2', role: 'user', content: 'Show me the gallery.' }]) },
   { tag: 'b-tour', label: 'Tour', category: 'layout',
     launch: { label: 'Start tour', run: (el) => el.start([
       { target: '.pg-header .pg-brand', title: 'Welcome', body: 'This is the Birko.Web playground.', placement: 'bottom' },
@@ -418,19 +429,19 @@ const CATALOGUE: ComponentDef[] = [
   { tag: 'b-definition-list', label: 'Definition list', category: 'data', render: () => '<dt>Term</dt><dd>A definition</dd><dt>Another</dt><dd>Its value</dd>' },
   { tag: 'b-json-viewer', label: 'JSON viewer', category: 'data', render: () => '{ "name": "birko", "version": 1, "ok": true }' },
   { tag: 'b-xml-viewer', label: 'XML viewer', category: 'data', setup: (el) => el.setSource('<root><item id="1">hello</item><item id="2">world</item></root>') },
-  { tag: 'b-table', label: 'Table', category: 'data', setup: (el) => { el.setColumns([{ key: 'name', label: 'Name' }, { key: 'role', label: 'Role' }, { key: 'city', label: 'City' }]); el.setData([{ name: 'Ada', role: 'Admin', city: 'London' }, { name: 'Linus', role: 'User', city: 'Helsinki' }, { name: 'Grace', role: 'User', city: 'New York' }]); } },
-  { tag: 'b-data-table', label: 'Data table', category: 'data', setup: (el) => {
+  { tag: 'b-table', label: 'Table', category: 'data', wide: true, setup: (el) => { el.setColumns([{ key: 'name', label: 'Name' }, { key: 'role', label: 'Role' }, { key: 'city', label: 'City' }]); el.setData([{ name: 'Ada', role: 'Admin', city: 'London' }, { name: 'Linus', role: 'User', city: 'Helsinki' }, { name: 'Grace', role: 'User', city: 'New York' }]); } },
+  { tag: 'b-data-table', label: 'Data table', category: 'data', wide: true, setup: (el) => {
     // b-data-table is endpoint-driven; a duck-typed in-memory apiClient feeds it static rows.
     const rows = [{ name: 'Ada', role: 'Admin' }, { name: 'Linus', role: 'User' }, { name: 'Grace', role: 'User' }];
     const apiClient = { get: async () => ({ ok: true, status: 200, data: rows, headers: new Headers() }) };
     el.setConfig({ endpoint: '/demo', apiClient, columns: [{ key: 'name', label: 'Name' }, { key: 'role', label: 'Role' }] });
     el.load(); // setConfig configures but doesn't fetch; load() pulls the first page
   } },
-  { tag: 'b-editable-table', label: 'Editable table', category: 'data', setup: (el) => { el.setConfig({ columns: [{ key: 'name', label: 'Name', type: 'text' }, { key: 'qty', label: 'Qty', type: 'number' }] }); el.setData([{ name: 'Widget', qty: 3 }, { name: 'Gadget', qty: 7 }]); } },
+  { tag: 'b-editable-table', label: 'Editable table', category: 'data', wide: true, setup: (el) => { el.setConfig({ columns: [{ key: 'name', label: 'Name', type: 'text' }, { key: 'qty', label: 'Qty', type: 'number' }] }); el.setData([{ name: 'Widget', qty: 3 }, { name: 'Gadget', qty: 7 }]); } },
   { tag: 'b-chart', label: 'Chart', category: 'data', attrs: { type: 'bar', height: '220' },
     controls: [{ label: 'type', attr: 'type', options: ['bar', 'line', 'area', 'pie', 'donut', 'gauge'] }],
     setup: (el) => el.setData({ labels: ['Jan', 'Feb', 'Mar', 'Apr'], series: [{ id: 'sales', label: 'Sales', data: [{ y: 65 }, { y: 40 }, { y: 80 }, { y: 55 }] }] }) },
-  { tag: 'b-kanban', label: 'Kanban', category: 'data', setup: (el) => el.setConfig({ columns: [{ id: 'todo', label: 'To do' }, { id: 'doing', label: 'In progress' }, { id: 'done', label: 'Done' }], cards: [{ id: '1', columnId: 'todo', title: 'Task A' }, { id: '2', columnId: 'doing', title: 'Task B' }, { id: '3', columnId: 'done', title: 'Task C' }] }) },
+  { tag: 'b-kanban', label: 'Kanban', category: 'data', wide: true, setup: (el) => el.setConfig({ columns: [{ id: 'todo', label: 'To do' }, { id: 'doing', label: 'In progress' }, { id: 'done', label: 'Done' }], cards: [{ id: '1', columnId: 'todo', title: 'Task A' }, { id: '2', columnId: 'doing', title: 'Task B' }, { id: '3', columnId: 'done', title: 'Task C' }] }) },
   { tag: 'b-object-tree', label: 'Object tree', category: 'data', setup: (el) => el.setData({ name: 'birko', version: 1, active: true, tags: ['a', 'b'], nested: { x: 1, y: [2, 3] } }) },
 
   // ── feedback ──
@@ -459,7 +470,7 @@ const CATALOGUE: ComponentDef[] = [
   // behaviour is observable: narrow the browser and the tab-strip and panel chevrons appear
   // (STORY-049/TASK-097). The old 2-tab / 2-group demo never overflowed, so the fix could not be
   // reviewed by hand.
-  { tag: 'b-ribbon', label: 'Ribbon', category: 'nav', attrs: { expanded: '', pinned: '' }, setup: (el) => el.setTabs([
+  { tag: 'b-ribbon', label: 'Ribbon', category: 'nav', wide: true, attrs: { expanded: '', pinned: '' }, setup: (el) => el.setTabs([
     { id: 'home', label: 'Home', groups: [
       // Priorities set deliberately so the degrade ORDER is visible while resizing: a LOWER
       // scalingPriority gives way first, so Export collapses long before Clipboard is touched. Clipboard
@@ -693,7 +704,7 @@ function setupGallery(root: HTMLElement): void {
 }
 
 function renderItem(def: ComponentDef): HTMLElement {
-  const card = el('div', 'pg-item');
+  const card = el('div', def.wide ? 'pg-item pg-item-wide' : 'pg-item');
   card.appendChild(el('div', 'pg-item-label', `${def.label} <code>&lt;${def.tag}&gt;</code>`));
 
   const stage = el('div', 'pg-stage');
@@ -1019,6 +1030,11 @@ function injectStyles(): void {
     .pg-gallery { min-width:0; }
     .pg-grid { display:grid; grid-template-columns: repeat(auto-fill, minmax(400px,1fr)); gap:1.5rem; }
     .pg-note { font-size:.7rem; color:var(--b-text-secondary,#999); font-style:italic; margin-top:.4rem; }
+    /* A wide card takes the whole row whatever the viewport, so the component is measured against a
+       realistic width rather than a grid cell. 1 / -1 rather than a column count: the grid is
+       auto-fill, so the number of columns is not known here.
+       (No backticks in this block -- these styles live in a template literal.) */
+    .pg-item-wide { grid-column: 1 / -1; }
     .pg-item { display:flex; flex-direction:column; background:var(--b-bg,#fff); border:1px solid var(--b-border,#ddd); border-radius:var(--b-radius,8px); padding:1rem; }
     .pg-item-label { font-size:.8rem; color:var(--b-text-secondary,#888); margin-bottom:.6rem; }
     .pg-stage { flex:1 1 auto; display:flex; flex-wrap:wrap; align-content:center; align-items:center; justify-content:center; gap:.75rem; min-height:200px; overflow:auto; padding:1.25rem; background:var(--b-bg-secondary,#fafafa); border-radius:var(--b-radius,6px); }

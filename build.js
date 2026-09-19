@@ -78,7 +78,9 @@ function writePwaAssets() {
     '<text x="256" y="352" font-size="320" font-family="system-ui,sans-serif" font-weight="700" fill="#fff" text-anchor="middle">B</text></svg>');
   writeFileSync('wwwroot/manifest.webmanifest', JSON.stringify({
     name: 'Birko.Web Playground', short_name: 'Birko PG',
-    start_url: '/', display: 'standalone', background_color: '#f3f3f3', theme_color: '#3b82f6',
+    // './' rather than '/': installed from a project GitHub Page the app lives at a subpath, and a
+    // root start_url would launch the installed app at the wrong place (or at somebody else's page).
+    start_url: './', display: 'standalone', background_color: '#f3f3f3', theme_color: '#3b82f6',
     icons: [{ src: 'icon.svg', sizes: 'any', type: 'image/svg+xml' }],
   }, null, 2));
 }

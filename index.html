@@ -14,7 +14,13 @@
   <link rel="stylesheet" href="css/themes/neon.css" />
   <link rel="stylesheet" href="css/themes/finstat.css" />
   <link rel="stylesheet" href="css/themes/inverse.css" />
-  <link rel="manifest" href="/manifest.webmanifest" />
+  <!-- Relative, not "/manifest.webmanifest": this app is published to a project GitHub Page at
+       /Birko.Web.Playground/, where a root-absolute href 404s. -->
+  <!-- Without this the browser asks for /favicon.ico on every load, which 404s — noise in the
+       console and in the server log, and on a published page it is the first thing a visitor's
+       devtools shows them. icon.svg is emitted by build.js beside this file. -->
+  <link rel="icon" href="icon.svg" type="image/svg+xml" />
+  <link rel="manifest" href="manifest.webmanifest" />
   <meta name="theme-color" content="#3b82f6" />
   <!-- Restore the last-picked theme BEFORE first paint. app.js is a module (deferred), so doing it there
        would flash the light gallery first. Blocking + inline is the point; keep it tiny. -->

@@ -53,6 +53,18 @@ class PgMobileShell extends BMobileAppShell {
 }
 if (!customElements.get('pg-mobile-shell')) customElements.define('pg-mobile-shell', PgMobileShell);
 
+/**
+ * The service-worker URL, resolved from the bundle's own location rather than the web root.
+ *
+ * `import.meta.url` is this module's URL, so `new URL('sw.js', …)` lands beside it however the app is
+ * served — the web root locally, `/Birko.Web.Playground/` on the project GitHub Page. A literal
+ * '/sw.js' 404s there, and a page-relative 'sw.js' would resolve against the current route rather
+ * than the app root, so neither is safe.
+ */
+function swUrl(): string {
+  return new URL('sw.js', import.meta.url).href;
+}
+
 // Device-utils demo card (EPIC-016 backports): Screen Wake Lock, iOS-safe audio cue, and opt-in PWA
 // service-worker register/unregister — the interactive coverage promoted out of the old review panel.
 class PgDeviceDemo extends HTMLElement {
@@ -77,7 +89,7 @@ class PgDeviceDemo extends HTMLElement {
     on('wake', () => { wake.acquire(); say(`wake lock: ${wake.held ? 'held' : 'requested (may be denied off-gesture)'}`); });
     on('wake-off', () => { wake.release(); say('wake lock released'); });
     on('beep', () => { cue.prime(); cue.beep({ frequency: 660, durationMs: 120, vibrate: 20 }); say('beep'); });
-    on('sw-on', () => { void registerServiceWorker('/sw.js').then((reg) => say(reg ? 'SW registered — see DevTools → Application; go Offline + reload' : 'SW registration failed / unsupported')); });
+    on('sw-on', () => { void registerServiceWorker(swUrl()).then((reg) => say(reg ? 'SW registered — see DevTools → Application; go Offline + reload' : 'SW registration failed / unsupported')); });
     on('sw-off', () => { void (async () => {
       const regs = (await navigator.serviceWorker?.getRegistrations?.()) ?? [];
       await Promise.all(regs.map((r) => r.unregister()));

@@ -11,6 +11,9 @@ if (new URLSearchParams(location.search).has('smoke')) {
   void import('./backport-smoke.js');
   // STORY-001 / TASK-001 — `bare` attribute on the form controls.
   void import('./bare-smoke.js');
+  // TASK-499 — `b-table` header escaping: a plain `label` stays escaped, `headerRender` is the
+  // HTML opt-in, and `b-data-table`'s select-all checkbox renders and works.
+  void import('./table-header-smoke.js');
   // STORY-023 / TASK-035 — ElementInternals form association.
   void import('./form-assoc-smoke.js');
   // EPIC-001 — the `description` help-text row.

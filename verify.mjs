@@ -143,6 +143,7 @@ const report = await page.evaluate(async () => {
 const SUITES = [
   'backport-smoke', 'bare-smoke', 'description-smoke',
   'form-assoc-smoke', 'ribbon-overflow-smoke', 'ribbon-scaling-smoke',
+  'table-header-smoke',
   // Serialises itself after backport-smoke (global i18n registration), so it always reports LAST.
   'i18n-message-smoke',
 ];

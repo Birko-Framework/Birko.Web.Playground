@@ -1,15 +1,7 @@
-// TASK-499 — the "select all" header checkbox rendered as literal `<input …>` text, because
-// `<b-table>` escaped every header label while `<b-data-table>` put markup in one. The fix is a
-// header-specific HTML opt-in (`headerRender`), the symmetric counterpart to a cell's `render`.
-//
-// This suite pins BOTH halves of the asymmetry: an ordinary `label` must stay escaped (the fix must
-// not become a stored-XSS route), and `headerRender` must actually produce an element. Then it drives
-// the selection column end-to-end, because "renders a checkbox" and "select all works" are different
-// claims and only the first was ever eyeballed.
-//
-// Framework component changes are verified here: `Birko.Web.Components` ships no unit runner, so the
-// regression gate is a real browser through the playground's headless verify (verify.mjs surfaces
-// `[playground]` console logs + page errors).
+// TASK-486 (moved from Symbio TASK-499) — `b-table` escapes header labels; `headerRender` is the
+// HTML opt-in, and `b-data-table`'s select-all checkbox goes through it. Pins both halves of that
+// asymmetry: an ordinary `label` stays escaped (no stored-XSS route), and `headerRender` produces a
+// real element that selects and clears the page's rows.
 import 'birko-web-components/data';
 import type { DataTableConfig, TableColumn } from 'birko-web-components/data';
 

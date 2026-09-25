@@ -14,6 +14,8 @@ if (new URLSearchParams(location.search).has('smoke')) {
   // TASK-499 — `b-table` header escaping: a plain `label` stays escaped, `headerRender` is the
   // HTML opt-in, and `b-data-table`'s select-all checkbox renders and works.
   void import('./table-header-smoke.js');
+  // `b-select` `creatable`, standalone and through a b-form schema.
+  void import('./select-creatable-smoke.js');
   // STORY-023 / TASK-035 — ElementInternals form association.
   void import('./form-assoc-smoke.js');
   // EPIC-001 — the `description` help-text row.

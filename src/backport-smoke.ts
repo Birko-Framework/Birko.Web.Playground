@@ -569,6 +569,97 @@ void (async () => {
       }
       check('CR-L398 entity-search null body returns [] (no throw)',
         Array.isArray(searchResult) && searchResult.length === 0);
+
+      // TASK-493 (Web.Core) — `getHeaders` and `patch()`. The hook exists so a same-origin BFF can send
+      // `X-CSRF-TOKEN` on every request without dropping ApiClient for a hand-rolled fetch (which would
+      // lose the timeout, offline queue and refresh handling — FlowerFurStudio TASK-067). `patch()` was
+      // simply absent.
+      const seen: { method: string; headers: Headers; body: string | null }[] = [];
+      const recordFetch = (make: () => Response) => {
+        globalThis.fetch = (async (_u: unknown, init?: RequestInit) => {
+          seen.push({
+            method: init?.method ?? 'GET',
+            headers: new Headers(init?.headers),
+            body: (init?.body as string | undefined) ?? null,
+          });
+          return make();
+        }) as typeof fetch;
+      };
+      const okJson = () => new Response('{}', { status: 200, headers: { 'Content-Type': 'application/json' } });
+
+      // (a) A sync getHeaders hook reaches a GET.
+      seen.length = 0;
+      recordFetch(okJson);
+      const withHeaders = new ApiClient({
+        baseUrl: 'https://smoke.test',
+        getHeaders: () => ({ 'X-CSRF-TOKEN': 'abc' }),
+      });
+      await withHeaders.get('items');
+      check('TASK-493 getHeaders: a custom header is sent on a GET',
+        seen[0]?.headers.get('X-CSRF-TOKEN') === 'abc');
+
+      // (b) It reaches the post-refresh RETRY too (the retry reuses the header bag the hook filled).
+      seen.length = 0;
+      let refreshCall = 0;
+      globalThis.fetch = (async (_u: unknown, init?: RequestInit) => {
+        seen.push({ method: init?.method ?? 'GET', headers: new Headers(init?.headers), body: null });
+        refreshCall += 1;
+        return refreshCall === 1 ? new Response('', { status: 401 }) : okJson();
+      }) as typeof fetch;
+      const retryHeaders = new ApiClient({
+        baseUrl: 'https://smoke.test',
+        getToken: () => 'stale',
+        onRefreshToken: async () => 'fresh',
+        getHeaders: () => ({ 'X-CSRF-TOKEN': 'retry-abc' }),
+      });
+      await retryHeaders.get('items');
+      check('TASK-493 getHeaders: sent on the first attempt', seen[0]?.headers.get('X-CSRF-TOKEN') === 'retry-abc');
+      check('TASK-493 getHeaders: sent on the retry after a token refresh', seen[1]?.headers.get('X-CSRF-TOKEN') === 'retry-abc');
+
+      // (c) Async hook — a consumer that must fetch its token lazily.
+      seen.length = 0;
+      recordFetch(okJson);
+      const lazy = new ApiClient({
+        baseUrl: 'https://smoke.test',
+        getHeaders: async () => ({ 'X-CSRF-TOKEN': 'lazy' }),
+      });
+      await lazy.get('items');
+      check('TASK-493 getHeaders: an async hook is awaited before the fetch',
+        seen[0]?.headers.get('X-CSRF-TOKEN') === 'lazy');
+
+      // (d) Precedence: the hook cannot clobber the framework's own auth/tenant headers.
+      seen.length = 0;
+      recordFetch(okJson);
+      const precedence = new ApiClient({
+        baseUrl: 'https://smoke.test',
+        getToken: () => 'real',
+        getTenant: () => 'tenant-1',
+        getHeaders: () => ({ Authorization: 'Bearer bogus', 'X-Tenant-Id': 'evil' }),
+      });
+      await precedence.get('items');
+      check('TASK-493 getHeaders: cannot override Authorization',
+        seen[0]?.headers.get('Authorization') === 'Bearer real');
+      check('TASK-493 getHeaders: cannot override X-Tenant-Id',
+        seen[0]?.headers.get('X-Tenant-Id') === 'tenant-1');
+
+      // (e) patch() issues PATCH with the JSON body, and is queueable like put().
+      seen.length = 0;
+      recordFetch(okJson);
+      const patcher = new ApiClient({ baseUrl: 'https://smoke.test' });
+      await patcher.patch('items/7', { name: 'x' });
+      check('TASK-493 patch(): issues a PATCH request', seen[0]?.method === 'PATCH');
+      check('TASK-493 patch(): sends the JSON body with Content-Type',
+        seen[0]?.headers.get('Content-Type') === 'application/json' && seen[0]?.body === '{"name":"x"}');
+
+      let queuedMethod = '';
+      globalThis.fetch = (async () => { throw new TypeError('offline'); }) as typeof fetch;
+      const patchWriter = new ApiClient({
+        baseUrl: 'https://smoke.test',
+        onQueueAction: async (method) => { queuedMethod = method; return 'q1'; },
+      });
+      const queuedPatch = await patchWriter.patch('items/7', { name: 'x' }, { moduleId: 'm', description: 'd' });
+      check('TASK-493 patch(): a failed PATCH is queued for retry, not lost',
+        queuedPatch.queued === true && queuedMethod === 'PATCH');
     } finally {
       globalThis.fetch = realFetch;
     }
@@ -1889,7 +1980,7 @@ void (async () => {
       let dbSeq = 0;
       /** Enqueue one action, replay it against a stubbed status, and report what the queue did. */
       const replay = async (
-        method: 'POST' | 'PUT' | 'DELETE',
+        method: 'POST' | 'PUT' | 'PATCH' | 'DELETE',
         status: number,
         metadata: Record<string, unknown>,
         options: Record<string, unknown> = {},
@@ -1898,9 +1989,13 @@ void (async () => {
         const queue = new ActionQueue({ dbName: `pg_replay_${dbSeq}` });
         await queue.clear();
         await queue.enqueue({ method, path: 'things', body: { a: 1 }, metadata: metadata as never });
-        globalThis.fetch = (async () => new Response(JSON.stringify({ error: 'x' }), {
-          status, headers: { 'Content-Type': 'application/json' },
-        })) as typeof fetch;
+        let lastMethod = '';
+        globalThis.fetch = (async (_u: unknown, init?: RequestInit) => {
+          lastMethod = init?.method ?? 'GET';
+          return new Response(JSON.stringify({ error: 'x' }), {
+            status, headers: { 'Content-Type': 'application/json' },
+          });
+        }) as typeof fetch;
         const mgr = new SyncManager(queue, new ApiClient({ baseUrl: 'https://smoke.test' }), options);
         let conflicted = false;
         const un = mgr.onConflict(() => { conflicted = true; });
@@ -1908,7 +2003,7 @@ void (async () => {
         un();
         mgr.dispose();
         const left = await queue.getAll();
-        return { result, conflicted, left };
+        return { result, conflicted, left, lastMethod };
       };
 
       try {
@@ -1949,6 +2044,14 @@ void (async () => {
         const delOptOut = await replay('DELETE', 404, meta, { deleteMissingIsApplied: false });
         check('SyncManager: deleteMissingIsApplied false restores the previous behaviour',
           delOptOut.result.failed === 1 && delOptOut.left.length === 1);
+
+        // (g) TASK-493 — a queued PATCH must replay AS PATCH. It is dispatched through the same chain,
+        // whose final arm is `delete`: falling through there would silently DELETE a row the user only
+        // meant to partially update. 500 (not 409/404) keeps the classification out of the way and makes
+        // the request itself the thing under test.
+        const patched = await replay('PATCH', 500, meta);
+        check('TASK-493 SyncManager: a queued PATCH replays as PATCH, not DELETE',
+          patched.lastMethod === 'PATCH' && patched.result.failed === 1 && patched.left.length === 1);
       } finally {
         globalThis.fetch = realFetch4;
       }

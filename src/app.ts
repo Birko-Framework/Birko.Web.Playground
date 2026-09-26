@@ -20,6 +20,8 @@ if (new URLSearchParams(location.search).has('smoke')) {
   void import('./select-combobox-smoke.js');
   // TASK-490 — a creatable b-multi-select commits unless a `create` listener vetoes it.
   void import('./multi-select-create-smoke.js');
+  // TASK-497 — every b-range thumb sits on its track (range mode hung below it).
+  void import('./range-geometry-smoke.js');
   // STORY-023 / TASK-035 — ElementInternals form association.
   void import('./form-assoc-smoke.js');
   // EPIC-001 — the `description` help-text row.

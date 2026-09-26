@@ -18,6 +18,8 @@ if (new URLSearchParams(location.search).has('smoke')) {
   void import('./select-creatable-smoke.js');
   // TASK-489 — `b-select` searchable mode as an ARIA combobox: roles, arrow keys, focus.
   void import('./select-combobox-smoke.js');
+  // TASK-490 — a creatable b-multi-select commits unless a `create` listener vetoes it.
+  void import('./multi-select-create-smoke.js');
   // STORY-023 / TASK-035 — ElementInternals form association.
   void import('./form-assoc-smoke.js');
   // EPIC-001 — the `description` help-text row.

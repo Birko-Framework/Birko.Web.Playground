@@ -2,6 +2,7 @@
 // that move a highlight tracked by aria-activedescendant, Enter on the highlight, and focus that stays in
 // the field (the Enter/Escape paths used to blur it onto <body>).
 import 'birko-web-components/inputs';
+import { focusable } from './smoke-focus';
 
 type Select = HTMLElement & { value: string; setOptions(o: { value: string; label: string; group?: string }[]): void };
 
@@ -72,6 +73,8 @@ void (async () => {
     // ── 2. Arrow keys ──
     {
       const el = await mount('searchable value="footer"');
+      // The sequence below is synchronous from here on; see smoke-focus.ts for why this wait exists.
+      check('precondition — the field can take focus (no modal holding the page)', await focusable(el.shadowRoot!, inputOf(el)));
       const down = key(el, 'ArrowDown');
       check('ArrowDown opens the list', inputOf(el).getAttribute('aria-expanded') === 'true');
       check('...and is consumed (no caret move / page scroll)', down.defaultPrevented);
@@ -123,6 +126,7 @@ void (async () => {
     // ── 5. Escape keeps focus ──
     {
       const el = await mount('searchable value="header"');
+      check('precondition — the field can take focus', await focusable(el.shadowRoot!, inputOf(el)));
       key(el, 'ArrowDown');
       key(el, 'Escape');
       check('Escape collapses the list', inputOf(el).getAttribute('aria-expanded') === 'false');

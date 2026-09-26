@@ -80,7 +80,7 @@ async function namedControls(html) {
   const snap = await page.accessibility.snapshot({ root, interestingOnly: false });
   const found = [];
   (function walk(n) {
-    if (n && !NOT_A_CONTROL.has(n.role)) found.push({ role: n.role, name: n.name ?? '' });
+    if (n && !NOT_A_CONTROL.has(n.role)) found.push({ role: n.role, name: n.name ?? '', haspopup: n.haspopup });
     for (const c of n?.children ?? []) walk(c);
   })(snap);
   return found;
@@ -118,6 +118,34 @@ for (const [html, expected] of PART_CASES) {
   check('a searchable b-select is computed as a combobox named by its label',
     nodes.some((n) => n.role === 'combobox' && n.name === 'Picker combobox'),
     `computed: ${nodes.map((n) => `${n.role}:"${n.name}"`).slice(0, 4).join(', ')}`);
+}
+
+// TASK-496: a picker's trigger is computed as a combobox that has a popup (it used to be a read-only
+// textbox with no hint that Enter opens a calendar), and every × clear button is named.
+for (const tag of ['b-date-picker', 'b-datetime-picker', 'b-time']) {
+  const nodes = await namedControls(`<${tag} label="When ${tag}"></${tag}>`);
+  const cb = nodes.find((n) => n.name === `When ${tag}`);
+  check(`${tag}: the trigger is a combobox with a popup`, cb?.role === 'combobox' && !!cb?.haspopup,
+    `computed: ${cb ? `${cb.role} haspopup=${cb.haspopup ?? '-'}` : '(not found)'}`);
+}
+{
+  const nodes = await namedControls('<b-date-range-picker label="Trip"></b-date-range-picker>');
+  check('b-date-range-picker: both triggers are comboboxes with a popup',
+    ['Trip Start date', 'Trip End date'].every((nm) => nodes.some((n) => n.name === nm && n.role === 'combobox' && n.haspopup)),
+    `computed: ${nodes.filter((n) => n.name.startsWith('Trip')).map((n) => `${n.role}:"${n.name}"`).join(', ')}`);
+}
+for (const [html, what] of [
+  ['<b-select label="C1" searchable value="a"></b-select>', 'b-select'],
+  ['<b-date-picker label="C2" value="2026-01-02"></b-date-picker>', 'b-date-picker'],
+  ['<b-datetime-picker label="C3" value="2026-01-02T10:00:00Z"></b-datetime-picker>', 'b-datetime-picker'],
+  ['<b-time label="C4" value="10:30"></b-time>', 'b-time'],
+  ['<b-date-range-picker label="C5" value="2026-01-02/2026-01-05"></b-date-range-picker>', 'b-date-range-picker'],
+]) {
+  const nodes = await namedControls(html);
+  const buttons = nodes.filter((n) => n.role === 'button');
+  const clear = buttons.find((n) => n.name === 'Clear');
+  check(`${what}: the × clear button is named "Clear"`, !!clear && !buttons.some((n) => n.name === '×'),
+    `buttons: ${buttons.map((n) => `"${n.name}"`).join(', ') || '(none)'}`);
 }
 
 // Unlabelled multi-part controls keep their bare part names.

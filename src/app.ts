@@ -22,6 +22,8 @@ if (new URLSearchParams(location.search).has('smoke')) {
   void import('./multi-select-create-smoke.js');
   // TASK-497 — every b-range thumb sits on its track (range mode hung below it).
   void import('./range-geometry-smoke.js');
+  // TASK-496 — picker triggers announce their popup; the popup is keyboard-usable.
+  void import('./picker-popup-smoke.js');
   // STORY-023 / TASK-035 — ElementInternals form association.
   void import('./form-assoc-smoke.js');
   // EPIC-001 — the `description` help-text row.

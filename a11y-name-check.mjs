@@ -94,6 +94,30 @@ for (const [spec, label] of CASES) {
   check(`${spec}: the control is named "${label}"`, hit, hit ? '' : `computed: ${seen || '(no control nodes)'}`);
 }
 
+// Multi-part controls (TASK-495): each part is named "<field label> <part>". Naming every part by the
+// field label alone makes them indistinguishable; that was TASK-494's regression on the native date range
+// and on b-range's range mode, which the single-part cases above could not see.
+const PART_CASES = [
+  ['<b-date-range-picker label="Stay dates"></b-date-range-picker>', ['Stay dates Start date', 'Stay dates End date']],
+  ['<b-date-range-picker label="Stay dates" native></b-date-range-picker>', ['Stay dates Start date', 'Stay dates End date']],
+  ['<b-file-upload label="Invoice file"></b-file-upload>', ['Invoice file Choose files']],
+  ['<b-range label="Volume" mode="range" display="slider"></b-range>', ['Volume From', 'Volume To']],
+  ['<b-range label="Volume" mode="range" display="input"></b-range>', ['Volume From', 'Volume To']],
+];
+for (const [html, expected] of PART_CASES) {
+  const names = (await namedControls(html)).map((n) => n.name);
+  const missing = expected.filter((e) => !names.includes(e));
+  check(`${html.match(/<([a-z-]+)/)[1]} ${html.match(/(native|display="\w+")/)?.[0] ?? ''}: parts named ${expected.map((e) => `"${e}"`).join(' / ')}`,
+    missing.length === 0, missing.length ? `computed: ${names.filter(Boolean).join(' | ')}` : '');
+}
+
+// Unlabelled multi-part controls keep their bare part names.
+{
+  const names = (await namedControls('<b-date-range-picker native></b-date-range-picker>')).map((n) => n.name);
+  check('an unlabelled date range keeps "Start date" / "End date"', names.includes('Start date') && names.includes('End date'),
+    `computed: ${names.filter(Boolean).join(' | ')}`);
+}
+
 // Required: the visible "*" must not leak into the name.
 {
   const nodes = await namedControls('<b-input label="Reps" required></b-input>');
@@ -112,7 +136,7 @@ for (const [spec, label] of CASES) {
 {
   const dangling = await page.evaluate(async () => {
     const out = [];
-    for (const tag of ['b-input', 'b-textarea', 'b-select', 'b-tag-input', 'b-time']) {
+    for (const tag of ['b-input', 'b-textarea', 'b-select', 'b-tag-input', 'b-time', 'b-date-range-picker', 'b-file-upload', 'b-range']) {
       const el = document.createElement(tag);
       document.body.appendChild(el);
       await new Promise((r) => setTimeout(r, 20));

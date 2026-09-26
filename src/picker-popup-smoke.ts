@@ -76,6 +76,17 @@ void (async () => {
       check(`${p.tag}: aria-controls resolves to a named dialog`,
         panel()?.getAttribute('role') === 'dialog' && !!panel()?.getAttribute('aria-label'));
 
+      // ── Not readonly (NVDA read readonly as "combo edit", no expanded state), yet typing is refused ──
+      check(`${p.tag}: the trigger is not readonly`, !trigger.readOnly);
+      const before = trigger.value;
+      const bi = new InputEvent('beforeinput', { inputType: 'insertText', data: 'x', bubbles: true, cancelable: true, composed: true });
+      trigger.dispatchEvent(bi);
+      check(`${p.tag}: typing is refused (beforeinput cancelled)`, bi.defaultPrevented);
+      // IME composition cannot be cancelled; whatever lands is put back.
+      trigger.value = 'typed';
+      trigger.dispatchEvent(new Event('input', { bubbles: true, composed: true }));
+      check(`${p.tag}: text that lands anyway is restored`, trigger.value === before);
+
       // ── Keyboard open (assertions in the same task as the key) ──
       check(`${p.tag}: precondition — the trigger can take focus (no modal holding the page)`, await focusable(sr, trigger));
       press(trigger, 'Enter');

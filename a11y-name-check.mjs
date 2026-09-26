@@ -148,6 +148,57 @@ for (const [html, what] of [
     `buttons: ${buttons.map((n) => `"${n.name}"`).join(', ') || '(none)'}`);
 }
 
+// TASK-496, after the owner's NVDA pass failed: NVDA read the triggers as "combo edit" with no expanded
+// state. Chrome handed over combobox/expanded/hasPopup correctly, but as editable and NOT settable (the
+// input was readonly), and NVDA drops the combobox reading for that. A settable combobox (TASK-489's
+// b-select) reads correctly. So assert the settable state, straight from CDP.
+{
+  await namedControls('<b-date-picker label="Settable probe"></b-date-picker>');
+  const cdp = await page.target().createCDPSession();
+  const { nodes } = await cdp.send('Accessibility.getFullAXTree');
+  const cb = nodes.find((n) => n.role?.value === 'combobox' && n.name?.value === 'Settable probe');
+  const props = Object.fromEntries((cb?.properties ?? []).map((x) => [x.name, x.value?.value]));
+  check('a picker trigger is a settable combobox (not read-only), the shape NVDA reads as "combo box, collapsed"',
+    !!cb && props.settable === true && props.expanded === false,
+    `computed: ${cb ? JSON.stringify(props) : '(not found)'}`);
+  await cdp.detach();
+}
+
+// The panel's own controls, which the first NVDA pass found unnamed: glyph buttons read as "reverse play",
+// "button", and days as a bare number. Opened, so the panel is in the tree.
+async function openPanelNames(html, triggerSel) {
+  await namedControls(html);
+  await page.evaluate((sel) => {
+    const el = document.querySelector('#a11y-name-host').firstElementChild;
+    el.shadowRoot.querySelector(sel).click();
+  }, triggerSel);
+  await new Promise((r) => setTimeout(r, 80));
+  const root = await page.$('#a11y-name-host');
+  const snap = await page.accessibility.snapshot({ root, interestingOnly: false });
+  const found = [];
+  (function walk(n) { if (n) found.push({ role: n.role, name: n.name ?? '' }); for (const c of n?.children ?? []) walk(c); })(snap);
+  return found;
+}
+for (const [tag, sel] of [['b-date-picker', '.dp-input'], ['b-datetime-picker', '.dp-input'], ['b-date-range-picker', '.drp-input-start']]) {
+  const value = tag === 'b-date-range-picker' ? '2026-09-10/2026-09-12' : tag === 'b-datetime-picker' ? '2026-09-10T10:00:00' : '2026-09-10';
+  const nodes = await openPanelNames(`<${tag} label="Cal ${tag}" value="${value}"></${tag}>`, sel);
+  const buttons = nodes.filter((n) => n.role === 'button');
+  const glyphs = buttons.filter((n) => /^[▲▼◀▶]$/.test(n.name));
+  check(`${tag}: no panel button is named by a bare arrow glyph`, glyphs.length === 0, `glyph buttons: ${glyphs.length}`);
+  check(`${tag}: month navigation is named`, buttons.some((n) => n.name === 'Next month') && buttons.some((n) => n.name === 'Previous month'),
+    `buttons: ${buttons.slice(0, 6).map((n) => `"${n.name}"`).join(', ')}`);
+  check(`${tag}: a day carries its month and year ("10 September 2026")`, buttons.some((n) => n.name === '10 September 2026'),
+    `sample days: ${buttons.filter((n) => /\d/.test(n.name)).slice(0, 3).map((n) => `"${n.name}"`).join(', ')}`);
+}
+{
+  const nodes = await openPanelNames('<b-time label="Clock" value="09:30"></b-time>', '.tp-input');
+  const names = nodes.filter((n) => n.role === 'button' || n.role === 'spinbutton').map((n) => n.name);
+  const want = ['Increase hours', 'Decrease hours', 'Increase minutes', 'Decrease minutes', 'Hours', 'Minutes'];
+  const missing = want.filter((w) => !names.includes(w));
+  check('b-time: the spin buttons and the hour/minute boxes are named', missing.length === 0,
+    `missing: ${missing.join(', ') || '-'}; computed: ${names.map((n) => `"${n}"`).join(', ')}`);
+}
+
 // Unlabelled multi-part controls keep their bare part names.
 {
   const names = (await namedControls('<b-date-range-picker native></b-date-range-picker>')).map((n) => n.name);

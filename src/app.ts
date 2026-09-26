@@ -16,6 +16,8 @@ if (new URLSearchParams(location.search).has('smoke')) {
   void import('./table-header-smoke.js');
   // `b-select` `creatable`, standalone and through a b-form schema.
   void import('./select-creatable-smoke.js');
+  // TASK-489 — `b-select` searchable mode as an ARIA combobox: roles, arrow keys, focus.
+  void import('./select-combobox-smoke.js');
   // STORY-023 / TASK-035 — ElementInternals form association.
   void import('./form-assoc-smoke.js');
   // EPIC-001 — the `description` help-text row.

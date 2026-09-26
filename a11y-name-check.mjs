@@ -111,6 +111,15 @@ for (const [html, expected] of PART_CASES) {
     missing.length === 0, missing.length ? `computed: ${names.filter(Boolean).join(' | ')}` : '');
 }
 
+// TASK-489: the searchable b-select is computed as a combobox (the in-page smoke asserts the attributes;
+// this asserts Chromium honours them), and its open list as a listbox of options.
+{
+  const nodes = await namedControls('<b-select label="Picker combobox" searchable></b-select>');
+  check('a searchable b-select is computed as a combobox named by its label',
+    nodes.some((n) => n.role === 'combobox' && n.name === 'Picker combobox'),
+    `computed: ${nodes.map((n) => `${n.role}:"${n.name}"`).slice(0, 4).join(', ')}`);
+}
+
 // Unlabelled multi-part controls keep their bare part names.
 {
   const names = (await namedControls('<b-date-range-picker native></b-date-range-picker>')).map((n) => n.name);

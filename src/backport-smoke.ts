@@ -664,6 +664,180 @@ void (async () => {
       globalThis.fetch = realFetch;
     }
 
+    // TASK-508 (Web.Core) — `postForm`, the multipart upload (Symbio TASK-839's product photos). It has to live on
+    // ApiClient rather than in the consumer because of the shared `_refreshPromise`: refresh tokens rotate, so a
+    // second, independent refresh flow redeems a token the first already spent and `onUnauthorized` logs the user
+    // out. Every await below is bounded — two of the checks are about a request that must NOT settle yet.
+    {
+      const realFetch5 = globalThis.fetch;
+      const realSetTimeout = globalThis.setTimeout;
+      const PENDING = Symbol('pending');
+      const settleWithin = async <R>(p: Promise<R>, ms: number): Promise<R | typeof PENDING> =>
+        Promise.race([p, new Promise<typeof PENDING>((r) => realSetTimeout(() => r(PENDING), ms))]);
+      const abortError = () => new DOMException('The operation was aborted.', 'AbortError');
+      const neverAnswers = ((_u: unknown, init?: RequestInit) => new Promise((_res, rej) => {
+        const signal = init?.signal;
+        if (!signal) return;
+        if (signal.aborted) rej(abortError());
+        else signal.addEventListener('abort', () => rej(abortError()));
+      })) as typeof fetch;
+      const okJson = () => new Response('{"id":1}', { status: 200, headers: { 'Content-Type': 'application/json' } });
+      const sent: { url: string; method: string; headers: Headers; body: unknown }[] = [];
+      const record = (answer: (auth: string | null) => Response) => {
+        globalThis.fetch = (async (u: unknown, init?: RequestInit) => {
+          const headers = new Headers(init?.headers);
+          sent.push({ url: String(u), method: init?.method ?? 'GET', headers, body: init?.body });
+          return answer(headers.get('Authorization'));
+        }) as typeof fetch;
+      };
+      const makeForm = () => {
+        const f = new FormData();
+        f.append('file', new File(['png-bytes'], 'photo.png', { type: 'image/png' }));
+        f.append('altText', 'Front view');
+        return f;
+      };
+
+      try {
+        // (a) Headers: no Content-Type from the client, and the framework's own headers all present.
+        sent.length = 0;
+        record(okJson);
+        const uploader = new ApiClient({
+          baseUrl: 'https://smoke.test',
+          getToken: () => 'tok',
+          getTenant: () => 'tenant-1',
+          getHeaders: () => ({ 'Accept-Language': 'sk' }),
+        });
+        const form = makeForm();
+        const rUp = await settleWithin(uploader.postForm<{ id: number }>('products/9/images/upload', form), 1500);
+        check('TASK-508 postForm: POSTs the FormData itself as the body',
+          sent[0]?.method === 'POST' && sent[0]?.body === form && sent[0]?.url === 'https://smoke.test/products/9/images/upload');
+        check('TASK-508 postForm: sets NO Content-Type, so the browser can add the boundary',
+          sent.length === 1 && !sent[0].headers.has('Content-Type'));
+        // The half a mock cannot see on its own: what the browser then puts on the wire. A Request built from
+        // the same init is what fetch builds, so this is where a stray 'multipart/form-data' with no boundary
+        // (or a leftover 'application/json') would show.
+        const wire = new Request('https://smoke.test/x', { method: 'POST', body: form, headers: sent[0]?.headers });
+        check('...and the browser then sends multipart/form-data WITH a boundary',
+          /^multipart\/form-data; boundary=/.test(wire.headers.get('Content-Type') ?? ''));
+        check('TASK-508 postForm: Authorization, X-Tenant-Id and getHeaders all apply',
+          sent[0]?.headers.get('Authorization') === 'Bearer tok'
+          && sent[0]?.headers.get('X-Tenant-Id') === 'tenant-1'
+          && sent[0]?.headers.get('Accept-Language') === 'sk');
+        check('TASK-508 postForm: parses the JSON response like any other call',
+          rUp !== PENDING && rUp.ok && rUp.data?.id === 1 && rUp.queued === undefined);
+
+        // (b) 401 → one refresh → the retry resends the SAME FormData with the new token.
+        sent.length = 0;
+        let refreshes = 0;
+        record((auth) => (auth === 'Bearer fresh' ? okJson() : new Response('', { status: 401 })));
+        let loggedOut = false;
+        const retrier = new ApiClient({
+          baseUrl: 'https://smoke.test',
+          getToken: () => 'stale',
+          onRefreshToken: async () => { refreshes += 1; return 'fresh'; },
+          onUnauthorized: () => { loggedOut = true; },
+        });
+        const retryForm = makeForm();
+        const rRetry = await settleWithin(retrier.postForm('products/9/images/upload', retryForm), 1500);
+        check('TASK-508 postForm: a 401 refreshes exactly once', refreshes === 1);
+        check('TASK-508 postForm: the retry resends the same FormData with the new token',
+          sent.length === 2 && sent[1].body === retryForm && sent[1].headers.get('Authorization') === 'Bearer fresh'
+          && !sent[1].headers.has('Content-Type'));
+        check('...and succeeds without logging the user out',
+          rRetry !== PENDING && rRetry.ok && !loggedOut);
+
+        // (c) The reason postForm is in the framework: an upload and a GET that both hit 401 at once must share
+        // ONE refresh. Two refreshes redeem the same rotating token; the second fails and logs the user out.
+        // The refresh is held open, so both 401s are guaranteed to arrive while it is in flight.
+        sent.length = 0;
+        let sharedRefreshes = 0;
+        let spent = false;
+        let concurrentLogout = false;
+        record((auth) => (auth === 'Bearer fresh' ? okJson() : new Response('', { status: 401 })));
+        const shared = new ApiClient({
+          baseUrl: 'https://smoke.test',
+          getToken: () => 'stale',
+          // Models rotation: the first redemption succeeds, any later one is refused.
+          onRefreshToken: async () => {
+            sharedRefreshes += 1;
+            await new Promise((r) => realSetTimeout(r, 40));
+            if (spent) return null;
+            spent = true;
+            return 'fresh';
+          },
+          onUnauthorized: () => { concurrentLogout = true; },
+        });
+        const both = await settleWithin(
+          Promise.all([shared.postForm('products/9/images/upload', makeForm()), shared.get('products/9/images')]),
+          1500,
+        );
+        check('TASK-508 postForm: a concurrent 401 on an upload and a GET share ONE onRefreshToken call',
+          sharedRefreshes === 1);
+        check('...so both retries succeed and nobody is logged out',
+          both !== PENDING && both[0].ok && both[1].ok && !concurrentLogout);
+
+        // (d) Per-call timeout. It must win in BOTH directions over the client's own timeout: shorter aborts
+        // into the status-0 envelope, longer keeps an upload alive past a short client default.
+        globalThis.fetch = neverAnswers;
+        const defaultClient = new ApiClient({ baseUrl: 'https://smoke.test' });
+        const rShort = await settleWithin(defaultClient.postForm('up', makeForm(), { timeoutMs: 60 }), 1500);
+        check('TASK-508 postForm: the per-call timeout aborts into { ok: false, status: 0 }',
+          rShort !== PENDING && rShort.ok === false && rShort.status === 0);
+
+        const shortClient = new ApiClient({ baseUrl: 'https://smoke.test', timeoutMs: 60 });
+        const rLong = await settleWithin(shortClient.postForm('up', makeForm(), { timeoutMs: 5_000 }), 400);
+        check('TASK-508 postForm: a LONGER per-call timeout outlives the client timeout', rLong === PENDING);
+        const rClient = await settleWithin(shortClient.postForm('up', makeForm()), 1500);
+        check('TASK-508 postForm: without opts the client timeout applies',
+          rClient !== PENDING && rClient.status === 0);
+        const rGet = await settleWithin(shortClient.get('items'), 1500);
+        check('TASK-508 postForm: other calls keep the client timeout', rGet !== PENDING && rGet.status === 0);
+        const rOff = await settleWithin(shortClient.postForm('up', makeForm(), { timeoutMs: 0 }), 300);
+        check('TASK-508 postForm: timeoutMs 0 disables the timer for that call', rOff === PENDING);
+
+        // The client-level DEFAULT (20 s) is too long to wait out, so read the timer that was armed instead.
+        const delays: number[] = [];
+        globalThis.setTimeout = ((fn: TimerHandler, ms?: number, ...rest: unknown[]) => {
+          delays.push(ms ?? 0);
+          return realSetTimeout(fn, ms, ...rest);
+        }) as typeof setTimeout;
+        record(okJson);
+        await settleWithin(defaultClient.postForm('up', makeForm()), 1500);
+        const defaultArmed = delays.includes(DEFAULT_REQUEST_TIMEOUT_MS);
+        delays.length = 0;
+        await settleWithin(defaultClient.postForm('up', makeForm(), { timeoutMs: 120_000 }), 1500);
+        const overrideArmed = delays.includes(120_000) && !delays.includes(DEFAULT_REQUEST_TIMEOUT_MS);
+        globalThis.setTimeout = realSetTimeout;
+        check('TASK-508 postForm: with no timeout anywhere, DEFAULT_REQUEST_TIMEOUT_MS is armed', defaultArmed);
+        check('TASK-508 postForm: opts.timeoutMs replaces the default timer', overrideArmed);
+
+        // (e) Never queued: not on a network error, not when the browser says it is offline.
+        let queueCalls = 0;
+        const queuer = new ApiClient({
+          baseUrl: 'https://smoke.test',
+          onQueueAction: async () => { queueCalls += 1; return 'q'; },
+        });
+        globalThis.fetch = (async () => { throw new TypeError('network down'); }) as typeof fetch;
+        const rNet = await settleWithin(queuer.postForm('up', makeForm()), 1500);
+        Object.defineProperty(navigator, 'onLine', { configurable: true, get: () => false });
+        let rOffline: Awaited<ReturnType<typeof queuer.postForm>> | typeof PENDING;
+        try {
+          rOffline = await settleWithin(queuer.postForm('up', makeForm()), 1500);
+        } finally {
+          delete (navigator as unknown as { onLine?: boolean }).onLine;
+        }
+        check('TASK-508 postForm: onQueueAction is never called, online or offline', queueCalls === 0);
+        check('...and a failed upload is the plain status-0 envelope, never `queued`',
+          rNet !== PENDING && rNet.ok === false && rNet.status === 0 && !rNet.queued
+          && rOffline !== PENDING && rOffline.ok === false && rOffline.status === 0 && !rOffline.queued);
+        check('...(the navigator.onLine stub was removed again)',
+          Object.getOwnPropertyDescriptor(navigator, 'onLine') === undefined);
+      } finally {
+        globalThis.fetch = realFetch5;
+        globalThis.setTimeout = realSetTimeout;
+      }
+    }
+
     // ── Prompt 1 (Web.Components) — b-pagination click wiring ──────────────────
     // Regression: onUpdated wired clicks via btn.querySelector('button'), but b-button renders its
     // <button> in its SHADOW root, so the light-DOM query returned null and NO listener ever

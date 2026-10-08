@@ -1,6 +1,7 @@
 // EPIC-002 web backport smoke — exercises the new Birko.Web.Core APIs in a real browser via the
 // playground's headless verify (verify.mjs surfaces `[playground]` console logs + page errors).
 // This is how the framework's frontend backports are verified (no in-framework unit runner).
+import { BaseComponent } from 'birko-web-core';
 import { parseDecimal, getFormatter, createWakeLockManager, createAudioCue, MirrorStore, readThrough, readWindowThrough, syncWindow, inWindow, createListMirror, readAllClassifiedThrough, peekList, define, registerServiceWorker, I18n, signal, setPersistPrefix, SyncManager, ActionQueue, Store, unwrapList, apiErrorMessage, appendQuery, ApiClient, DEFAULT_REQUEST_TIMEOUT_MS } from 'birko-web-core';
 import { BSyncStatus, type SyncSource } from 'birko-web-components/feedback';
 import { BTreeMenu, BRibbon, type RibbonTab } from 'birko-web-components/nav';
@@ -522,6 +523,53 @@ void (async () => {
     const noModules = new Store({ modules: [], activeModuleId: 'stale' as string | null, activeOptionId: null as string | null });
     check('TASK-140 nothing loaded yet resolves nothing and clears the stale id',
       !resolveModuleFromHash(noModules, '/inventory/stock').resolved && noModules.get('activeModuleId') === null);
+
+    // TASK-543 (Web.Components) — b-code-block re-renders when its light-DOM text changes. A parent's morph keeps the
+    // element (attributes unchanged) and swaps only the text node; render() ran on attribute changes only, so the block
+    // kept the previous code (Presenter, FIELD-021). The first check drives the real morph through a BaseComponent host.
+    const settle = () => new Promise((r) => requestAnimationFrame(() => setTimeout(r, 0)));
+    const shown = (el: Element | null | undefined) => el?.shadowRoot?.querySelector('code')?.textContent ?? '<none>';
+    class CodeHost extends BaseComponent {
+      text = 'var first = 1;';
+      render() { return `<b-code-block language="csharp">${this.text}</b-code-block>`; }
+      swap(t: string) { this.text = t; this.update(); }
+    }
+    define('smoke-code-host', CodeHost);
+    const host = document.createElement('smoke-code-host') as CodeHost;
+    document.body.appendChild(host);
+    await settle();
+    const morphed = host.shadowRoot?.querySelector('b-code-block');
+    host.swap('var second = 2;');
+    await settle();
+    const sameEl = host.shadowRoot?.querySelector('b-code-block') === morphed;
+    check(`TASK-543 parent morph keeps the element and the block shows the new code (same element=${sameEl}, shows "${shown(morphed)}")`,
+      sameEl && shown(morphed).includes('second') && !shown(morphed).includes('first'));
+    host.remove();
+
+    const block = document.createElement('b-code-block');
+    block.setAttribute('language', 'csharp');
+    block.textContent = 'var a = 1;';
+    document.body.appendChild(block);
+    await settle();
+    (block.firstChild as Text).data = 'var b = 2;';
+    await settle();
+    check(`TASK-543 in-place text edit re-renders (shows "${shown(block)}")`, shown(block) === 'var b = 2;');
+    check('TASK-543 copy uses the current code', (block as unknown as { _code: string })._code === 'var b = 2;');
+    block.setAttribute('code', 'from attr');
+    await settle();
+    block.textContent = 'var c = 3;';
+    await settle();
+    check(`TASK-543 (contract pin) the code attribute keeps precedence over text (shows "${shown(block)}")`, shown(block) === 'from attr');
+    block.removeAttribute('code');
+    await settle();
+    let rendersAfterRemove = 0;
+    block.remove();
+    const blockUpdate = (block as unknown as { update: () => void });
+    const realUpdate = blockUpdate.update.bind(block);
+    blockUpdate.update = () => { rendersAfterRemove++; realUpdate(); };
+    block.textContent = 'var detached = 4;';
+    await settle();
+    check(`TASK-543 (contract pin) a disconnected block does not observe (renders=${rendersAfterRemove})`, rendersAfterRemove === 0);
 
     // CR-L392 (Web.Components) — moveCard with an implicit target index reports the TRUE landing
     // index in the emitted event (regression: precedence bug made it `findIndex(...) - 1`, one too

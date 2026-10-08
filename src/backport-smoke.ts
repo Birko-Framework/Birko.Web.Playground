@@ -487,10 +487,41 @@ void (async () => {
     check('M266 getVisibleOptions filters unpermitted option', getVisibleOptions(modLimited).length === 1);
     const shellStore = new Store({ modules: [modWild], activeModuleId: 'a', activeOptionId: null });
     check('M266 hasPermission wildcard grants any', hasPermission(shellStore, 'anything'));
-    const resolved = resolveModuleFromHash(shellStore, '/inventory/stock/42');
-    check('M266 resolveModuleFromHash parses module/option/entity',
-      resolved.moduleId === 'inventory' && resolved.optionId === 'stock' && resolved.entityId === '42');
-    check('M266 resolveModuleFromHash updates store', shellStore.get('activeModuleId') === 'inventory');
+
+    // TASK-140 (Web.Shell) — resolveModuleFromHash reads the DECLARED option routes in store.modules. It used to split
+    // the hash by position and write parts[0] unconditionally, so /settings set activeModuleId='settings' (no such
+    // module). The first two checks are back-compat (pass either way); the rest fail on the positional resolver.
+    const opt = (id: string, route: string) => ({ id, label: id, route });
+    const routeStore = new Store({
+      modules: [
+        { id: 'inventory', label: 'Inventory', icon: '', order: 0, permissions: ['*'],
+          options: [opt('stock', '/inventory/stock'), opt('archive', '/inventory/stock/archive')] },
+        { id: 'crm', label: 'CRM', icon: '', order: 1, permissions: ['*'], options: [opt('leads', '/sales/leads')] },
+      ],
+      activeModuleId: null as string | null, activeOptionId: null as string | null,
+    });
+    const conv = resolveModuleFromHash(routeStore, '/inventory/stock/42');
+    check('M266 resolveModuleFromHash parses module/option/entity (back-compat)',
+      conv.moduleId === 'inventory' && conv.optionId === 'stock' && conv.entityId === '42');
+    check('M266 resolveModuleFromHash updates store (back-compat)',
+      routeStore.get('activeModuleId') === 'inventory' && routeStore.get('activeOptionId') === 'stock');
+    const unmatched = resolveModuleFromHash(routeStore, '/settings');
+    check(`TASK-140 unmatched /settings is unresolved, store cleared (resolved=${unmatched.resolved}, activeModuleId=${routeStore.get('activeModuleId')})`,
+      !unmatched.resolved && unmatched.moduleId === '' && routeStore.get('activeModuleId') === null && routeStore.get('activeOptionId') === null);
+    const declared = resolveModuleFromHash(routeStore, '/sales/leads/7');
+    check(`TASK-140 non-conventional declared route resolves to its module (got ${declared.moduleId}/${declared.optionId}/${declared.entityId})`,
+      declared.moduleId === 'crm' && declared.optionId === 'leads' && declared.entityId === '7' && routeStore.get('activeModuleId') === 'crm');
+    const longest = resolveModuleFromHash(routeStore, '/inventory/stock/archive');
+    check(`TASK-140 longest declared route wins (got option ${longest.optionId}, entity ${longest.entityId})`,
+      longest.optionId === 'archive' && longest.entityId === undefined);
+    const withQuery = resolveModuleFromHash(routeStore, '/inventory/stock?tab=2');
+    check(`TASK-140 query string is not part of the option (got ${withQuery.optionId})`, withQuery.optionId === 'stock');
+    const moduleOnly = resolveModuleFromHash(routeStore, '/inventory');
+    check('TASK-140 bare module id resolves the module with no option (back-compat)',
+      moduleOnly.moduleId === 'inventory' && routeStore.get('activeOptionId') === null);
+    const noModules = new Store({ modules: [], activeModuleId: 'stale' as string | null, activeOptionId: null as string | null });
+    check('TASK-140 nothing loaded yet resolves nothing and clears the stale id',
+      !resolveModuleFromHash(noModules, '/inventory/stock').resolved && noModules.get('activeModuleId') === null);
 
     // CR-L392 (Web.Components) — moveCard with an implicit target index reports the TRUE landing
     // index in the emitted event (regression: precedence bug made it `findIndex(...) - 1`, one too

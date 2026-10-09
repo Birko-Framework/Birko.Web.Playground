@@ -24,6 +24,8 @@ if (new URLSearchParams(location.search).has('smoke')) {
   void import('./range-geometry-smoke.js');
   // TASK-496 — picker triggers announce their popup; the popup is keyboard-usable.
   void import('./picker-popup-smoke.js');
+  // TASK-484 — b-input prefix / suffix slots and clearable: geometry at every size, clear semantics.
+  void import('./input-adornment-smoke.js');
   // STORY-023 / TASK-035 — ElementInternals form association.
   void import('./form-assoc-smoke.js');
   // EPIC-001 — the `description` help-text row.
@@ -361,6 +363,7 @@ const MODAL_SIZE: ControlDef = { label: 'size', attr: 'size', options: ['', 'sm'
 // b-tag has no `variant` — its real knobs are `color` (the leading dot), `size` and `removable`.
 const TAG_COLOR: ControlDef = { label: 'color', attr: 'color', options: ['', '#25ba7a', '#0091ff', '#f5a623', '#e5484d', '#8e4ec6'] };
 const REMOVABLE: ControlDef = { label: 'removable', attr: 'removable', options: ['', 'removable'] };
+const CLEARABLE: ControlDef = { label: 'clearable', attr: 'clearable', options: ['', 'clearable'] }; // TASK-484
 
 // Full catalogue (kept in sync with Birko.Web.Components). reportMissing() warns about any
 // tag here that didn't register; a registered component absent from this list is a gap to fill.
@@ -370,7 +373,7 @@ const CATALOGUE: ComponentDef[] = [
   { tag: 'b-checkbox', label: 'Checkbox', category: 'inputs', render: () => 'Accept terms', controls: [DISABLED] },
   { tag: 'b-radio', label: 'Radio', category: 'inputs', render: () => 'Option A', attrs: { name: 'demo-radio', value: 'a' }, controls: [DISABLED] },
   { tag: 'b-switch', label: 'Switch', category: 'inputs', render: () => 'Enabled', controls: [DISABLED] },
-  { tag: 'b-input', label: 'Input', category: 'inputs', attrs: { label: 'Name', placeholder: 'Type here…', description: 'Shown as-is under the control (the `description` attribute)' }, controls: [SIZE, DISABLED, BARE] },
+  { tag: 'b-input', label: 'Input', category: 'inputs', attrs: { label: 'Name', placeholder: 'Type here…', description: 'Shown as-is under the control (the `description` attribute)' }, controls: [SIZE, DISABLED, BARE, CLEARABLE] },
   { tag: 'b-textarea', label: 'Textarea', category: 'inputs', attrs: { label: 'Notes', placeholder: 'Multi-line…' }, controls: [DISABLED, BARE] },
   { tag: 'b-search-input', label: 'Search input', category: 'inputs', attrs: { placeholder: 'Search…' }, controls: [SIZE] },
   { tag: 'b-select', label: 'Select', category: 'inputs', attrs: { label: 'Pick one', placeholder: 'Choose…' }, render: () => '<option value="1">One</option><option value="2">Two</option><option value="3">Three</option>', controls: [SIZE, BARE] },

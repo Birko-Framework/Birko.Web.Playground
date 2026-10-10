@@ -499,6 +499,40 @@ const fineBase = fineFields.find((f) => f.label === 'b-input' && f.field.startsW
 check(`the floor stays coarse-only — a desktop b-input keeps the base size (${fineBase?.size}px)`,
   fineBase != null && fineBase.size < 16);
 
+// ── 8. b-gallery zoom: full-screen on a phone, framed with a clickable backdrop from 48rem (TASK-550) ─────
+const galleryZoom = async (viewport) => {
+  await load('light', viewport);
+  const box = await page.evaluate(async () => {
+    const g = document.createElement('b-gallery');
+    g.innerHTML = '<img alt="A" src="icon.svg"><img alt="B" src="icon.svg">';
+    document.body.append(g);
+    await new Promise((r) => setTimeout(r, 100));
+    g.openZoom();
+    await new Promise((r) => setTimeout(r, 100));
+    const d = g.shadowRoot.querySelector('dialog.zoom');
+    const b = d.getBoundingClientRect();
+    return { open: d.open, left: b.left, top: b.top, width: b.width, height: b.height, vw: window.innerWidth, vh: window.innerHeight };
+  });
+  // A real click at the top-left corner — on the backdrop when framed, on the panel when full-screen.
+  await page.mouse.click(4, 4);
+  await new Promise((r) => setTimeout(r, 100));
+  const openAfter = await page.evaluate(() => {
+    const g = document.querySelector('b-gallery');
+    const open = g.shadowRoot.querySelector('dialog.zoom').open;
+    g.closeZoom(); g.remove();
+    return open;
+  });
+  return { ...box, openAfter };
+};
+const zPhone = await galleryZoom({ width: 390, height: 844 });
+check(`gallery zoom on a phone fills the screen (${Math.round(zPhone.width)}x${Math.round(zPhone.height)} of ${zPhone.vw}x${zPhone.vh})`,
+  zPhone.open && zPhone.width >= zPhone.vw - 1 && zPhone.height >= zPhone.vh - 1);
+check('…and a tap in its corner (the panel, not a backdrop) keeps it open', zPhone.openAfter === true);
+const zDesk = await galleryZoom({ width: 1280, height: 800 });
+check(`gallery zoom on a desktop is a framed panel with backdrop around it (${Math.round(zDesk.width)}x${Math.round(zDesk.height)} at ${Math.round(zDesk.left)},${Math.round(zDesk.top)} of ${zDesk.vw}x${zDesk.vh})`,
+  zDesk.open && zDesk.width < zDesk.vw * 0.95 && zDesk.height < zDesk.vh * 0.95 && zDesk.left > 0 && zDesk.top > 0);
+check('…and a click on the backdrop closes it', zDesk.openAfter === false);
+
 check(`no page errors during the run (${pageErrors.length})`, pageErrors.length === 0);
 if (pageErrors.length) for (const e of pageErrors) console.log(`  PAGEERROR: ${e}`);
 

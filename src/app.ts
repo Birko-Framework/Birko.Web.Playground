@@ -1069,12 +1069,16 @@ function injectStyles(): void {
     .pg-brand { display:flex; flex-direction:column; line-height:1.2; }
     .pg-sub { color:var(--b-text-secondary,#888); font-size:.78rem; }
     .pg-nav { flex:1 1 auto; min-width:0; overflow-x:auto; }
-    .pg-themes { display:flex; align-items:center; gap:.4rem; flex:0 0 auto; }
+    /* May shrink and scroll sideways: under a coarse pointer the five 44px theme pills plus the label measured 419px,
+       wider than a 390px phone, and that one row made the whole page 433px wide. */
+    .pg-themes { display:flex; align-items:center; gap:.4rem; flex:0 1 auto; min-width:0; max-width:100%; overflow-x:auto; }
     .pg-themes-label { font-size:.68rem; letter-spacing:.06em; text-transform:uppercase; color:var(--b-text-secondary,#888); }
     .pg-actions { display:flex; gap:.4rem; margin-left:auto; }
     .pg-main { padding:1.25rem; }
     .pg-gallery { min-width:0; }
-    .pg-grid { display:grid; grid-template-columns: repeat(auto-fill, minmax(400px,1fr)); gap:1.5rem; }
+    /* min(100%, 400px): a bare 400px minimum made every card 400px on a 390px phone, so the whole page overflowed
+       sideways (433px) and anything sized in vw — the gallery zoom — no longer covered it (TASK-550 walkthrough). */
+    .pg-grid { display:grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 400px),1fr)); gap:1.5rem; }
     .pg-note { font-size:.7rem; color:var(--b-text-secondary,#999); font-style:italic; margin-top:.4rem; }
     /* A wide card takes the whole row whatever the viewport, so the component is measured against a
        realistic width rather than a grid cell. 1 / -1 rather than a column count: the grid is

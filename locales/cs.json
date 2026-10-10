@@ -1,0 +1,31 @@
+{
+  "bwc": {
+    "common": { "close": "Zavřít" },
+    "qtyStepper": {
+      "decrement": "Snížit",
+      "increment": "Zvýšit",
+      "decrementNamed": "Snížit {label}",
+      "incrementNamed": "Zvýšit {label}"
+    },
+    "carousel": {
+      "carousel": "karusel",
+      "slide": "snímek",
+      "slideLabel": "{index} z {count}",
+      "previous": "Předchozí snímek",
+      "next": "Další snímek",
+      "goTo": "Snímek {index}",
+      "status": "Snímek {index} z {count}",
+      "pause": "Zastavit automatické přehrávání",
+      "play": "Spustit automatické přehrávání"
+    },
+    "gallery": {
+      "previous": "Předchozí obrázek",
+      "next": "Další obrázek",
+      "images": "Obrázky",
+      "image": "Obrázek {index}",
+      "zoom": "Zvětšit obrázek",
+      "zoomCount": "{index} / {count}",
+      "status": "Obrázek {index} z {count}: {name}"
+    }
+  }
+}

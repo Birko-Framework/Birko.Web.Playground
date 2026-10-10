@@ -20,6 +20,8 @@ harness). Created in TASK-038 (EPIC-013 reference consumers).
   gallery + token editor + export UI.
 - `index.html` — links `css/*`, hosts `<style id="playground-theme">` (live edits applied here) + `app.js`.
 - `build.js` / `package.json` / `tsconfig.json` — esbuild build + aliases.
+- `locales/` — partial `cs.json` / `sk.json` for the header **Locale** switch; `build.js` copies them plus the library's
+  `Birko.Web.Components/locales/en.json` into `wwwroot/locales/`, which is where `getI18n().setLocale()` fetches from.
 - `wwwroot/` — build output (`app.js` + copied `css/`); git-ignored.
 
 ## Conventions

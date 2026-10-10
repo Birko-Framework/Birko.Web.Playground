@@ -75,6 +75,12 @@ const swOptions = {
 };
 
 copyCss();
+// The header Locale switch calls getI18n().setLocale(), which loads /locales/{lang}.json. Serve the library's own
+// English bundle plus the Playground's partial cs / sk ones (the new components' keys), so a switch neither 404s
+// in the console nor leaves the review with English-only labels.
+mkdirSync('wwwroot/locales', { recursive: true });
+copyFileSync(`${BIRKO_SRC}/Birko.Web.Components/locales/en.json`, 'wwwroot/locales/en.json');
+for (const f of readdirSync('locales')) if (f.endsWith('.json')) copyFileSync(`locales/${f}`, `wwwroot/locales/${f}`);
 copyFileSync('index.html', 'wwwroot/index.html'); // wwwroot is the self-contained web root
 writePwaAssets();
 if (WATCH) {

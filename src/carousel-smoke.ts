@@ -46,6 +46,14 @@ void (async () => {
   const inertMap = (slides: HTMLElement[]) => slides.map((s) => (s.inert ? 'i' : 'v')).join('');
 
   try {
+    // ── a shrink-to-fit parent must not shrink it to one slide's content ──
+    {
+      host.innerHTML = `<div style="display:flex;flex-direction:column;align-items:center;width:20rem"><b-carousel>${slidesHtml(3)}</b-carousel></div>`;
+      await sleep(60);
+      const w = (host.querySelector('b-carousel') as HTMLElement).getBoundingClientRect().width;
+      check(`in a centred flex column the carousel fills its parent (${w.toFixed(0)}px)`, w > 250);
+    }
+
     // ── one slide ──
     let p = await mount('autoplay="100"', 1);
     check('one slide: no arrows, dots or rotation control',

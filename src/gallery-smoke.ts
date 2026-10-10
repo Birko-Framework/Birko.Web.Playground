@@ -61,6 +61,16 @@ void (async () => {
   const inertMap = (slides: HTMLElement[]) => slides.map((s) => (s.inert ? 'i' : 'v')).join('');
 
   try {
+    // ── a shrink-to-fit parent (centred flex column — the Playground card) must not collapse it ──
+    {
+      host.innerHTML = `<div style="display:flex;flex-direction:column;align-items:center;width:30rem"><b-gallery>${imgs}</b-gallery></div>`;
+      await sleep(80);
+      const g = host.querySelector('b-gallery') as HTMLElement;
+      const w = g.getBoundingClientRect().width;
+      const iw = (g.children[0] as HTMLElement).getBoundingClientRect().width;
+      check(`in a centred flex column the gallery fills its parent (${w.toFixed(0)}px, image ${iw.toFixed(0)}px)`, w > 400 && iw > 400);
+    }
+
     // ── one image ──
     let p = await mount(`<b-gallery><img src="${svg('#ddd', 'only')}" alt="Only"></b-gallery>`);
     check('one image: no arrows and no thumbnails', !p.sr.querySelector('.arrow.main') && p.thumbs().length === 0);

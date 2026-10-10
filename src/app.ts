@@ -54,7 +54,7 @@ if (new URLSearchParams(location.search).has('smoke')) {
 // supplies a tiny concrete subclass — a consumer, not framework code — registered as
 // <pg-mobile-shell> and shown phone-framed in the Navigation section.
 import { BMobileAppShell, type Surface } from 'birko-web-shell';
-import { createWakeLockManager, createAudioCue, registerServiceWorker } from 'birko-web-core';
+import { createWakeLockManager, createAudioCue, registerServiceWorker, getI18n } from 'birko-web-core';
 // Imperative dialog helpers (TASK-063) — the lean subpath, not the layout/inputs barrels.
 import {
   confirm as dlgConfirm, confirmDelete, alert as dlgAlert, prompt as dlgPrompt,
@@ -363,6 +363,8 @@ const STATUS: ControlDef = { label: 'variant', attr: 'variant', options: ['', 's
 const DISABLED: ControlDef = { label: 'disabled', attr: 'disabled', options: ['', 'disabled'] };
 // STORY-001/TASK-001 — flip the stacked .field chrome off to review the inline (toolbar / table-cell) form.
 const BARE: ControlDef = { label: 'bare', attr: 'bare', options: ['', 'bare'] };
+// TASK-550 — opt-in: a click on the empty space around the zoomed image closes it.
+const ZOOM_CLOSE_OUTSIDE: ControlDef = { label: 'zoom-close-outside', attr: 'zoom-close-outside', options: ['', 'zoom-close-outside'] };
 const PROGRESS_TYPE: ControlDef = { label: 'type', attr: 'type', options: ['linear', 'circular'] };
 // Overlay width ladder — flip before hitting the launch button. b-modal adds `full`
 // (viewport minus --b-modal-full-inset, both axes) for editor surfaces; b-drawer has no `full`.
@@ -417,7 +419,7 @@ const CATALOGUE: ComponentDef[] = [
   { tag: 'b-carousel', label: 'Carousel', category: 'layout', attrs: { label: 'Featured', loop: '' },
     render: () => '<div style="display:grid;place-items:center;height:8rem;border-radius:var(--b-radius);background:var(--b-bg-tertiary);color:var(--b-text)">Slide 1</div><div style="display:grid;place-items:center;height:8rem;border-radius:var(--b-radius);background:var(--b-color-primary-light, var(--b-bg-tertiary));color:var(--b-text)">Slide 2</div><div style="display:grid;place-items:center;height:8rem;border-radius:var(--b-radius);background:var(--b-bg-secondary);color:var(--b-text)">Slide 3</div><div style="display:grid;place-items:center;height:8rem;border-radius:var(--b-radius);background:var(--b-bg-tertiary);color:var(--b-text)">Slide 4</div><div style="display:grid;place-items:center;height:8rem;border-radius:var(--b-radius);background:var(--b-bg-secondary);color:var(--b-text)">Slide 5</div>',
     note: 'Slotted light-DOM slides; arrows, dots, swipe and mouse drag; off-screen slides inert. Add per-view="2" or set --b-carousel-per-view in CSS; autoplay="5000" adds a stop/start control and never runs under reduced motion (TASK-549).' },
-  { tag: 'b-gallery', label: 'Gallery', category: 'layout', attrs: { label: 'Product images' },
+  { tag: 'b-gallery', label: 'Gallery', category: 'layout', attrs: { label: 'Product images' }, controls: [ZOOM_CLOSE_OUTSIDE],
     render: () => '<img src="data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%20width%3D%22600%22%20height%3D%22600%22%3E%3Crect%20width%3D%22600%22%20height%3D%22600%22%20fill%3D%22%23f4d9c6%22/%3E%3Ctext%20x%3D%2240%22%20y%3D%22100%22%20font-size%3D%2272%22%20font-family%3D%22sans-serif%22%3ENatural%3C/text%3E%3C/svg%3E" alt="Linen, natural"><img src="data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%20width%3D%22600%22%20height%3D%22600%22%3E%3Crect%20width%3D%22600%22%20height%3D%22600%22%20fill%3D%22%23c6d9f4%22/%3E%3Ctext%20x%3D%2240%22%20y%3D%22100%22%20font-size%3D%2272%22%20font-family%3D%22sans-serif%22%3EBlue%3C/text%3E%3C/svg%3E" alt="Linen, blue"><img src="data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%20width%3D%22600%22%20height%3D%22600%22%3E%3Crect%20width%3D%22600%22%20height%3D%22600%22%20fill%3D%22%23c6f4d9%22/%3E%3Ctext%20x%3D%2240%22%20y%3D%22100%22%20font-size%3D%2272%22%20font-family%3D%22sans-serif%22%3ESage%3C/text%3E%3C/svg%3E" alt="Linen, sage"><img src="data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%20width%3D%22600%22%20height%3D%22600%22%3E%3Crect%20width%3D%22600%22%20height%3D%22600%22%20fill%3D%22%23e0e0e0%22/%3E%3Ctext%20x%3D%2240%22%20y%3D%22100%22%20font-size%3D%2272%22%20font-family%3D%22sans-serif%22%3EGrey%3C/text%3E%3C/svg%3E" alt="Linen, grey">',
     note: 'Slotted <img> (data-thumb / data-full optional); thumbnails become dots in a narrow container; click the image or the corner button to zoom (Escape closes); show(i) switches image for a variant (TASK-550).' },
   { tag: 'b-card', label: 'Card', category: 'layout', render: () => '<span slot="header">Card title</span><p>Card body content.</p>' },
@@ -616,6 +618,10 @@ function renderApp(root: HTMLElement): void {
         <span class="pg-sub">component gallery · live token editor</span>
       </div>
       <b-segmented id="pg-nav" class="pg-nav"></b-segmented>
+      <div class="pg-themes" title="The global i18n locale (getI18n().setLocale). Components re-render and format numbers in it — e.g. b-qty-stepper shows 1,5 under cs / sk (TASK-548).">
+        <span class="pg-themes-label">Locale</span>
+        <b-segmented id="pg-locale" label="Locale"></b-segmented>
+      </div>
       <div class="pg-themes" title="Every shipped theme, applied to the whole gallery via data-theme on <html>. Inverse is a partial theme (surfaces only) meant for scoped regions.">
         <span class="pg-themes-label">Theme</span>
         <b-segmented id="pg-theme" label="Theme"></b-segmented>
@@ -680,6 +686,14 @@ function renderApp(root: HTMLElement): void {
     </b-modal>`;
   injectStyles();
   requestAnimationFrame(() => bindThemeSwitcher(root.querySelector<Seg>('#pg-theme')));
+  requestAnimationFrame(() => {
+    const seg = root.querySelector<Seg>('#pg-locale');
+    if (!seg) return;
+    seg.setOptions([{ value: 'en', label: 'EN' }, { value: 'cs', label: 'CS' }, { value: 'sk', label: 'SK' }]);
+    seg.value = getI18n().locale;
+    // No locale bundles are served here, so only number/date formatting changes; labels stay English.
+    seg.addEventListener('change', (e) => { void getI18n().setLocale((e as CustomEvent<{ value?: string }>).detail?.value ?? 'en'); });
+  });
   setupGallery(root);
   void initTokenEditor(root);
   reportMissing();

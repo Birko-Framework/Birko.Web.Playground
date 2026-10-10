@@ -141,6 +141,19 @@ void (async () => {
     check('a click on the main image opens the zoom too', d.open);
     d.dispatchEvent(new MouseEvent('click', { bubbles: true }));
     check('a click on the backdrop closes it', !d.open);
+    // zoom-close-outside: off by default, then opt-in.
+    const pane = () => p.sr.querySelector<HTMLElement>('.zoom-pane')!;
+    zoomBtn.click();
+    pane().dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    check('by default a click beside the image keeps the zoom open', d.open);
+    p.el.setAttribute('zoom-close-outside', '');
+    pane().dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    check('with zoom-close-outside a click beside the image closes it', !d.open);
+    zoomBtn.click();
+    zimg.dispatchEvent(new MouseEvent('click', { bubbles: true, clientX: 10, clientY: 10 }));
+    check('…while a click on the image itself still magnifies, not closes', d.open && pane().classList.contains('magnified'));
+    p.el.closeZoom();
+    p.el.removeAttribute('zoom-close-outside');
 
     // ── srcset: the zoom takes the largest candidate, not the one picked for the small main image ──
     {

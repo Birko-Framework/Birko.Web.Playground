@@ -28,6 +28,8 @@ if (new URLSearchParams(location.search).has('smoke')) {
   void import('./input-adornment-smoke.js');
   // TASK-548 — b-qty-stepper: exact steps, snap on commit, keyboard, form association.
   void import('./qty-stepper-smoke.js');
+  // TASK-549 — b-carousel: controls, inert slides, swipe/drag, per-view from CSS, autoplay rules.
+  void import('./carousel-smoke.js');
   // STORY-023 / TASK-035 — ElementInternals form association.
   void import('./form-assoc-smoke.js');
   // EPIC-001 — the `description` help-text row.
@@ -408,6 +410,9 @@ const CATALOGUE: ComponentDef[] = [
 
   // ── layout ──
   { tag: 'b-button-group', label: 'Button group', category: 'layout', render: () => '<b-button>One</b-button><b-button>Two</b-button><b-button>Three</b-button>' },
+  { tag: 'b-carousel', label: 'Carousel', category: 'layout', attrs: { label: 'Featured', loop: '' },
+    render: () => '<div style="display:grid;place-items:center;height:8rem;border-radius:var(--b-radius);background:var(--b-bg-tertiary);color:var(--b-text)">Slide 1</div><div style="display:grid;place-items:center;height:8rem;border-radius:var(--b-radius);background:var(--b-color-primary-light, var(--b-bg-tertiary));color:var(--b-text)">Slide 2</div><div style="display:grid;place-items:center;height:8rem;border-radius:var(--b-radius);background:var(--b-bg-secondary);color:var(--b-text)">Slide 3</div><div style="display:grid;place-items:center;height:8rem;border-radius:var(--b-radius);background:var(--b-bg-tertiary);color:var(--b-text)">Slide 4</div><div style="display:grid;place-items:center;height:8rem;border-radius:var(--b-radius);background:var(--b-bg-secondary);color:var(--b-text)">Slide 5</div>',
+    note: 'Slotted light-DOM slides; arrows, dots, swipe and mouse drag; off-screen slides inert. Add per-view="2" or set --b-carousel-per-view in CSS; autoplay="5000" adds a stop/start control and never runs under reduced motion (TASK-549).' },
   { tag: 'b-card', label: 'Card', category: 'layout', render: () => '<span slot="header">Card title</span><p>Card body content.</p>' },
   { tag: 'b-accordion', label: 'Accordion', category: 'layout',
     render: () => '<div slot="a1">First section body.</div><div slot="a2">Second section body.</div><div slot="a3">Disabled section body.</div>',

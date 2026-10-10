@@ -164,6 +164,8 @@ void (async () => {
     check(`unexpected throw: ${(e as Error).message}`, false);
   }
   host.remove();
+  // gallery-smoke opens a modal dialog and moves focus; it waits for this so the geometry above is measured undisturbed.
+  (window as unknown as { __inputAdornmentSmokeDone?: boolean }).__inputAdornmentSmokeDone = true;
 
   const passed = results.filter((r) => r.startsWith('PASS')).length;
   console.log(`[playground] input-adornment-smoke: ${passed}/${results.length} passed`);

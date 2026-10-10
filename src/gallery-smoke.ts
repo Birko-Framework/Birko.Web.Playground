@@ -132,6 +132,21 @@ void (async () => {
     d.dispatchEvent(new MouseEvent('click', { bubbles: true }));
     check('a click on the backdrop closes it', !d.open);
 
+    // ── srcset: the zoom takes the largest candidate, not the one picked for the small main image ──
+    {
+      const blob = (label: string) => URL.createObjectURL(new Blob([decodeURIComponent(svg('#eee', label).split(',')[1])], { type: 'image/svg+xml' }));
+      const small = blob('small');
+      const big = blob('big');
+      const q = await mount(`<b-gallery><img src="${small}" srcset="${small} 300w, ${big} 1200w" sizes="300px" alt="Set"></b-gallery>`);
+      q.el.openZoom();
+      const src = q.sr.querySelector<HTMLImageElement>('.zoom-img')!.getAttribute('src');
+      q.el.closeZoom();
+      check('without data-full the zoom takes the largest srcset candidate', src === big);
+      URL.revokeObjectURL(small);
+      URL.revokeObjectURL(big);
+      p = await mount(`<b-gallery>${imgs}</b-gallery>`);
+    }
+
     // ── narrow container: dots instead of thumbnails ──
     host.style.width = '18rem';
     await sleep(60);

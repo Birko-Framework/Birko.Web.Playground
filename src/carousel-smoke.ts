@@ -172,6 +172,15 @@ void (async () => {
     at = p.el.index;
     await sleep(450);
     check('autoplay: stop stops it', p.el.index === at);
+
+    // Focus that came BEFORE autoplay existed must not stop it (owner's test: Tab through, then switch autoplay on).
+    p = await mount('', 3);
+    p.el.dispatchEvent(new FocusEvent('focusin', { bubbles: true, composed: true }));
+    p.el.setAttribute('autoplay', '150');
+    await sleep(30);
+    check(`autoplay switched on after a focus starts playing ("${rot()?.getAttribute('aria-label')}")`,
+      rot()?.getAttribute('aria-label') === 'Stop automatic slide show');
+    check('…and advances', await waitFor(() => p.el.index === 1, 2000));
     host.innerHTML = '';
 
     // ── reduced motion: autoplay never starts ──

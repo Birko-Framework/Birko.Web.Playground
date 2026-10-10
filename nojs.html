@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>No-JS check</title>
+  <meta name="description" content="Server-rendered b-carousel / b-gallery markup, for checking what a visitor sees before (or without) JavaScript." />
+  <link rel="stylesheet" href="css/reset.css" />
+  <link rel="stylesheet" href="css/tokens.css" />
+  <link rel="icon" href="icon.svg" type="image/svg+xml" />
+  <style>
+    body { padding: 1rem; max-width: 40rem; margin: 0 auto; font-family: system-ui, sans-serif; }
+    h1 { font-size: 1.25rem; margin: 0 0 .5rem; } h2 { font-size: 1rem; margin: 1.5rem 0 .5rem; }
+    p { margin: 0 0 .5rem; color: #555; }
+    .slide { height: 6rem; display: grid; place-items: center; border-radius: .5rem; margin-bottom: .25rem; }
+    b-gallery img { max-width: 100%; height: auto; display: block; margin-bottom: .25rem; }
+    /* The documented opt-in: before the element upgrades (or with no JS at all) show only the first slide / image. */
+    .first-only:not(:defined) > :not(:first-child) { display: none; }
+  </style>
+</head>
+<body>
+  <!-- TASK-549 / TASK-550 — the storefront sends these as plain HTML; this page is that HTML. With JavaScript
+       disabled the custom elements never upgrade, which is exactly what an old browser, a crawler or a failed
+       script load sees. With JavaScript on, app.js registers the components (this page has no #app, so it
+       builds no gallery). -->
+  <h1>No-JS check</h1>
+  <p>Open DevTools → Ctrl+Shift+P → "Disable JavaScript", then reload. Re-enable it the same way.</p>
+
+  <h2>1. Carousel, default — every slide is plain content</h2>
+  <p>No JS: all three slides stacked, readable, the link works. JS: a carousel.</p>
+  <b-carousel label="Default">
+      <div class="slide" style="background:#f4d9c6">Slide 1 — <a href="#nojs-link">a link in slide 1</a></div>
+      <div class="slide" style="background:#c6d9f4">Slide 2</div>
+      <div class="slide" style="background:#c6f4d9">Slide 3</div>
+  </b-carousel>
+
+  <h2>2. Carousel with the opt-in rule — only the first slide before upgrade</h2>
+  <p>No JS: only Slide 1. JS: a carousel with all three.</p>
+  <b-carousel class="first-only" label="First only">
+      <div class="slide" style="background:#f4d9c6">Slide 1 — <a href="#nojs-link">a link in slide 1</a></div>
+      <div class="slide" style="background:#c6d9f4">Slide 2</div>
+      <div class="slide" style="background:#c6f4d9">Slide 3</div>
+  </b-carousel>
+
+  <h2>3. Gallery — the primary image first</h2>
+  <p>No JS: the images stacked, primary on top (add class="first-only" to show just the primary). JS: a gallery.</p>
+  <b-gallery label="Product images">
+      <img src="data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%20width%3D%22600%22%20height%3D%22400%22%3E%3Crect%20width%3D%22600%22%20height%3D%22400%22%20fill%3D%22%23f4d9c6%22/%3E%3Ctext%20x%3D%2240%22%20y%3D%22100%22%20font-size%3D%2264%22%20font-family%3D%22sans-serif%22%3ENatural%3C/text%3E%3C/svg%3E" alt="Linen, natural">
+      <img src="data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%20width%3D%22600%22%20height%3D%22400%22%3E%3Crect%20width%3D%22600%22%20height%3D%22400%22%20fill%3D%22%23c6d9f4%22/%3E%3Ctext%20x%3D%2240%22%20y%3D%22100%22%20font-size%3D%2264%22%20font-family%3D%22sans-serif%22%3EBlue%3C/text%3E%3C/svg%3E" alt="Linen, blue">
+      <img src="data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%20width%3D%22600%22%20height%3D%22400%22%3E%3Crect%20width%3D%22600%22%20height%3D%22400%22%20fill%3D%22%23c6f4d9%22/%3E%3Ctext%20x%3D%2240%22%20y%3D%22100%22%20font-size%3D%2264%22%20font-family%3D%22sans-serif%22%3ESage%3C/text%3E%3C/svg%3E" alt="Linen, sage">
+  </b-gallery>
+
+  <p id="nojs-link" style="margin-top:2rem">↑ The link in slide 1 jumps here.</p>
+  <script type="module" src="app.js"></script>
+</body>
+</html>

@@ -82,6 +82,7 @@ mkdirSync('wwwroot/locales', { recursive: true });
 copyFileSync(`${BIRKO_SRC}/Birko.Web.Components/locales/en.json`, 'wwwroot/locales/en.json');
 for (const f of readdirSync('locales')) if (f.endsWith('.json')) copyFileSync(`locales/${f}`, `wwwroot/locales/${f}`);
 copyFileSync('index.html', 'wwwroot/index.html'); // wwwroot is the self-contained web root
+copyFileSync('nojs.html', 'wwwroot/nojs.html'); // TASK-549/550 — server-rendered carousel / gallery markup for the no-JS check
 writePwaAssets();
 if (WATCH) {
   options.plugins = [serviceWorkerPlugin(swOptions)]; // re-stamp the SW after every rebuild

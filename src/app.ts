@@ -32,6 +32,8 @@ if (new URLSearchParams(location.search).has('smoke')) {
   void import('./carousel-smoke.js');
   // TASK-550 — b-gallery: thumbnails, index start vs leash, zoom dialog and focus return, narrow dots.
   void import('./gallery-smoke.js');
+  // TASK-551 — {placeholders} filled in one pass, by one function, on every i18n path.
+  void import('./i18n-interpolate-smoke.js');
   // STORY-023 / TASK-035 — ElementInternals form association.
   void import('./form-assoc-smoke.js');
   // EPIC-001 — the `description` help-text row.

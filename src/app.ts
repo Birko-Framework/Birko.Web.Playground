@@ -34,6 +34,8 @@ if (new URLSearchParams(location.search).has('smoke')) {
   void import('./gallery-smoke.js');
   // TASK-551 — {placeholders} filled in one pass, by one function, on every i18n path.
   void import('./i18n-interpolate-smoke.js');
+  // TASK-547 — SseClient: one retry loop, a growing delay schedule and the _failing signal.
+  void import('./sse-retry-smoke.js');
   // STORY-023 / TASK-035 — ElementInternals form association.
   void import('./form-assoc-smoke.js');
   // EPIC-001 — the `description` help-text row.

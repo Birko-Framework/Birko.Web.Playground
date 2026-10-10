@@ -1,7 +1,8 @@
 // TASK-548 — b-qty-stepper. FlowerFurStudio sells fabric in 0.5 m steps and pieces by 1, so what has to hold:
 // steps are exact (no float drift), typed text is snapped to the grid anchored at `min` and clamped, `change`
-// fires once per committed value and never per keystroke, the ends disable, the keyboard follows the WAI-ARIA
-// spinbutton pattern, and the form sees the canonical value. An app-assigned off-grid value is NOT snapped —
+// fires once per committed value and never per keystroke, the ends become unavailable without leaving the Tab
+// order, the field is a plain text field with the unit as its description (role=spinbutton lost the unit in Chrome
+// and Narrator could not reach the buttons — owner's test 2026-10-10), and the form sees the canonical value. An app-assigned off-grid value is NOT snapped —
 // it is reported through validity.
 import 'birko-web-components/inputs';
 
@@ -41,6 +42,7 @@ void (async () => {
     input.dispatchEvent(new Event('input', { bubbles: true, composed: true }));
   };
   const blur = (input: HTMLInputElement) => input.dispatchEvent(new FocusEvent('blur'));
+  const limited = (b: HTMLButtonElement) => b.getAttribute('aria-disabled') === 'true' && !b.disabled;
   const key = (input: HTMLInputElement, k: string) => {
     const e = new KeyboardEvent('keydown', { key: k, bubbles: true, composed: true, cancelable: true });
     input.dispatchEvent(e);
@@ -56,13 +58,13 @@ void (async () => {
     check(`one change per press (${JSON.stringify(p.changes)})`, p.changes.length === 1 && p.changes[0] === '1.5');
     p.dec.click(); p.dec.click();
     check(`− twice reaches min (${p.el.value})`, p.el.value === '0.5');
-    check('− is disabled at min, + is not', p.dec.disabled && !p.inc.disabled);
+    check('at min − is unavailable but still focusable (aria-disabled, not disabled); + is not', limited(p.dec) && !limited(p.inc) && !p.inc.disabled);
     check(`the press is announced with its unit ("${p.sr.querySelector('[role="status"]')?.textContent}")`,
       p.sr.querySelector('[role="status"]')?.textContent === '0.5 m');
     p.dec.click();
-    check('a disabled − does nothing', p.el.value === '0.5' && p.changes.length === 3);
+    check('an unavailable − does nothing', p.el.value === '0.5' && p.changes.length === 3);
     p.el.stepBy(100);
-    check(`stepBy clamps to max (${p.el.value}), + disabled there`, p.el.value === '3' && p.inc.disabled && !p.dec.disabled);
+    check(`stepBy clamps to max (${p.el.value}), + unavailable there`, p.el.value === '3' && limited(p.inc) && !limited(p.dec));
 
     // ── no float drift ──
     p = await mount('<b-qty-stepper label="L" step="0.1" value="0"></b-qty-stepper>');
@@ -99,6 +101,7 @@ void (async () => {
     // ── keyboard (spinbutton pattern) ──
     p = await mount('<b-qty-stepper label="L" min="0" step="1" max="50" value="5"></b-qty-stepper>');
     check('ArrowUp is handled', key(p.input, 'ArrowUp') && p.el.value === '6');
+    check(`a keyboard step is announced ("${p.sr.querySelector('[role="status"]')?.textContent}")`, p.sr.querySelector('[role="status"]')?.textContent === '6');
     key(p.input, 'ArrowDown');
     check(`ArrowDown steps down ("${p.el.value}")`, p.el.value === '5');
     key(p.input, 'PageUp');
@@ -115,21 +118,22 @@ void (async () => {
 
     // ── ARIA ──
     p = await mount('<b-qty-stepper label="Fabric" min="0.5" step="0.5" max="10" value="1.5" unit="m"></b-qty-stepper>');
-    check('the field is a spinbutton', p.input.getAttribute('role') === 'spinbutton');
-    check(`aria-valuenow / min / max (${p.input.getAttribute('aria-valuenow')} ${p.input.getAttribute('aria-valuemin')} ${p.input.getAttribute('aria-valuemax')})`,
-      p.input.getAttribute('aria-valuenow') === '1.5' && p.input.getAttribute('aria-valuemin') === '0.5' && p.input.getAttribute('aria-valuemax') === '10');
-    check(`aria-valuetext carries the unit ("${p.input.getAttribute('aria-valuetext')}")`, p.input.getAttribute('aria-valuetext') === '1.5 m');
+    check('the field is a plain text field (no spinbutton role)', !p.input.hasAttribute('role') && p.input.type === 'text');
+    check('no aria-value* (Chrome drops aria-valuetext on a text input)', !p.input.hasAttribute('aria-valuenow') && !p.input.hasAttribute('aria-valuetext'));
+    const unitEl = p.sr.querySelector('.unit');
+    check(`the unit is the field's description (describedby "${p.input.getAttribute('aria-describedby')}")`,
+      !!unitEl && (p.input.getAttribute('aria-describedby') ?? '').split(' ').includes(unitEl.id) && unitEl.textContent === 'm' && !unitEl.hasAttribute('aria-hidden'));
     check('the field is named by its label', p.input.getAttribute('aria-labelledby') === `${p.sr.querySelector('label')?.id}`);
     check(`the buttons are named ("${p.dec.getAttribute('aria-label')}", "${p.inc.getAttribute('aria-label')}")`,
       p.dec.getAttribute('aria-label') === 'Decrease Fabric' && p.inc.getAttribute('aria-label') === 'Increase Fabric');
-    check('the buttons are out of the tab order', p.dec.tabIndex === -1 && p.inc.tabIndex === -1);
-    check('the unit is hidden from AT (it is in the valuetext)', p.sr.querySelector('.unit')?.getAttribute('aria-hidden') === 'true');
+    check('the buttons are in the Tab order: −, field, +', p.dec.tabIndex === 0 && p.inc.tabIndex === 0
+      && !!(p.dec.compareDocumentPosition(p.input) & Node.DOCUMENT_POSITION_FOLLOWING) && !!(p.input.compareDocumentPosition(p.inc) & Node.DOCUMENT_POSITION_FOLLOWING));
     p = await mount('<b-qty-stepper bare></b-qty-stepper>');
     check(`unlabelled: the buttons fall back to "Decrease" / "Increase" ("${p.dec.getAttribute('aria-label')}")`,
       p.dec.getAttribute('aria-label') === 'Decrease' && p.inc.getAttribute('aria-label') === 'Increase');
     p = await mount('<b-qty-stepper label="L" label-increment="Pridať" label-decrement="Ubrať"></b-qty-stepper>');
     check('label-increment / label-decrement override', p.inc.getAttribute('aria-label') === 'Pridať' && p.dec.getAttribute('aria-label') === 'Ubrať');
-    check('empty: no aria-valuenow', !p.input.hasAttribute('aria-valuenow') && p.input.value === '');
+    check('empty: the field is blank and neither button is unavailable', p.input.value === '' && !limited(p.dec) && !limited(p.inc));
     p.inc.click();
     check(`+ from empty lands on min ("${p.el.value}")`, p.el.value === '0');
 
@@ -165,7 +169,7 @@ void (async () => {
 
     // ── disabled ──
     p = await mount('<b-qty-stepper label="L" value="2" disabled></b-qty-stepper>');
-    check('disabled: field and both buttons disabled', p.input.disabled && p.dec.disabled && p.inc.disabled);
+    check('disabled: field and both buttons truly disabled', p.input.disabled && p.dec.disabled && p.inc.disabled && !p.dec.hasAttribute('aria-disabled'));
     key(p.input, 'ArrowUp');
     check('disabled: keys do nothing', p.el.value === '2');
     p.el.removeAttribute('disabled');

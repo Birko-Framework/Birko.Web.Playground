@@ -128,6 +128,11 @@ const report = await page.evaluate(async () => {
     }
   }
 
+  // Close the tokens drawer again. It is MODAL, and left open it kept the whole page inert for the rest of the
+  // run — every smoke suite still running behind it could not move focus (gallery-smoke's focus-return check
+  // failed on it every time once that suite ran late; measured: the only open :modal was this b-drawer).
+  document.querySelector('#tokens-drawer')?.close?.();
+  await new Promise((r) => setTimeout(r, 50));
   return { perSection, total, empties, tokenGroups: groups, tokenExport };
 });
 

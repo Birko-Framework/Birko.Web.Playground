@@ -271,6 +271,8 @@ void (async () => {
   }
 
   const passed = results.filter((r) => r.startsWith('PASS')).length;
+  // gallery-smoke opens a modal (which light-dismisses popovers and makes the page inert); it waits for this.
+  (window as unknown as { __ribbonScalingSmokeDone?: boolean }).__ribbonScalingSmokeDone = true;
   console.log(`[playground] ribbon-scaling-smoke: ${passed}/${results.length} passed`);
   for (const r of results) console.log(`[playground] ribbon-scaling-smoke ${r}`);
 })();

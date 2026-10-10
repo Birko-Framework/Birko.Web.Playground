@@ -525,6 +525,28 @@ const galleryZoom = async (viewport) => {
   return { ...box, openAfter };
 };
 const zPhone = await galleryZoom({ width: 390, height: 844 });
+// The same phone, but a page that overflows sideways (the Playground's Layout section measured 433px on 390): the
+// zoom must still cover everything that is visible, edge to edge — a 100vw zoom left a strip either side.
+const zWide = await (async () => {
+  await load('light', { width: 390, height: 844, isMobile: true, hasTouch: true });
+  return page.evaluate(async () => {
+    const spacer = document.createElement('div');
+    spacer.style.cssText = 'width:440px;height:1px';
+    document.body.append(spacer);
+    const g = document.createElement('b-gallery');
+    g.innerHTML = '<img alt="A" src="icon.svg"><img alt="B" src="icon.svg">';
+    document.body.append(g);
+    await new Promise((r) => setTimeout(r, 100));
+    g.openZoom();
+    await new Promise((r) => setTimeout(r, 100));
+    const b = g.shadowRoot.querySelector('dialog.zoom').getBoundingClientRect();
+    const out = { left: b.left, right: b.right, vw: window.innerWidth };
+    g.closeZoom(); g.remove(); spacer.remove();
+    return out;
+  });
+})();
+check(`gallery zoom on a phone covers an overflowing page edge to edge (${Math.round(zWide.left)}..${Math.round(zWide.right)} of ${zWide.vw})`,
+  zWide.left <= 0.5 && zWide.right >= zWide.vw - 0.5 && zWide.vw > 390);
 check(`gallery zoom on a phone fills the screen (${Math.round(zPhone.width)}x${Math.round(zPhone.height)} of ${zPhone.vw}x${zPhone.vh})`,
   zPhone.open && zPhone.width >= zPhone.vw - 1 && zPhone.height >= zPhone.vh - 1);
 check('…and a tap in its corner (the panel, not a backdrop) keeps it open', zPhone.openAfter === true);

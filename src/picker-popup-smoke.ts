@@ -125,6 +125,8 @@ void (async () => {
   host.remove();
 
   const passed = results.filter((r) => r.startsWith('PASS')).length;
+  // gallery-smoke opens a modal (which light-dismisses popovers and makes the page inert); it waits for this.
+  (window as unknown as { __pickerPopupSmokeDone?: boolean }).__pickerPopupSmokeDone = true;
   console.log(`[playground] picker-popup-smoke: ${passed}/${results.length} passed`);
   for (const r of results) console.log(`[playground] picker-popup-smoke ${r}`);
 })();

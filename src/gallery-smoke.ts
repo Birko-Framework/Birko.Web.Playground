@@ -20,14 +20,17 @@ void (async () => {
   const results: string[] = [];
   const check = (name: string, ok: boolean) => results.push(`${ok ? 'PASS' : 'FAIL'} ${name}`);
 
-  // SERIALISATION: the zoom is a modal dialog — it makes the rest of the page inert and moves focus — and the
-  // images add decode work, which together delayed input-adornment-smoke's ResizeObserver past its settle and
-  // failed its geometry checks. That suite raises a flag when it is done; this one starts after it.
+  // SERIALISATION: the zoom is a modal dialog — opening one makes the rest of the page inert, moves focus and
+  // light-dismisses any open popover — and the images add decode work. Run concurrently it failed other suites'
+  // checks (input-adornment geometry; ribbon-scaling's flyout "in the top layer while open") and its own focus
+  // checks. Every suite that opens a dialog / popover or measures geometry it would disturb raises a flag when done.
   {
-    const done = () => (window as unknown as { __inputAdornmentSmokeDone?: boolean }).__inputAdornmentSmokeDone === true;
-    const deadline = Date.now() + 45_000;
-    while (!done() && Date.now() < deadline) await sleep(50);
-    check('input-adornment-smoke finished before the gallery started', done());
+    const flags = ['__inputAdornmentSmokeDone', '__backportSmokeDone', '__ribbonScalingSmokeDone', '__bareSmokeDone', '__pickerPopupSmokeDone'];
+    const w = window as unknown as Record<string, boolean | undefined>;
+    const pending = () => flags.filter((f) => w[f] !== true);
+    const deadline = Date.now() + 90_000;
+    while (pending().length && Date.now() < deadline) await sleep(50);
+    check(`the suites a modal would disturb finished first (still running: ${pending().join(', ') || 'none'})`, pending().length === 0);
   }
 
   const host = document.createElement('div');

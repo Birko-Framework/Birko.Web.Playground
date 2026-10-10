@@ -28,10 +28,13 @@ void (async () => {
     await settle();
     const el = host.querySelector('b-qty-stepper') as Stepper;
     const sr = el.shadowRoot!;
+    // Record announcements: components call ariaNotify where the browser has it (Chrome/Edge do), else a live region.
+    const said: string[] = [];
+    (el as unknown as { ariaNotify: (t: string) => void }).ariaNotify = (t: string) => { said.push(t); };
     const changes: string[] = [];
     el.addEventListener('change', (e) => changes.push((e as CustomEvent<{ value: string }>).detail.value));
     return {
-      el, sr, changes,
+      el, sr, changes, said,
       input: sr.querySelector('input')!,
       dec: sr.querySelector<HTMLButtonElement>('.dec')!,
       inc: sr.querySelector<HTMLButtonElement>('.inc')!,
@@ -59,12 +62,19 @@ void (async () => {
     p.dec.click(); p.dec.click();
     check(`− twice reaches min (${p.el.value})`, p.el.value === '0.5');
     check('at min − is unavailable but still focusable (aria-disabled, not disabled); + is not', limited(p.dec) && !limited(p.inc) && !p.inc.disabled);
-    check(`the press is announced with its unit ("${p.sr.querySelector('[role="status"]')?.textContent}")`,
-      p.sr.querySelector('[role="status"]')?.textContent === '0.5 m');
+    check(`the press is announced with its unit via ariaNotify ("${p.said.at(-1)}")`, p.said.at(-1) === '0.5 m');
+    check('…and not twice: the live region stays empty when ariaNotify exists', p.sr.querySelector('[role="status"]')?.textContent === '');
     p.dec.click();
     check('an unavailable − does nothing', p.el.value === '0.5' && p.changes.length === 3);
     p.el.stepBy(100);
     check(`stepBy clamps to max (${p.el.value}), + unavailable there`, p.el.value === '3' && limited(p.inc) && !limited(p.dec));
+
+    // ── without ariaNotify (Firefox, Safari) the live region carries it ──
+    p = await mount('<b-qty-stepper label="L" step="0.5" value="1" unit="m"></b-qty-stepper>');
+    (p.el as unknown as { ariaNotify?: unknown }).ariaNotify = undefined;
+    p.inc.click();
+    check(`no ariaNotify: the press goes to the role=status region ("${p.sr.querySelector('[role="status"]')?.textContent}")`,
+      p.sr.querySelector('[role="status"]')?.textContent === '1.5 m');
 
     // ── no float drift ──
     p = await mount('<b-qty-stepper label="L" step="0.1" value="0"></b-qty-stepper>');
@@ -101,7 +111,7 @@ void (async () => {
     // ── keyboard (spinbutton pattern) ──
     p = await mount('<b-qty-stepper label="L" min="0" step="1" max="50" value="5"></b-qty-stepper>');
     check('ArrowUp is handled', key(p.input, 'ArrowUp') && p.el.value === '6');
-    check(`a keyboard step is announced ("${p.sr.querySelector('[role="status"]')?.textContent}")`, p.sr.querySelector('[role="status"]')?.textContent === '6');
+    check(`a keyboard step is announced ("${p.said.at(-1)}")`, p.said.at(-1) === '6');
     key(p.input, 'ArrowDown');
     check(`ArrowDown steps down ("${p.el.value}")`, p.el.value === '5');
     key(p.input, 'PageUp');

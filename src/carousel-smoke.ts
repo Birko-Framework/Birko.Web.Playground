@@ -29,6 +29,9 @@ void (async () => {
     await sleep(60);
     const el = host.querySelector('b-carousel') as Carousel;
     const sr = el.shadowRoot!;
+    // Record announcements: components call ariaNotify where the browser has it (Chrome/Edge do), else a live region.
+    const said: string[] = [];
+    (el as unknown as { ariaNotify: (t: string) => void }).ariaNotify = (t: string) => { said.push(t); };
     const events: number[] = [];
     el.addEventListener('slide-change', (e) => events.push((e as CustomEvent<{ index: number }>).detail.index));
     const slides = Array.from(el.children) as HTMLElement[];
@@ -40,7 +43,7 @@ void (async () => {
       dots: () => Array.from(sr.querySelectorAll<HTMLButtonElement>('.dot')),
       /** Slide i's start sits at the viewport's start (the scroll has landed there). */
       aligned: (i: number) => Math.abs(slides[i].getBoundingClientRect().left - vp.getBoundingClientRect().left) < 2,
-      status: () => sr.querySelector('[role="status"]')?.textContent ?? '',
+      status: () => said.at(-1) ?? '',
     };
   };
   const inertMap = (slides: HTMLElement[]) => slides.map((s) => (s.inert ? 'i' : 'v')).join('');

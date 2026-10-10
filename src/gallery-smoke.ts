@@ -43,6 +43,9 @@ void (async () => {
     await sleep(80);
     const el = host.querySelector('b-gallery') as Gallery;
     const sr = el.shadowRoot!;
+    // Record announcements: components call ariaNotify where the browser has it (Chrome/Edge do), else a live region.
+    const said: string[] = [];
+    (el as unknown as { ariaNotify: (t: string) => void }).ariaNotify = (t: string) => { said.push(t); };
     const events: string[] = [];
     for (const n of ['image-change', 'zoom-open', 'zoom-close']) {
       el.addEventListener(n, (e) => events.push(`${n}:${(e as CustomEvent<{ index: number }>).detail.index}`));
@@ -50,7 +53,7 @@ void (async () => {
     const slides = Array.from(el.children) as HTMLElement[];
     const vp = sr.querySelector<HTMLElement>('.viewport')!;
     return {
-      el, sr, events, slides, vp,
+      el, sr, events, slides, vp, said,
       thumbs: () => Array.from(sr.querySelectorAll<HTMLButtonElement>('.thumb')),
       prev: () => sr.querySelector<HTMLButtonElement>('.prev.main'),
       next: () => sr.querySelector<HTMLButtonElement>('.next.main'),
@@ -88,7 +91,7 @@ void (async () => {
     p.thumbs()[2].click();
     check(`a thumbnail shows its image (index ${p.el.index}) ${JSON.stringify(p.events)}`, p.el.index === 2 && p.events.join() === 'image-change:2');
     check('…and scrolls to it', await waitFor(() => p.aligned(2)));
-    check(`…announced ("${p.sr.querySelector('[role="status"]')?.textContent}")`, p.sr.querySelector('[role="status"]')?.textContent === 'Image 3 of 3: Image 3');
+    check(`…announced ("${p.said.at(-1)}")`, p.said.at(-1) === 'Image 3 of 3: Image 3');
     check('at the end: next disabled', p.next()!.disabled && !p.prev()!.disabled);
     p.prev()!.click();
     check(`previous (${p.el.index})`, p.el.index === 1 && p.thumbs()[1].getAttribute('aria-current') === 'true');

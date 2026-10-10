@@ -446,6 +446,8 @@ const TEXT_ENTRY_CASES = [
   ['b-time', { label: 'L' }],
   ['b-color-picker', { label: 'L' }],
   ['b-markdown-editor', { label: 'L' }],
+  ['b-qty-stepper', { label: 'L' }],
+  ['b-qty-stepper', { label: 'L', size: 'sm' }],
 ];
 
 const sweepTextEntry = async (pointer) => {

@@ -26,6 +26,8 @@ if (new URLSearchParams(location.search).has('smoke')) {
   void import('./picker-popup-smoke.js');
   // TASK-484 — b-input prefix / suffix slots and clearable: geometry at every size, clear semantics.
   void import('./input-adornment-smoke.js');
+  // TASK-548 — b-qty-stepper: exact steps, snap on commit, keyboard, form association.
+  void import('./qty-stepper-smoke.js');
   // STORY-023 / TASK-035 — ElementInternals form association.
   void import('./form-assoc-smoke.js');
   // EPIC-001 — the `description` help-text row.
@@ -393,6 +395,8 @@ const CATALOGUE: ComponentDef[] = [
   { tag: 'b-inline-edit', label: 'Inline edit', category: 'inputs', attrs: { value: 'Click to edit' } },
   { tag: 'b-markdown-editor', label: 'Markdown editor', category: 'inputs', attrs: { value: '# Hello\n\nMarkdown **here**.' } },
   { tag: 'b-tag-input', label: 'Tag input', category: 'inputs', attrs: { label: 'Tags', placeholder: 'add tag…' }, controls: [BARE], setup: (el) => el.setTags(['design', 'birko', 'web', 'components']) },
+  { tag: 'b-qty-stepper', label: 'Quantity stepper', category: 'inputs', attrs: { label: 'Fabric', name: 'qty', min: '0.5', step: '0.5', max: '10', value: '1.5', unit: 'm' },
+    note: 'Decimal step anchored at min; typed text snaps on blur / Enter; arrow keys, PageUp/PageDown, Home/End (TASK-548).' },
   { tag: 'b-segmented', label: 'Segmented', category: 'inputs', attrs: { value: 'day' }, setup: (el) => el.setOptions([{ value: 'day', label: 'Day' }, { value: 'week', label: 'Week' }, { value: 'month', label: 'Month' }]) },
   { tag: 'b-option-group', label: 'Option group', category: 'inputs', attrs: { label: 'Choose' }, controls: [BARE], setup: (el) => el.setOptions([{ value: 'a', label: 'Option A' }, { value: 'b', label: 'Option B' }, { value: 'c', label: 'Option C' }]) },
   { tag: 'b-form', label: 'Form', category: 'inputs',

@@ -167,6 +167,12 @@ void (async () => {
     host.style.width = '36rem';
     await sleep(60);
     check('wide: thumbnails are back', getComputedStyle(t0.querySelector('img')!).display !== 'none');
+    // A ~400px desktop product column (the Playground card) keeps thumbnails; only a phone column gets dots.
+    host.style.width = '31rem'; // ~406px of gallery under the 14px root — the card's width
+    await sleep(60);
+    check(`a ~400px column keeps thumbnails (gallery ${p.el.getBoundingClientRect().width.toFixed(0)}px)`, getComputedStyle(t0.querySelector('img')!).display !== 'none');
+    host.style.width = '36rem';
+    await sleep(60);
 
     // ── slotchange ──
     const extra = document.createElement('img');

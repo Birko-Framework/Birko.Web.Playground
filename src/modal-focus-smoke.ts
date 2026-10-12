@@ -80,9 +80,15 @@ void (async () => {
       check('a Shift+Tab on Close is not cancelled', !tabCancelled(close, true));
       check('a Tab on the last slotted control is not cancelled', !tabCancelled(lastBtn));
 
+      // TASK-573: consumers re-call open() while open (syncing from state on every render). That must not move
+      // focus back to the first control, nor make the control inside the dialog the one close() returns to.
+      lastBtn.focus();
+      await openAndSettle(modal);
+      check(`a second open() leaves focus where it is (got ${deepActive()?.tagName.toLowerCase()})`, deepActive() === lastBtn);
+
       modal.close();
       await sleep(30);
-      check('close() returns focus to the opener', document.activeElement === opener);
+      check('close() returns focus to the opener, even after a second open()', document.activeElement === opener);
     }
 
     // ── 2. Disabled and hidden controls are skipped ──

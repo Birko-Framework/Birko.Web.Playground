@@ -49,6 +49,9 @@ if (new URLSearchParams(location.search).has('smoke')) {
   // STORY-052 / TASK-137 — control-side validation messages resolve through i18n. Registers global
   // translations, so it serialises itself after backport-smoke (which asserts them in English).
   void import('./i18n-message-smoke.js');
+  // EPIC-001 / TASK-568 — b-modal starts on its slotted content and never cancels Tab. Opens a modal, so it
+  // serialises itself after the suites a modal would disturb.
+  void import('./modal-focus-smoke.js');
 }
 
 // ── BMobileAppShell demo (EPIC-016 / TASK-049) ───────────────────────────────

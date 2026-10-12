@@ -205,6 +205,8 @@ void (async () => {
   }
   host.querySelector<HTMLElement & { closeZoom?(): void }>('b-gallery')?.closeZoom?.();
   host.remove();
+  // modal-focus-smoke opens a modal too, so it waits for this one.
+  (window as unknown as Record<string, boolean>).__gallerySmokeDone = true;
 
   const passed = results.filter((r) => r.startsWith('PASS')).length;
   console.log(`[playground] gallery-smoke: ${passed}/${results.length} passed`);

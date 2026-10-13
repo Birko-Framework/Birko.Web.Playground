@@ -43,12 +43,13 @@ node verify.mjs                 # 667 — the gallery, every component, the toke
 node device-fix-check.mjs       #  68 — device/viewport behaviour
 node subpath-check.mjs          #       serves under /Birko.Web.Playground/ and drives the app there
 node theme-roundtrip-check.mjs  #  11 — an exported theme, pasted into a real second app
-node entry-points-check.mjs     # 397 — each component imported alone, as a lean consumer would
+node entry-points-check.mjs     # 403 — each component imported alone, as a lean consumer would
+node keyboard-check.mjs         #  12 — real key presses: tab stops and native radio arrows (b-rating)
 node cross-engine-check.mjs [s] #       runs one suite in Chromium AND Firefox
 node webkit-check.mjs [suite]   #       …and in WebKit, via Playwright borrowed from the Reps suite
 ```
 
-Each of the last five exists because it asks something the ones above it structurally cannot.
+Each of the last six exists because it asks something the ones above it structurally cannot.
 
 `subpath-check.mjs` is the one that looks redundant and is not. The other two serve `wwwroot/` at the
 **web root**, which is exactly the configuration that hides a subpath defect — all 667 checks passed
@@ -67,6 +68,10 @@ tokens and compare equal.
 `entry-points-check.mjs` needs no build: it bundles one throwaway consumer per component, each importing only
 that component through the README's documented alias. `verify.mjs` loads every component at once, so a component
 that renders a `b-*` it never imports passes there and breaks only in a lean consumer.
+
+`keyboard-check.mjs` sends **trusted** key presses through puppeteer. An in-page suite can dispatch a
+`KeyboardEvent`, but an untrusted event has no default action: it neither moves focus on Tab nor moves a native
+radio group on an arrow key. So a control built on native keyboard behaviour (`b-rating`'s radios) is checked here.
 
 `cross-engine-check.mjs` and `webkit-check.mjs` run a suite in the engines `verify.mjs` cannot reach.
 Both carry a small allow-list keyed by exact name, each entry naming the task that owns it (TASK-466

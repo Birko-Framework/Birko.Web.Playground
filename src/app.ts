@@ -38,6 +38,8 @@ if (new URLSearchParams(location.search).has('smoke')) {
   void import('./sse-retry-smoke.js');
   // TASK-582 — BasePage renders a page's tour ? beside the title, named, wired once.
   void import('./page-tour-smoke.js');
+  // TASK-579 — b-rating: names, form association, read-only, Home/End, contrast in every theme.
+  void import('./rating-smoke.js');
   // STORY-023 / TASK-035 — ElementInternals form association.
   void import('./form-assoc-smoke.js');
   // EPIC-001 — the `description` help-text row.
@@ -448,6 +450,8 @@ const CATALOGUE: ComponentDef[] = [
   { tag: 'b-tag-input', label: 'Tag input', category: 'inputs', attrs: { label: 'Tags', placeholder: 'add tag…' }, controls: [BARE], setup: (el) => el.setTags(['design', 'birko', 'web', 'components']) },
   { tag: 'b-qty-stepper', label: 'Quantity stepper', category: 'inputs', attrs: { label: 'Fabric', name: 'qty', min: '0.5', step: '0.5', max: '10', value: '1.5', unit: 'm' },
     note: 'Decimal step anchored at min; typed text snaps on blur / Enter; arrow keys, PageUp/PageDown, Home/End (TASK-548).' },
+  // TASK-579 — whole-star rating: native radios behind the stars; readonly is an image with no tab stop.
+  { tag: 'b-rating', label: 'Rating', category: 'inputs', attrs: { label: 'Your rating', name: 'stars', value: '3' }, controls: [SIZE, DISABLED] },
   { tag: 'b-segmented', label: 'Segmented', category: 'inputs', attrs: { value: 'day' }, setup: (el) => el.setOptions([{ value: 'day', label: 'Day' }, { value: 'week', label: 'Week' }, { value: 'month', label: 'Month' }]) },
   { tag: 'b-option-group', label: 'Option group', category: 'inputs', attrs: { label: 'Choose' }, controls: [BARE], setup: (el) => el.setOptions([{ value: 'a', label: 'Option A' }, { value: 'b', label: 'Option B' }, { value: 'c', label: 'Option C' }]) },
   { tag: 'b-form', label: 'Form', category: 'inputs',

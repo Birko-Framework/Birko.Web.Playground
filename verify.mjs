@@ -148,7 +148,7 @@ const report = await page.evaluate(async () => {
 const SUITES = [
   'backport-smoke', 'bare-smoke', 'description-smoke',
   'form-assoc-smoke', 'ribbon-overflow-smoke', 'ribbon-scaling-smoke',
-  'table-header-smoke', 'select-creatable-smoke', 'select-combobox-smoke', 'multi-select-create-smoke', 'range-geometry-smoke', 'picker-popup-smoke', 'input-adornment-smoke', 'qty-stepper-smoke', 'carousel-smoke', 'gallery-smoke', 'modal-focus-smoke', 'i18n-interpolate-smoke', 'sse-retry-smoke',
+  'table-header-smoke', 'select-creatable-smoke', 'select-combobox-smoke', 'multi-select-create-smoke', 'range-geometry-smoke', 'picker-popup-smoke', 'input-adornment-smoke', 'qty-stepper-smoke', 'carousel-smoke', 'gallery-smoke', 'modal-focus-smoke', 'i18n-interpolate-smoke', 'sse-retry-smoke', 'page-tour-smoke',
   // Serialises itself after backport-smoke (global i18n registration), so it always reports LAST.
   'i18n-message-smoke',
 ];

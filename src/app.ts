@@ -36,6 +36,8 @@ if (new URLSearchParams(location.search).has('smoke')) {
   void import('./i18n-interpolate-smoke.js');
   // TASK-547 — SseClient: one retry loop, a growing delay schedule and the _failing signal.
   void import('./sse-retry-smoke.js');
+  // TASK-582 — BasePage renders a page's tour ? beside the title, named, wired once.
+  void import('./page-tour-smoke.js');
   // STORY-023 / TASK-035 — ElementInternals form association.
   void import('./form-assoc-smoke.js');
   // EPIC-001 — the `description` help-text row.

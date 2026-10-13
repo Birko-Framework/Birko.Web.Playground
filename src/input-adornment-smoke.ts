@@ -7,6 +7,12 @@ import 'birko-web-components/inputs';
 import { focusable } from './smoke-focus';
 
 const settle = () => new Promise((r) => setTimeout(r, 60));
+/** Poll a condition for up to `ms`, then report whether it held. */
+const waitFor = async (cond: () => boolean, ms = 2000) => {
+  const deadline = Date.now() + ms;
+  while (Date.now() < deadline) { if (cond()) return true; await new Promise((r) => setTimeout(r, 10)); }
+  return cond();
+};
 
 void (async () => {
   const results: string[] = [];
@@ -36,6 +42,14 @@ void (async () => {
     };
   };
 
+  // b-input sets the adornment padding from a ResizeObserver, not during render, so a fixed sleep races it. Wait
+  // for the inline padding it writes; a timeout is a named failure, never a measurement of the unpadded field.
+  const padded = (side: 'start' | 'end') => parts().input.style.getPropertyValue(`padding-inline-${side}`) !== '';
+  const awaitPadding = async (label: string, side: 'start' | 'end', want = true) => {
+    const ok = await waitFor(() => padded(side) === want);
+    check(`${label}: precondition — the observer ${want ? 'applied' : 'removed'} the ${side} padding within 2 s`, ok);
+  };
+
   try {
     for (const size of ['sm', '', 'lg']) {
       const name = size || 'md';
@@ -49,6 +63,7 @@ void (async () => {
 
       host.innerHTML = `<b-input label="U" ${sizeAttr}><span slot="prefix">https://</span></b-input>`;
       await settle();
+      await awaitPadding(name, 'start');
       let p = parts();
       check(`${name}: an empty suffix leaves the size variant's end padding (${getComputedStyle(p.input).paddingRight} vs ${basePad[1]})`,
         getComputedStyle(p.input).paddingRight === basePad[1]);
@@ -64,6 +79,7 @@ void (async () => {
       // clearable + slotted suffix: the × sits after the suffix, both clear of the text, and appearing changes nothing.
       host.innerHTML = `<b-input label="U" clearable ${sizeAttr}><span slot="suffix">.cz</span></b-input>`;
       await settle();
+      await awaitPadding(`${name} clearable`, 'end');
       p = parts();
       const emptyBox = p.el.getBoundingClientRect();
       const emptyPad = getComputedStyle(p.input).paddingRight;
@@ -93,9 +109,11 @@ void (async () => {
     icon.textContent = '@@@@';
     p.el.appendChild(icon);
     await settle();
+    await awaitPadding('slotchange', 'start');
     const grown = getComputedStyle(p.input).paddingLeft;
     icon.remove();
     await settle();
+    await awaitPadding('slotchange', 'start', false);
     const after = getComputedStyle(p.input).paddingLeft;
     check(`slotchange: the start padding grows with a prefix and returns without one (${before} → ${grown} → ${after})`,
       parseFloat(grown) > parseFloat(before) && after === before);

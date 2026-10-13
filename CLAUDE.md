@@ -56,6 +56,7 @@ both scripts read `wwwroot/`, so an unbuilt edit silently verifies the previous 
 node build.js
 node verify.mjs             # every section renders, no EMPTY component, no page error, all *-smoke suites
 node device-fix-check.mjs   # geometry + contrast at viewports/themes verify.mjs never visits (exit 1 on FAIL)
+node entry-points-check.mjs # each Birko.Web.Components file imported alone registers all it renders (no build needed)
 ```
 
 `verify.mjs` loads **one** 800x600 light-theme page, which is blind to a whole class of defect — the

@@ -43,11 +43,12 @@ node verify.mjs                 # 667 — the gallery, every component, the toke
 node device-fix-check.mjs       #  68 — device/viewport behaviour
 node subpath-check.mjs          #       serves under /Birko.Web.Playground/ and drives the app there
 node theme-roundtrip-check.mjs  #  11 — an exported theme, pasted into a real second app
+node entry-points-check.mjs     # 397 — each component imported alone, as a lean consumer would
 node cross-engine-check.mjs [s] #       runs one suite in Chromium AND Firefox
 node webkit-check.mjs [suite]   #       …and in WebKit, via Playwright borrowed from the Reps suite
 ```
 
-Each of the last four exists because it asks something the ones above it structurally cannot.
+Each of the last five exists because it asks something the ones above it structurally cannot.
 
 `subpath-check.mjs` is the one that looks redundant and is not. The other two serve `wwwroot/` at the
 **web root**, which is exactly the configuration that hides a subpath defect — all 667 checks passed
@@ -62,6 +63,10 @@ the exported file, calls `registerThemes()`, and compares painted properties off
 roots. It measures the consumer **twice**, with and without `data-theme="my-brand"`: without that
 control an export that emitted nothing at all would pass, because both sides would sit on the base
 tokens and compare equal.
+
+`entry-points-check.mjs` needs no build: it bundles one throwaway consumer per component, each importing only
+that component through the README's documented alias. `verify.mjs` loads every component at once, so a component
+that renders a `b-*` it never imports passes there and breaks only in a lean consumer.
 
 `cross-engine-check.mjs` and `webkit-check.mjs` run a suite in the engines `verify.mjs` cannot reach.
 Both carry a small allow-list keyed by exact name, each entry naming the task that owns it (TASK-466

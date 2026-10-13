@@ -60,7 +60,8 @@ if (new URLSearchParams(location.search).has('smoke')) {
 // BMobileAppShell is abstract (needs surfaces + brand/user/t/onSignOut), so the playground
 // supplies a tiny concrete subclass — a consumer, not framework code — registered as
 // <pg-mobile-shell> and shown phone-framed in the Navigation section.
-import { BMobileAppShell, type Surface } from 'birko-web-shell';
+import { BMobileAppShell, BasePage, type Surface } from 'birko-web-shell';
+import type { TourStep } from 'birko-web-components/layout';
 import { createWakeLockManager, createAudioCue, registerServiceWorker, getI18n } from 'birko-web-core';
 // Imperative dialog helpers (TASK-063) — the lean subpath, not the layout/inputs barrels.
 import {
@@ -330,6 +331,41 @@ class PgGridBench extends HTMLElement {
 }
 if (!customElements.get('pg-grid-bench')) customElements.define('pg-grid-bench', PgGridBench);
 
+// ── Page tour button (TASK-582) ──────────────────────────────────────────────
+// BasePage renders a page's tour `?` beside its title. Two real pages side by side, one with no header action and
+// one with a Create button, so the placement can be judged on both (TASK-582's human test plan).
+const PG_TOUR_STEPS: TourStep[] = [
+  { title: 'Page tour', body: 'This tour was started from the ? beside the page title.' },
+  { title: 'Replays', body: 'Close it and press ? again: it starts over every time.' },
+];
+class PgTourReadOnly extends BasePage {
+  protected get pageTitle() { return 'Orders'; }
+  protected tourSteps() { return PG_TOUR_STEPS; }
+  protected get tourId() { return 'pg-tour-read-only'; }
+  protected renderContent() { return '<p>Read-only: no header actions.</p>'; }
+}
+class PgTourWithCreate extends BasePage {
+  protected get pageTitle() { return 'Products'; }
+  protected tourSteps() { return PG_TOUR_STEPS; }
+  protected get tourId() { return 'pg-tour-with-create'; }
+  protected renderHeaderActions() { return '<b-button variant="primary" size="sm">New product</b-button>'; }
+  protected renderContent() { return '<p>With a Create action.</p>'; }
+}
+if (!customElements.get('pg-tour-read-only')) customElements.define('pg-tour-read-only', PgTourReadOnly);
+if (!customElements.get('pg-tour-with-create')) customElements.define('pg-tour-with-create', PgTourWithCreate);
+class PgPageTour extends HTMLElement {
+  connectedCallback(): void {
+    if (this.dataset.ready) return;
+    this.dataset.ready = '1';
+    const frame = 'flex:1 1 16rem;min-width:0;border:var(--b-border-width,1px) solid var(--b-border);'
+      + 'border-radius:var(--b-radius,.375rem);padding:var(--b-space-md,.75rem)';
+    this.innerHTML = `<div style="display:flex;flex-wrap:wrap;gap:var(--b-space-md,.75rem)">
+      <pg-tour-read-only style="${frame}"></pg-tour-read-only>
+      <pg-tour-with-create style="${frame}"></pg-tour-with-create></div>`;
+  }
+}
+if (!customElements.get('pg-page-tour')) customElements.define('pg-page-tour', PgPageTour);
+
 
 
 // ── Component catalogue ──────────────────────────────────────────────────────
@@ -457,6 +493,9 @@ const CATALOGUE: ComponentDef[] = [
       { target: '#pg-nav', title: 'Sections', body: 'Switch component categories here.', placement: 'bottom' },
       { target: '#open-tokens', title: 'Design tokens', body: 'Tweak design tokens live.', placement: 'bottom' },
     ], { id: 'pg-demo-tour' }) } },
+
+  { tag: 'pg-page-tour', label: 'Page tour button (BasePage)', category: 'layout', wide: true,
+    note: 'TASK-582: a Birko.Web.Shell page that returns tourSteps() gets a ? beside its title, with or without header actions. Press it to start the tour; it replays every time.' },
 
   // ── data ──
   { tag: 'pg-grid-bench', label: 'Grid benchmark — raw vs bare cells', category: 'data',

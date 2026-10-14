@@ -7,6 +7,9 @@ void Object.keys(BirkoWebComponents).length;
 
 // EPIC-002 backport smoke — the Birko.Web backports' regression harness. Gated to verify.mjs (which
 // loads /?smoke=1) so the interactive gallery console stays clean; the regression gate is preserved.
+// TASK-545 — fixtures keyboard-check.mjs drives with trusted input (the toast manager, an undo-mode list page).
+if (new URLSearchParams(location.search).has('kb')) void import('./undo-delete-kb.js');
+
 if (new URLSearchParams(location.search).has('smoke')) {
   void import('./backport-smoke.js');
   // STORY-001 / TASK-001 — `bare` attribute on the form controls.
@@ -40,6 +43,8 @@ if (new URLSearchParams(location.search).has('smoke')) {
   void import('./page-tour-smoke.js');
   // TASK-579 — b-rating: names, form association, read-only, Home/End, contrast in every theme.
   void import('./rating-smoke.js');
+  // TASK-545 — b-toast action (Undo) and base-crud-page's deleteMode 'undo' with its required restore.
+  void import('./undo-delete-smoke.js');
   // STORY-023 / TASK-035 — ElementInternals form association.
   void import('./form-assoc-smoke.js');
   // EPIC-001 — the `description` help-text row.

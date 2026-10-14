@@ -32,7 +32,9 @@ const check = (name, ok) => { results.push({ name, ok }); console.log(`${ok ? 'P
 const browser = await puppeteer.launch({ headless: 'new', args: ['--no-sandbox', '--disable-setuid-sandbox'] });
 try {
   const page = await browser.newPage();
-  await page.goto(url, { waitUntil: 'networkidle0' });
+  // ?kb=1 loads the fixtures only this script needs (TASK-545's toast manager on window and an undo-mode page).
+  await page.goto(`${url}?kb=1`, { waitUntil: 'networkidle0' });
+  await page.waitForFunction(() => !!window.__kbToast && !!customElements.get('ud-kb-page'));
 
   /** Mount `<button>before</button>{markup}<button>after</button>` on top of the gallery and wait for b-rating. */
   const mount = (markup) => page.evaluate(async (m) => {
@@ -134,6 +136,93 @@ try {
   await focusBefore();
   await page.keyboard.press('Tab');
   check(`disabled has no tab stop (focus ${await focused()})`, (await focused()) === 'kb-after');
+
+  // ── TASK-545: a toast's action is reachable by Tab, held open by real focus and real hover, operable by Enter ──
+  await page.evaluate(() => { document.getElementById('kb-host')?.remove(); document.querySelectorAll('b-toast-item').forEach((t) => t.remove()); });
+  /** Show an action toast and put a button right before the toast container, so one Tab reaches the toast. */
+  const showActionToast = (durationMs) => page.evaluate((ms) => {
+    window.__kbActed = 0;
+    const t = window.__kbToast.show('Item deleted', 'success', ms, { action: { onClick: () => { window.__kbActed++; } } });
+    document.getElementById('kb-last')?.remove();
+    const last = document.createElement('button');
+    last.id = 'kb-last';
+    last.textContent = 'last';
+    t.parentElement.before(last);
+    return true;
+  }, durationMs);
+  const toastState = () => page.evaluate(() => {
+    const t = [...document.querySelectorAll('b-toast-item')].at(-1);
+    return { present: !!t && t.isConnected && !t.classList.contains('fade-out'), acted: window.__kbActed };
+  });
+  const focusedIsAction = () => page.evaluate(() => {
+    let el = document.activeElement;
+    while (el?.shadowRoot?.activeElement) el = el.shadowRoot.activeElement;
+    return el?.classList.contains('action') === true && el.getRootNode().host?.localName === 'b-toast-item';
+  });
+
+  await showActionToast(400);
+  await page.evaluate(() => document.getElementById('kb-last').focus());
+  await page.keyboard.press('Tab');
+  check("Tab reaches the toast's Undo button", await focusedIsAction());
+  await new Promise((r) => setTimeout(r, 900));
+  check('a toast whose Undo holds real focus outlives its 400 ms duration', (await toastState()).present);
+  await page.keyboard.press('Enter');
+  await new Promise((r) => setTimeout(r, 50));
+  const afterEnter = await toastState();
+  check(`Enter on Undo runs the action (acted ${afterEnter.acted}) and dismisses the toast`, afterEnter.acted === 1 && !afterEnter.present);
+
+  await showActionToast(400);
+  const box = await page.evaluate(() => {
+    const r = [...document.querySelectorAll('b-toast-item')].at(-1).getBoundingClientRect();
+    return { x: r.x + r.width / 2, y: r.y + r.height / 2 };
+  });
+  await page.mouse.move(box.x, box.y);
+  await new Promise((r) => setTimeout(r, 900));
+  check('a hovered toast outlives its 400 ms duration', (await toastState()).present);
+  await page.mouse.move(0, 0);
+  await new Promise((r) => setTimeout(r, 1600));
+  check('after the pointer leaves, it dismisses', !(await toastState()).present);
+
+  // ── TASK-545: a keyboard-started undo-delete moves focus to Undo; Enter restores the row ──
+  await page.evaluate(() => {
+    document.getElementById('kb-last')?.remove();
+    document.getElementById('kb-host')?.remove();
+    const host = document.createElement('div');
+    host.id = 'kb-host';
+    host.style.cssText = 'position:fixed;top:0;left:0;z-index:99999;background:var(--b-bg);padding:8px;width:700px';
+    host.innerHTML = '<button id="kb-before">before</button><ud-kb-page></ud-kb-page>';
+    document.body.prepend(host);
+  });
+  const rowsText = () => page.evaluate(() => {
+    const deep = (n) => (n.nodeType === 3 ? n.textContent : '') + (n.shadowRoot ? deep(n.shadowRoot) : '') + [...n.childNodes].map(deep).join('');
+    return deep(document.querySelector('ud-kb-page').shadowRoot.querySelector('#table'));
+  });
+  await page.waitForFunction(() => !!document.querySelector('ud-kb-page')?.shadowRoot?.querySelector('#table'));
+  for (let i = 0; i < 50 && !(await rowsText()).includes('Alpha'); i++) await new Promise((r) => setTimeout(r, 50));
+  const onTrigger = () => page.evaluate(() => {
+    let el = document.activeElement;
+    while (el?.shadowRoot?.activeElement) el = el.shadowRoot.activeElement;
+    return el?.getRootNode().host?.matches('.row-action-trigger[data-id="a"]') === true;
+  });
+  await page.evaluate(() => document.getElementById('kb-before').focus());
+  for (let i = 0; i < 25 && !(await onTrigger()); i++) await page.keyboard.press('Tab');
+  check("precondition: Tab reaches row Alpha's actions trigger", await onTrigger());
+  await page.evaluate(() => document.querySelector('ud-kb-page').deleteRow('a'));
+  for (let i = 0; i < 50 && (await rowsText()).includes('Alpha'); i++) await new Promise((r) => setTimeout(r, 50));
+  check('the keyboard-started delete removed the row', !(await rowsText()).includes('Alpha'));
+  check("focus moved to the toast's Undo, not to <body>", await focusedIsAction());
+  await page.keyboard.press('Enter');
+  for (let i = 0; i < 50 && !(await rowsText()).includes('Alpha'); i++) await new Promise((r) => setTimeout(r, 50));
+  check('Enter on Undo brings the row back', (await rowsText()).includes('Alpha'));
+
+  // A pointer-started delete leaves focus alone: a toast that grabbed it would stay open until the user clicked away.
+  await page.evaluate(() => document.querySelectorAll('b-toast-item').forEach((t) => t.remove()));
+  const trigger = await page.evaluateHandle(() => document.querySelector('ud-kb-page').shadowRoot.querySelector('#table')
+    .shadowRoot.querySelector('b-table').shadowRoot.querySelector('.row-action-trigger[data-id="b"]').shadowRoot.querySelector('button'));
+  await trigger.click();
+  await page.evaluate(() => document.querySelector('ud-kb-page').deleteRow('b'));
+  for (let i = 0; i < 50 && (await rowsText()).includes('Bravo'); i++) await new Promise((r) => setTimeout(r, 50));
+  check('a pointer-started delete does not move focus to Undo', !(await focusedIsAction()));
 } finally {
   await browser.close();
   server.close();

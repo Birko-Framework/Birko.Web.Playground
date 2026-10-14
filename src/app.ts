@@ -47,6 +47,8 @@ if (new URLSearchParams(location.search).has('smoke')) {
   void import('./undo-delete-smoke.js');
   // TASK-597 — a toast's message and icon are text: markup in them is shown, never parsed or run.
   void import('./toast-escape-smoke.js');
+  // TASK-581 — SyncManager backoff, retry cap, dead state, per-entity ordering, retry/discard.
+  void import('./sync-retry-smoke.js');
   // STORY-023 / TASK-035 — ElementInternals form association.
   void import('./form-assoc-smoke.js');
   // EPIC-001 — the `description` help-text row.

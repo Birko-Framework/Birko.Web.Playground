@@ -214,6 +214,8 @@ void (async () => {
   host.remove();
 
   const passed = results.filter((r) => r.startsWith('PASS')).length;
+  // Its drag and autoplay checks are timing-sensitive; sync-retry-smoke's IndexedDB churn waits for this flag.
+  (window as unknown as { __carouselSmokeDone?: boolean }).__carouselSmokeDone = true;
   console.log(`[playground] carousel-smoke: ${passed}/${results.length} passed`);
   for (const r of results) console.log(`[playground] carousel-smoke ${r}`);
 })();

@@ -375,6 +375,7 @@ void (async () => {
     const fakeQueue = {
       pendingCount: 0,
       getPending: async () => { getPendingCalls++; return []; },
+      getDead: async () => [], // TASK-581: sync() reads the dead actions first, to hold their entities
       update: async () => {},
       remove: async () => {},
     } as unknown as ConstructorParameters<typeof SyncManager>[0];

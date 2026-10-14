@@ -45,6 +45,8 @@ if (new URLSearchParams(location.search).has('smoke')) {
   void import('./rating-smoke.js');
   // TASK-545 — b-toast action (Undo) and base-crud-page's deleteMode 'undo' with its required restore.
   void import('./undo-delete-smoke.js');
+  // TASK-597 — a toast's message and icon are text: markup in them is shown, never parsed or run.
+  void import('./toast-escape-smoke.js');
   // STORY-023 / TASK-035 — ElementInternals form association.
   void import('./form-assoc-smoke.js');
   // EPIC-001 — the `description` help-text row.

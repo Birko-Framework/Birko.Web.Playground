@@ -167,8 +167,7 @@ const contrastReport = await page.evaluate(async (theme) => {
   const out = {};
   for (const name of ['success', 'warning', 'danger', 'info', 'primary']) {
     const tint = cs.getPropertyValue(`--b-color-${name}-light`).trim();
-    const strong = cs.getPropertyValue(`--b-color-${name}`).trim();
-    out[name] = { tint, onText: ratio(text, tint), onStrong: ratio(strong, tint) };
+    out[name] = { tint, onText: ratio(text, tint) };
   }
   return out;
 }, 'dark');
@@ -176,10 +175,41 @@ const contrastReport = await page.evaluate(async (theme) => {
 for (const [name, m] of Object.entries(contrastReport)) {
   // AA for body text is 4.5:1. b-stale-banner's warning line is small text on the tint.
   check(`dark: --b-text on --b-color-${name}-light is AA-legible (${m.onText}:1 on ${m.tint})`, m.onText >= 4.5);
-  // b-badge/b-stat paint the strong colour on the same tint — darkening the tint must help this pair too,
-  // not trade one contrast for the other. 3:1 is the AA bar for the large/bold badge text.
-  check(`dark: --b-color-${name} on --b-color-${name}-light stays readable for b-badge/b-stat (${m.onStrong}:1)`, m.onStrong >= 3);
 }
+
+// ── 3b. Rendered text on tints and fills, every theme (TASK-130 / TASK-599) ─────────────────────────────────
+// Birko.DesignTokens.Tests' ContrastTests measures every pair from tokens.json; this proves the COMPONENTS paint
+// those pairs: a badge reading --b-color-x instead of --b-color-x-text would pass the token gate and fail here.
+// Badge and toast text is 11–14px, so the floor is AA's 4.5:1 (the old 3:1 "large text" bar was never theirs).
+// `inverse` is measured inside a [data-theme="inverse"] box over each page theme, as a consumer uses it.
+const rendered = await page.evaluate(async () => {
+  const parse = (v) => v.match(/\d+(\.\d+)?/g).slice(0, 3).map(Number);
+  const lum = (c) => { const [r, g, b] = c.map((v) => { const s = v / 255; return s <= 0.03928 ? s / 12.92 : ((s + 0.055) / 1.055) ** 2.4; }); return 0.2126 * r + 0.7152 * g + 0.0722 * b; };
+  const ratio = (fg, bg) => { const [x, y] = [lum(parse(fg)), lum(parse(bg))].sort((p, q) => q - p); return Math.round(((x + 0.05) / (y + 0.05)) * 100) / 100; };
+  const out = [];
+  for (const theme of ['light', 'dark', 'neon', 'finstat']) {
+    document.documentElement.setAttribute('data-theme', theme);
+    for (const inverse of [false, true]) {
+      const host = document.createElement('div');
+      if (inverse) host.setAttribute('data-theme', 'inverse');
+      host.innerHTML = ['primary', 'success', 'warning', 'danger', 'info'].map((v) => `<b-badge variant="${v}">${v}</b-badge>`).join('')
+        + ['success', 'error', 'warning', 'info'].map((v) => `<b-toast-item variant="${v}" message="${v}"></b-toast-item>`).join('');
+      document.body.appendChild(host);
+      await new Promise((r) => setTimeout(r, 60));
+      for (const el of host.children) {
+        const inner = el.shadowRoot?.querySelector('.badge, .toast');
+        if (!inner) { out.push({ where: `${inverse ? 'inverse/' : ''}${theme}`, what: el.tagName, ratio: 0, fg: 'not rendered', bg: '' }); continue; }
+        const cs = getComputedStyle(inner);
+        out.push({ where: `${inverse ? 'inverse/' : ''}${theme}`, what: `${el.tagName.toLowerCase()} ${el.getAttribute('variant')}`,
+          ratio: ratio(cs.color, cs.backgroundColor), fg: cs.color, bg: cs.backgroundColor });
+      }
+      host.remove();
+    }
+  }
+  document.documentElement.setAttribute('data-theme', 'dark');
+  return out;
+});
+for (const m of rendered) check(`${m.where}: ${m.what} text is AA (${m.ratio}:1, ${m.fg} on ${m.bg})`, m.ratio >= 4.5);
 
 // A rendered consumer, so this is not purely a token-arithmetic result: b-stale-banner is the component
 // the device pass actually reported as unreadable.
@@ -204,7 +234,7 @@ if (banner) {
   check(`dark: b-stale-banner text on its own background is AA-legible (${bannerRatio}:1, ${banner.color} on ${banner.bg})`, bannerRatio >= 4.5);
 }
 
-// Light theme must be untouched — the fix is dark-only.
+// Light theme tints must be untouched: the dark fix was dark-only, and TASK-599 moved the TEXT, not the tints.
 const lightReport = await page.evaluate(async () => {
   document.documentElement.setAttribute('data-theme', 'light');
   await new Promise((r) => setTimeout(r, 120));

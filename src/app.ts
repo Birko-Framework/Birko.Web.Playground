@@ -55,6 +55,8 @@ if (new URLSearchParams(location.search).has('smoke')) {
   void import('./ws-request-smoke.js');
   // TASK-526 — RuntimeConfig: defaults < server < local, declared keys/types only, secrets never stored.
   void import('./runtime-config-smoke.js');
+  // TASK-552 — b-editable-table shows its data after setData() and a row removal, typed cells included.
+  void import('./editable-table-sync-smoke.js');
   // STORY-023 / TASK-035 — ElementInternals form association.
   void import('./form-assoc-smoke.js');
   // EPIC-001 — the `description` help-text row.

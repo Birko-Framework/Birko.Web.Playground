@@ -12,6 +12,20 @@ const waitFor = async (cond: () => boolean, ms = 3000) => {
 };
 type Rating = HTMLElement & { value: string; checkValidity(): boolean };
 
+/**
+ * A slotted icon carrying everything an icon export (or a hostile page) can: its own size, paint, opacity, inline style,
+ * classes that match the component's, a handler, a script, a javascript: link around the shape, animation that sets
+ * an href, a <style> that would restyle the component, a remote image and a <use>. Only the heart's geometry may survive.
+ */
+const HOSTILE_HEART = '<svg slot="icon" viewBox="0 0 24 24" width="40" height="40" style="fill:red" onload="void 0" opacity="0.2">'
+  + '<script>void 0</script>'
+  + '<style>.star.filled svg { fill: blue !important } .stars { display: none }</style>'
+  + '<image href="https://example.invalid/x.png" width="1" height="1"/>'
+  + '<use href="#h"/>'
+  + '<set attributeName="href" to="javascript:void 0"/><animate attributeName="opacity" to="0"/>'
+  + '<a href="javascript:void 0"><path id="h" class="filled sr-only" fill="#e11d48" fill-opacity="0.1" stroke="#000" stroke-width="0" '
+  + 'style="fill:blue" onclick="void 0" d="M12 21s-7-4.4-9.5-9A5.5 5.5 0 0 1 12 6a5.5 5.5 0 0 1 9.5 6c-2.5 4.6-9.5 9-9.5 9z"/></a></svg>';
+
 /** Relative luminance contrast of two computed `rgb()`/`rgba()` colours (alpha ignored: themes use opaque colours). */
 const contrast = (a: string, b: string): number => {
   const lum = (c: string) => {
@@ -165,20 +179,83 @@ void (async () => {
       check('a disabled fieldset disables every radio', radios(inner).every((r) => r.disabled));
     }
 
-    // ── 6. Contrast (WCAG 1.4.11, 3:1) in every shipped theme, on --b-bg and --b-bg-secondary ──
-    for (const theme of ['', 'dark', 'finstat', 'neon', 'inverse']) {
-      for (const surface of ['--b-bg', '--b-bg-secondary']) {
-        host.innerHTML = `<div ${theme ? `data-theme="${theme}"` : ''} style="background:var(${surface});padding:8px"><b-rating value="2"></b-rating></div>`;
-        const wrap = host.firstElementChild as HTMLElement;
-        const el = host.querySelector<Rating>('b-rating')!;
-        await waitFor(() => !!el.shadowRoot?.querySelector('.star.filled svg'));
-        const bg = getComputedStyle(wrap).backgroundColor;
-        const fill = getComputedStyle(el.shadowRoot!.querySelector('.star.filled svg')!).fill;
-        const outline = getComputedStyle(el.shadowRoot!.querySelectorAll('.star svg')[4]).stroke;
-        const name = `${theme || 'light'} on ${surface}`;
-        check(`${name}: filled star ${contrast(fill, bg).toFixed(2)}:1 (${fill} on ${bg})`, contrast(fill, bg) >= 3);
-        check(`${name}: empty star outline ${contrast(outline, bg).toFixed(2)}:1 (${outline} on ${bg})`, contrast(outline, bg) >= 3);
+    // ── 6. Contrast (WCAG 1.4.11, 3:1) in every shipped theme, on --b-bg and --b-bg-secondary, measured on the painted
+    //       shape (the path), for the built-in star and for a slotted icon that declares its own colours (TASK-592) ──
+    for (const [iconName, iconHtml] of [['star', ''], ['slotted heart', HOSTILE_HEART]]) {
+      for (const theme of ['', 'dark', 'finstat', 'neon', 'inverse']) {
+        for (const surface of ['--b-bg', '--b-bg-secondary']) {
+          host.innerHTML = `<div ${theme ? `data-theme="${theme}"` : ''} style="background:var(${surface});padding:8px"><b-rating value="2">${iconHtml}</b-rating></div>`;
+          const wrap = host.firstElementChild as HTMLElement;
+          const el = host.querySelector<Rating>('b-rating')!;
+          await waitFor(() => !!el.shadowRoot?.querySelector('.star.filled svg path'));
+          const shapes = [...el.shadowRoot!.querySelectorAll('.star svg path')];
+          const bg = getComputedStyle(wrap).backgroundColor;
+          const fill = getComputedStyle(shapes[0]).fill;
+          const outline = getComputedStyle(shapes[4]).stroke;
+          const name = `${iconName}, ${theme || 'light'} on ${surface}`;
+          check(`${name}: filled ${contrast(fill, bg).toFixed(2)}:1 (${fill} on ${bg})`, contrast(fill, bg) >= 3);
+          check(`${name}: empty outline ${contrast(outline, bg).toFixed(2)}:1 (${outline} on ${bg})`, contrast(outline, bg) >= 3);
+          check(`${name}: an empty shape is unfilled (${getComputedStyle(shapes[4]).fill})`, getComputedStyle(shapes[4]).fill === 'none');
+        }
       }
+    }
+
+    // ── 7. The icon slot (TASK-592) ──
+    {
+      const el = await mount(`<b-rating value="2">${HOSTILE_HEART}</b-rating>`);
+      const svgs = [...el.shadowRoot!.querySelectorAll<SVGSVGElement>('.star svg')];
+      check(`the slotted icon is in every star (${svgs.length} stars, ${svgs.filter((s) => s.querySelector('path')?.getAttribute('d')?.startsWith('M12 21')).length} hearts)`,
+        svgs.length === 5 && svgs.every((s) => s.querySelector('path')?.getAttribute('d')?.startsWith('M12 21')));
+      check('each copy is decorative: aria-hidden, not focusable', svgs.every((s) => s.getAttribute('aria-hidden') === 'true' && s.getAttribute('focusable') === 'false'));
+      const attrs = svgs.flatMap((s) => [s, ...s.querySelectorAll('*')]).flatMap((n) => [...n.attributes].map((a) => a.name));
+      check(`no inline style or on* handler survives the copy (${attrs.filter((a) => a === 'style' || a.startsWith('on')).join(',') || 'none'})`,
+        !attrs.some((a) => a === 'style' || a.startsWith('on')));
+      check('no <script> survives the copy', svgs.every((s) => !s.querySelector('script')));
+      const tags = new Set(svgs.flatMap((s) => [...s.querySelectorAll('*')].map((n) => n.localName)));
+      check(`the copy holds only the heart's shape (elements: ${[...tags].join(', ')})`, tags.size === 1 && tags.has('path'));
+      const kept = new Set(attrs);
+      check(`the copy keeps only geometry and its own a11y attributes (${[...kept].sort().join(', ')})`,
+        [...kept].every((a) => ['viewBox', 'aria-hidden', 'focusable', 'd'].includes(a)));
+      check('nothing in the copy can take focus (the javascript: link was unwrapped)',
+        !el.shadowRoot!.querySelector('.star a, .star [tabindex], .star [href]'));
+      check(`the icon's <style> did not reach the component (stars displayed: ${getComputedStyle(el.shadowRoot!.querySelector('.stars')!).display})`,
+        getComputedStyle(el.shadowRoot!.querySelector('.stars')!).display !== 'none');
+      check(`the icon's own width/height go, so --b-rating-star sizes it (${svgs[0].getBoundingClientRect().width.toFixed(1)}px)`,
+        !svgs[0].hasAttribute('width') && Math.abs(svgs[0].getBoundingClientRect().width - svgs[0].getBoundingClientRect().height) < 0.5);
+      // The icon's own #e11d48 would also clear 3:1 on white, so the contrast loop alone cannot tell whose paint it is.
+      host.insertAdjacentHTML('beforeend', '<b-rating id="ref-star" value="2"></b-rating>');
+      const ref = host.querySelector<Rating>('#ref-star')!;
+      await waitFor(() => !!ref.shadowRoot?.querySelector('.star.filled svg path'));
+      const paint = (r: Rating, i: number) => { const cs = getComputedStyle(r.shadowRoot!.querySelectorAll('.star svg path')[i]); return `${cs.fill} / ${cs.stroke}`; };
+      check(`a filled heart is painted exactly like a filled star (${paint(el, 0)} vs ${paint(ref, 0)})`, paint(el, 0) === paint(ref, 0));
+      check(`an empty heart is painted exactly like an empty star (${paint(el, 4)} vs ${paint(ref, 4)})`, paint(el, 4) === paint(ref, 4));
+      ref.remove();
+      const original = el.querySelector<SVGSVGElement>(':scope > svg[slot="icon"]')!;
+      check(`the slotted original is not rendered (${original.getBoundingClientRect().width}x${original.getBoundingClientRect().height})`,
+        original.getBoundingClientRect().width === 0 && original.getBoundingClientRect().height === 0);
+
+      // A runtime swap and a removal re-render the stars, without duplicates, and keep the value.
+      stars(el)[3].click();
+      await sleep(20);
+      original.remove();
+      await waitFor(() => !el.shadowRoot!.querySelector('.star svg path')?.getAttribute('d')?.startsWith('M12 21'));
+      const afterRemove = [...el.shadowRoot!.querySelectorAll('.star svg')];
+      check(`removing the icon brings the star back in all five, value kept (${afterRemove.length} icons, value "${el.value}")`,
+        afterRemove.length === 5 && afterRemove.every((s) => s.querySelector('path')?.getAttribute('d')?.startsWith('M12 2.6')) && el.value === '4');
+      el.insertAdjacentHTML('beforeend', '<svg slot="icon" width="10" height="10"><circle cx="5" cy="5" r="4"/></svg>');
+      await waitFor(() => !!el.shadowRoot!.querySelector('.star svg circle'));
+      const circles = [...el.shadowRoot!.querySelectorAll('.star svg')];
+      check(`adding an icon at runtime puts it in all five (${circles.filter((s) => s.querySelector('circle')).length}), value kept ("${el.value}")`,
+        circles.length === 5 && circles.every((s) => s.querySelector('circle')) && el.value === '4');
+      check(`an icon with only width/height keeps its coordinate system (viewBox "${circles[0].getAttribute('viewBox')}")`,
+        circles[0].getAttribute('viewBox') === '0 0 10 10');
+
+      const ro = await mount(`<b-rating value="3" readonly>${HOSTILE_HEART}</b-rating>`);
+      check('read-only uses the slotted icon too', [...ro.shadowRoot!.querySelectorAll('.star svg path')].every((p) => p.getAttribute('d')?.startsWith('M12 21')));
+      const nonSvg = await mount('<b-rating value="1"><span slot="icon">♥</span></b-rating>');
+      check('a non-SVG slot is ignored: the star renders, the text does not',
+        nonSvg.shadowRoot!.querySelector('.star svg path')?.getAttribute('d')?.startsWith('M12 2.6') === true
+        && nonSvg.querySelector('span')!.getBoundingClientRect().width === 0);
     }
   } catch (e) {
     check(`unexpected throw: ${(e as Error).message}`, false);

@@ -452,6 +452,9 @@ const CATALOGUE: ComponentDef[] = [
     note: 'Decimal step anchored at min; typed text snaps on blur / Enter; arrow keys, PageUp/PageDown, Home/End (TASK-548).' },
   // TASK-579 — whole-star rating: native radios behind the stars; readonly is an image with no tab stop.
   { tag: 'b-rating', label: 'Rating', category: 'inputs', attrs: { label: 'Your rating', name: 'stars', value: '3' }, controls: [SIZE, DISABLED] },
+  // TASK-592 — the same input with a consumer's icon in the `icon` slot; the component still paints it.
+  { tag: 'b-rating', label: 'Rating — custom icon (heart)', category: 'inputs', attrs: { label: 'How much do you like it?', name: 'hearts', value: '4' }, controls: [SIZE, DISABLED],
+    render: () => '<svg slot="icon" viewBox="0 0 24 24"><path d="M12 21s-7-4.4-9.5-9A5.5 5.5 0 0 1 12 6a5.5 5.5 0 0 1 9.5 6c-2.5 4.6-9.5 9-9.5 9z"/></svg>' },
   { tag: 'b-segmented', label: 'Segmented', category: 'inputs', attrs: { value: 'day' }, setup: (el) => el.setOptions([{ value: 'day', label: 'Day' }, { value: 'week', label: 'Week' }, { value: 'month', label: 'Month' }]) },
   { tag: 'b-option-group', label: 'Option group', category: 'inputs', attrs: { label: 'Choose' }, controls: [BARE], setup: (el) => el.setOptions([{ value: 'a', label: 'Option A' }, { value: 'b', label: 'Option B' }, { value: 'c', label: 'Option C' }]) },
   { tag: 'b-form', label: 'Form', category: 'inputs',

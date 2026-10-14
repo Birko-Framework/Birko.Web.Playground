@@ -110,6 +110,25 @@ try {
     JSON.stringify(await filledFills()) === JSON.stringify([true, true, false, false, false]));
   await page.mouse.move(0, 400);
 
+  // ── b-rating with a slotted icon (TASK-592): keys unchanged, and focus survives an icon swap ──
+  await mount('<b-rating name="hearts"><svg slot="icon" viewBox="0 0 24 24"><path d="M12 21s-7-4.4-9.5-9A5.5 5.5 0 0 1 12 6a5.5 5.5 0 0 1 9.5 6c-2.5 4.6-9.5 9-9.5 9z"/></svg></b-rating>');
+  await focusBefore();
+  await page.keyboard.press('Tab');
+  await page.keyboard.press('Space');
+  await page.keyboard.press('ArrowRight');
+  check(`with a slotted icon: Tab, Space, ArrowRight pick 2 (value ${(await state()).value}, focus ${await focused()})`,
+    (await state()).value === '2' && (await focused()) === 'radio:2');
+  await page.evaluate(() => {
+    const r = document.querySelector('#kb-host b-rating');
+    r.querySelector('svg[slot="icon"]').remove();
+    r.insertAdjacentHTML('beforeend', '<svg slot="icon" viewBox="0 0 10 10"><circle cx="5" cy="5" r="4"/></svg>');
+  });
+  await page.waitForFunction(() => !!document.querySelector('#kb-host b-rating').shadowRoot.querySelector('.star svg circle'));
+  check(`swapping the icon keeps focus and value (focus ${await focused()}, value ${(await state()).value})`,
+    (await focused()) === 'radio:2' && (await state()).value === '2');
+  await page.keyboard.press('ArrowRight');
+  check(`the keys still work after the swap (value ${(await state()).value})`, (await state()).value === '3');
+
   // ── b-rating, disabled: no tab stop ──
   await mount('<b-rating value="3" disabled></b-rating>');
   await focusBefore();

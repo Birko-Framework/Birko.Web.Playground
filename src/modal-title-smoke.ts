@@ -2,6 +2,8 @@
 // (axe `heading-order`, Presenter TASK-025), and it interpolated the title as HTML. The title is now an <h2> (or
 // `heading-level`), still names the dialog, looks as it did, is absent when there is no title, and is text.
 // Nothing here opens a modal: the title is rendered into the closed <dialog>, so no other suite is made inert.
+// TASK-609 — b-drawer had the same unescaped <span> title, and its <dialog> had no accessible name at all: every check
+// runs for both.
 import 'birko-web-components/layout';
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -13,7 +15,7 @@ const PAYLOADS = [
 
 void (async () => {
   const results: string[] = [];
-  const check = (name: string, ok: boolean) => results.push(`${ok ? 'PASS' : 'FAIL'} ${name}`);
+  const check = (name: string, ok: boolean) => results.push(`${ok ? 'PASS' : 'FAIL'} ${tag}: ${name}`);
   const w = window as unknown as { __modalTitlePwned?: number };
   w.__modalTitlePwned = 0;
 
@@ -21,16 +23,17 @@ void (async () => {
   host.style.cssText = 'position:absolute;left:-10000px';
   document.body.appendChild(host);
 
+  let tag = 'b-modal';
   const mount = async (attrs: string) => {
-    host.innerHTML = `<b-modal ${attrs}><p>Body</p></b-modal>`;
-    const modal = host.querySelector('b-modal')!;
+    host.innerHTML = `<${tag} ${attrs}><p>Body</p></${tag}>`;
+    const modal = host.querySelector(tag)!;
     await sleep(0);
     return modal;
   };
   const heading = (modal: Element) => modal.shadowRoot!.querySelector<HTMLElement>('h1, h2, h3, h4, h5, h6');
   const dialog = (modal: Element) => modal.shadowRoot!.querySelector<HTMLDialogElement>('dialog')!;
 
-  try {
+  for (tag of ['b-modal', 'b-drawer']) try {
     // 1 — an <h2> by default, labelling the dialog.
     {
       const modal = await mount('title="Edit gallery"');
@@ -87,6 +90,7 @@ void (async () => {
     }
     await sleep(200); // an onerror would have fired by now
     check(`no title payload ran (__modalTitlePwned = ${w.__modalTitlePwned})`, w.__modalTitlePwned === 0);
+    w.__modalTitlePwned = 0;
   } catch (e) {
     check(`unexpected throw: ${(e as Error).message}`, false);
   }

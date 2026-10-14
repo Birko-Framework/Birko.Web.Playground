@@ -59,6 +59,8 @@ if (new URLSearchParams(location.search).has('smoke')) {
   void import('./editable-table-sync-smoke.js');
   // TASK-580 — b-modal's title is a heading (h2 or heading-level), labels the dialog, and is text.
   void import('./modal-title-smoke.js');
+  // TASK-598 — SyncManager recovers a write a closed tab left `syncing`, and one tab drains at a time.
+  void import('./sync-interrupt-smoke.js');
   // STORY-023 / TASK-035 — ElementInternals form association.
   void import('./form-assoc-smoke.js');
   // EPIC-001 — the `description` help-text row.

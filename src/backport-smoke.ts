@@ -376,10 +376,11 @@ void (async () => {
       pendingCount: 0,
       getPending: async () => { getPendingCalls++; return []; },
       getDead: async () => [], // TASK-581: sync() reads the dead actions first, to hold their entities
+      getAll: async () => [],  // TASK-598: and the `syncing` ones a closed tab left behind
       update: async () => {},
       remove: async () => {},
     } as unknown as ConstructorParameters<typeof SyncManager>[0];
-    const sm = new SyncManager(fakeQueue, {} as ConstructorParameters<typeof SyncManager>[1], { syncInterval: 1_000_000 });
+    const sm = new SyncManager(fakeQueue, {} as ConstructorParameters<typeof SyncManager>[1], { syncInterval: 1_000_000, locks: null });   // TASK-598: no drain lock, whose acquisition outlasts the setTimeout(0) below
     window.dispatchEvent(new Event('online'));
     await new Promise((r) => setTimeout(r, 0));
     const callsWhileLive = getPendingCalls;

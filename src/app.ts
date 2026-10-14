@@ -51,6 +51,10 @@ if (new URLSearchParams(location.search).has('smoke')) {
   void import('./sync-retry-smoke.js');
   // TASK-583 — BaseListPage liveRefresh: debounced reload on entity-changed, deferred under the modal.
   void import('./live-refresh-smoke.js');
+  // TASK-523 — WsClient.request: id correlation, error replies, timeout, close/disconnect rejection.
+  void import('./ws-request-smoke.js');
+  // TASK-526 — RuntimeConfig: defaults < server < local, declared keys/types only, secrets never stored.
+  void import('./runtime-config-smoke.js');
   // STORY-023 / TASK-035 — ElementInternals form association.
   void import('./form-assoc-smoke.js');
   // EPIC-001 — the `description` help-text row.

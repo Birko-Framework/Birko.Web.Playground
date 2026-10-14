@@ -57,6 +57,8 @@ if (new URLSearchParams(location.search).has('smoke')) {
   void import('./runtime-config-smoke.js');
   // TASK-552 — b-editable-table shows its data after setData() and a row removal, typed cells included.
   void import('./editable-table-sync-smoke.js');
+  // TASK-580 — b-modal's title is a heading (h2 or heading-level), labels the dialog, and is text.
+  void import('./modal-title-smoke.js');
   // STORY-023 / TASK-035 — ElementInternals form association.
   void import('./form-assoc-smoke.js');
   // EPIC-001 — the `description` help-text row.

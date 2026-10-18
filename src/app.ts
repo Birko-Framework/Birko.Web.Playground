@@ -63,6 +63,8 @@ if (new URLSearchParams(location.search).has('smoke')) {
   void import('./sync-interrupt-smoke.js');
   // TASK-524 — OAuth redirect sign-in: auth fragment, JWT expiry, scheduled and 401 refresh, the clients' token.
   void import('./auth-session-smoke.js');
+  // TASK-525 — b-tabs reorder, b-split-panel resize with persisted sizes, captureLayout / applyLayout.
+  void import('./layout-persist-smoke.js');
   // STORY-023 / TASK-035 — ElementInternals form association.
   void import('./form-assoc-smoke.js');
   // EPIC-001 — the `description` help-text row.

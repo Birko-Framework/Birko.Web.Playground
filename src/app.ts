@@ -69,6 +69,8 @@ if (new URLSearchParams(location.search).has('smoke')) {
   void import('./json-diff-smoke.js');
   // TASK-725 follow-up — a component's .sr-only text scrolls with the page's scroll container, never stretches the document.
   void import('./sr-only-contain-smoke.js');
+  // TASK-727 — xmlToTree / xmlToLines and b-json-diff format="xml" (original XML in the side-by-side view).
+  void import('./xml-diff-smoke.js');
   // STORY-023 / TASK-035 — ElementInternals form association.
   void import('./form-assoc-smoke.js');
   // EPIC-001 — the `description` help-text row.

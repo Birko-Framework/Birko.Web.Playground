@@ -1218,6 +1218,218 @@ try {
   });
   check(`and a pick closes both (${closed}, ${(await gState()).clicks.at(-1)?.itemId})`, closed === 'false/false' && (await gState()).clicks.at(-1)?.itemId === 's3');
   await page.evaluate(() => document.getElementById('kb-host').remove());
+  // ── b-ribbon: inputs (TASK-741) ──
+  {
+  const mountF = (width = 1100, attrs = '', caption = undefined) => page.evaluate(async ({ w, extra, cap }) => {
+    document.getElementById('kb-host')?.remove();
+    const host = document.createElement('div');
+    host.id = 'kb-host';
+    host.style.cssText = 'position:fixed;top:0;left:0;z-index:99999;background:var(--b-bg);padding:8px';
+    host.innerHTML = `<button id="kb-before">before</button><b-ribbon id="kb-ribbon" ${extra} style="width:${w}px"></b-ribbon><button id="kb-after">after</button>`;
+    document.body.prepend(host);
+    await customElements.whenDefined('b-ribbon');
+    const r = document.getElementById('kb-ribbon');
+    window.__kbChanges = [];
+    window.__kbLeaked = 0;
+    r.addEventListener('item-change', (e) => window.__kbChanges.push(e.detail));
+    host.addEventListener('change', () => { window.__kbLeaked++; });
+    const opts = (vs) => vs.map((v) => ({ value: v, label: v }));
+    r.setTabs([{ id: 'home', label: 'Home', groups: [
+      { id: 'clip', label: 'Clipboard', icon: '📋', items: [{ id: 'paste', label: 'Paste', icon: '●' }, { id: 'cut', label: 'Cut', icon: '●' }, { id: 'copy', label: 'Copy', icon: '●' }] },
+      { id: 'font', label: 'Font', icon: '🅰', items: [
+        { id: 'fname', label: 'Font', keytip: 'F', description: 'Pick a font.', field: { type: 'select', freeText: true, width: 12, value: 'Calibri', options: opts(['Arial', 'Calibri', 'Georgia']), caption: cap } },
+        { id: 'fsize', label: 'Font size', field: { type: 'select', freeText: true, width: 3, value: '11', options: opts(['10', '11', '12']) } },
+        { id: 'bold', label: 'Bold', icon: '●' }] },
+      { id: 'size', label: 'Size', icon: '⇲', items: [
+        { id: 'height', label: 'Height', field: { type: 'number', value: '2.5', min: 0, step: 0.1, width: 4 } },
+        { id: 'width', label: 'Width', field: { type: 'number', value: '4.0', min: 0, step: 0.1, width: 4 } },
+        { id: 'line', label: 'Line', field: { type: 'select', value: 'solid', options: opts(['solid', 'dashed', 'dotted']) } }] },
+    ] }]);
+    for (let i = 0; i < 30; i++) await new Promise((res) => setTimeout(res, 25));
+  }, { w: width, extra: attrs, cap: caption });
+  const fState = () => page.evaluate(() => {
+    const r = document.getElementById('kb-ribbon');
+    const sr = r.shadowRoot;
+    const a = sr.activeElement;
+    const vals = {};
+    sr.querySelectorAll('.ribbon-panel-inner [data-field-control]').forEach((c) => { vals[c.dataset.item] = c.value; });
+    return {
+      focus: a ? (a.dataset.item ?? a.id ?? a.tagName) : (document.activeElement?.id || 'outside'),
+      vals, changes: window.__kbChanges, leaked: window.__kbLeaked,
+    };
+  });
+  const focusField = (id) => page.evaluate((x) => {
+    const c = document.getElementById('kb-ribbon').shadowRoot.querySelector(`.ribbon-panel-inner [data-item="${x}"]`);
+    c.shadowRoot.querySelector('input, select').focus();
+  }, id);
+  const selectAll = async () => { await page.keyboard.down('Control'); await page.keyboard.press('a'); await page.keyboard.up('Control'); };
+  const pauseF = (ms = 60) => new Promise((r) => setTimeout(r, ms));
+
+  await mountF(1100, 'expanded pinned');
+  const named = await page.evaluate(() => [...document.getElementById('kb-ribbon').shadowRoot.querySelectorAll('.ribbon-panel-inner [data-field-control]')]
+    .map((c) => `${c.tagName.toLowerCase()}:${c.shadowRoot.querySelector('input, select').getAttribute('aria-label')}`).join(','));
+  check(`inputs render as b-select / b-input boxes named by their label (${named})`,
+    named === 'b-select:Font,b-select:Font size,b-input:Height,b-input:Width,b-select:Line');
+  check('the default look has no captions', await page.evaluate(() => !document.getElementById('kb-ribbon').shadowRoot.querySelector('.ribbon-panel-inner .ribbon-field-caption')));
+  await clickAt('.ribbon-panel-inner [data-item="paste"]');
+  await page.keyboard.press('ArrowRight');
+  let fs = await fState();
+  check(`an arrow from a command moves into an input (${fs.focus})`, fs.focus === 'fname');
+  await focusField('height');
+  await page.keyboard.press('ArrowUp');
+  await page.keyboard.press('ArrowLeft');
+  await page.keyboard.press('Home');
+  fs = await fState();
+  check(`inside a number box the arrows step it and Left / Home stay in it (${fs.vals.height}, ${fs.focus})`, fs.vals.height === '2.6' && fs.focus === 'height');
+  check(`nothing is reported while editing (${fs.changes.length})`, fs.changes.length === 0);
+  await page.keyboard.press('Enter');
+  fs = await fState();
+  check(`Enter reports the value (${JSON.stringify(fs.changes.at(-1))})`, fs.changes.length === 1 && fs.changes[0].itemId === 'height' && fs.changes[0].value === '2.6' && fs.changes[0].groupId === 'size');
+  await page.keyboard.press('Enter');
+  check('the same value is not reported twice', (await fState()).changes.length === 1);
+  await focusField('width');
+  await selectAll();
+  await page.keyboard.type('9');
+  await page.keyboard.press('Escape');
+  fs = await fState();
+  check(`Escape puts the reported value back and returns to the tab (${fs.vals.width}, ${fs.focus}, ${fs.changes.length})`,
+    fs.vals.width === '4.0' && fs.focus === 'ribbon-tab-home' && fs.changes.length === 1);
+  await focusField('width');
+  await selectAll();
+  await page.keyboard.type('7');
+  await page.keyboard.press('Tab');
+  fs = await fState();
+  check(`Tab leaves the ribbon and reports what was typed (${fs.focus}, ${JSON.stringify(fs.changes.at(-1))})`,
+    fs.focus === 'kb-after' && fs.changes.at(-1)?.itemId === 'width' && fs.changes.at(-1)?.value === '7');
+  await focusField('fsize');
+  await selectAll();
+  await page.keyboard.type('13');
+  await page.keyboard.press('Enter');
+  await pauseF();
+  fs = await fState();
+  check(`a dropdown that takes free text reports a value not in its list (${JSON.stringify(fs.changes.at(-1))})`,
+    fs.changes.at(-1)?.itemId === 'fsize' && fs.changes.at(-1)?.value === '13');
+  await focusField('line');
+  await page.keyboard.press('ArrowDown');
+  await pauseF();
+  fs = await fState();
+  check(`a plain dropdown reports a choice at once (${JSON.stringify(fs.changes.at(-1))}, ${fs.focus})`,
+    fs.changes.at(-1)?.itemId === 'line' && fs.changes.at(-1)?.value === 'dashed' && fs.focus === 'line');
+  check(`the boxes' own change events stay inside the ribbon (${fs.leaked})`, fs.leaked === 0);
+  const api = await page.evaluate(() => {
+    const r = document.getElementById('kb-ribbon');
+    const before = window.__kbChanges.length;
+    r.setFieldValue('height', '5');
+    const shown = r.shadowRoot.querySelector('.ribbon-panel-inner [data-item="height"]').value;
+    return `${shown}/${r.getFieldValue('height')}/${window.__kbChanges.length - before}/${r.getFieldValue('nope')}`;
+  });
+  check(`setFieldValue shows a value without an event; getFieldValue reads it (${api})`, api === '5/5/0/null');
+  await focusField('width');
+  await selectAll();
+  await page.keyboard.type('8');
+  await page.evaluate(() => document.getElementById('kb-ribbon').update());
+  await pauseF();
+  fs = await fState();
+  check(`a re-render keeps what was typed and the focus (${fs.vals.width}, ${fs.focus})`, fs.vals.width === '8' && fs.focus === 'width');
+  await page.click('#kb-before');
+
+  // Key tips: the box takes focus with its text selected.
+  await page.keyboard.down('Alt'); await page.keyboard.down('Meta'); await page.keyboard.up('Meta'); await page.keyboard.up('Alt');
+  await pauseF(80);
+  await page.keyboard.press('H');
+  await pauseF(120);
+  await page.keyboard.press('F');
+  await pauseF(80);
+  const kSel = await page.evaluate(() => {
+    const c = document.getElementById('kb-ribbon').shadowRoot.querySelector('.ribbon-panel-inner [data-item="fname"]');
+    const i = c.shadowRoot.querySelector('input');
+    return `${c.shadowRoot.activeElement === i}/${i.selectionStart}-${i.selectionEnd}/${i.value.length}`;
+  });
+  check(`an input's key tip focuses it with its text selected (${kSel})`, kSel === 'true/0-7/7');
+  await page.keyboard.type('Georgia');
+  await page.keyboard.press('Enter');
+  await pauseF();
+  check(`and typing over it then Enter reports it (${JSON.stringify((await fState()).changes.at(-1))})`, (await fState()).changes.at(-1)?.value === 'Georgia');
+
+  // Hover tooltip: the input's name and description, but not over a box being typed in.
+  await page.click('#kb-before');
+  await page.evaluate(() => { const r = document.getElementById('kb-ribbon'); r.shadowRoot.querySelector('.ribbon-tooltip').hide(); });
+  const hoverAt = async (id) => {
+    const c = await page.evaluate((x) => { const b = document.getElementById('kb-ribbon').shadowRoot.querySelector(`.ribbon-panel-inner [data-item="${x}"]`).getBoundingClientRect(); return { x: b.left + b.width / 2, y: b.top + b.height / 2 }; }, id);
+    await page.mouse.move(c.x, c.y);
+  };
+  const tipText = () => page.evaluate(() => { const t = document.getElementById('kb-ribbon').shadowRoot.querySelector('.ribbon-tooltip'); return t.shown ? t.shadowRoot.textContent.replace(/\s+/g, ' ').trim() : ''; });
+  await hoverAt('fname');
+  await pauseF(700);
+  const tip = await tipText();
+  check(`hovering an input shows its tooltip (${tip})`, tip.includes('Font') && tip.includes('Pick a font.'));
+  await page.mouse.move(0, 400);
+  await pauseF(400);
+  await focusField('height');
+  await hoverAt('height');
+  await pauseF(700);
+  check(`but not over the box being typed in (${await tipText()})`, (await tipText()) === '');
+
+  // The three looks.
+  await mountF(1100, 'expanded pinned field-caption="beside"');
+  const look = (id) => page.evaluate((x) => {
+    const c = document.getElementById('kb-ribbon').shadowRoot.querySelector(`.ribbon-panel-inner [data-item="${x}"]`);
+    const cap = c.parentElement.querySelector('.ribbon-field-caption');
+    if (!cap) return 'none';
+    const a = cap.getBoundingClientRect(); const b = c.getBoundingClientRect();
+    return `${cap.textContent}:${a.right <= b.left + 1 ? 'beside' : a.bottom <= b.top + 1 ? 'above' : 'overlap'}:${cap.getAttribute('aria-hidden')}`;
+  }, id);
+  check(`field-caption="beside" puts the caption left of the box (${await look('height')})`, (await look('height')) === 'Height:beside:true');
+  await mountF(1100, 'expanded pinned field-caption="above"', 'none');
+  check(`field-caption="above" puts it over the box (${await look('height')})`, (await look('height')) === 'Height:above:true');
+  check(`and an input can override the look (${await look('fname')})`, (await look('fname')) === 'none');
+  await mountF(1100, 'expanded pinned field-caption="beside" preferred-group-size="small"');
+  const smallCap = await page.evaluate(() => {
+    const g = document.getElementById('kb-ribbon').shadowRoot.querySelector('.ribbon-panel-inner .ribbon-group[data-group="size"]');
+    return `${g.classList.contains('size-small')}/${getComputedStyle(g.querySelector('.ribbon-field-caption')).display}`;
+  });
+  check(`a small group hides a beside caption (${smallCap})`, smallCap === 'true/none');
+
+  // Folded and mobile.
+  await mountF(200, 'expanded pinned');
+  await page.evaluate(() => document.getElementById('kb-ribbon').shadowRoot.querySelector('.ribbon-chunk[data-chunk="size"]')?.click());
+  await pauseF();
+  const inFly = await page.evaluate(() => document.getElementById('kb-ribbon').shadowRoot.querySelectorAll('.ribbon-flyout:popover-open [data-field-control]').length);
+  check(`a folded group's flyout holds its inputs (${inFly})`, inFly === 3);
+  await page.evaluate(() => document.getElementById('kb-ribbon').shadowRoot.querySelector('.ribbon-flyout:popover-open [data-item="height"]').shadowRoot.querySelector('input').focus());
+  await page.keyboard.press('ArrowDown');
+  await page.keyboard.press('Enter');
+  await pauseF();
+  const flyDone = await page.evaluate(() => !!document.getElementById('kb-ribbon').shadowRoot.querySelector('.ribbon-flyout:popover-open'));
+  fs = await fState();
+  check(`an input there edits with the arrows and Enter reports and closes the flyout (${JSON.stringify(fs.changes.at(-1))}, ${flyDone})`,
+    fs.changes.at(-1)?.itemId === 'height' && fs.changes.at(-1)?.value === '2.4' && !flyDone);
+  const mobile = await page.evaluate(async () => {
+    const r = document.getElementById('kb-ribbon');
+    const m = r.shadowRoot.querySelector('.mobile-field-control[data-item="width"]');
+    const count = r.shadowRoot.querySelectorAll('.mobile-field-control').length;
+    m.dispatchEvent(new CustomEvent('change', { detail: { value: '6' }, bubbles: true, composed: true }));
+    m.dispatchEvent(new FocusEvent('focusout', { bubbles: true, composed: true }));
+    await new Promise((res) => setTimeout(res, 30));
+    return `${count}/${JSON.stringify(window.__kbChanges.at(-1))}/${r.getFieldValue('width')}`;
+  });
+  check(`the mobile list holds the inputs, and a value there is reported (${mobile})`, mobile === '5/{"tabId":"home","groupId":"size","itemId":"width","value":"6"}/6');
+
+  // Unpinned: the ribbon stays open while a box is typed in.
+  await mountF(1100, 'expanded');
+  await focusField('width');
+  await page.mouse.move(600, 500);
+  await pauseF(500);
+  const stillOpen = await page.evaluate(() => document.getElementById('kb-ribbon').hasAttribute('expanded'));
+  check(`an unpinned ribbon does not close under a box being typed in (${stillOpen})`, stillOpen);
+  await selectAll();
+  await page.keyboard.type('3');
+  await page.keyboard.press('Enter');
+  await pauseF();
+  const shut = await page.evaluate(() => document.getElementById('kb-ribbon').hasAttribute('expanded'));
+  check(`and closes once Enter reports the value, as after a command (${shut})`, !shut && (await fState()).changes.at(-1)?.value === '3');
+  await page.evaluate(() => document.getElementById('kb-host').remove());
+  }
 } finally {
   await browser.close();
   server.close();

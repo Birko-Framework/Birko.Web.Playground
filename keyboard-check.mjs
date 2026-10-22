@@ -562,6 +562,77 @@ try {
   await page.keyboard.press('ArrowDown');
   await page.keyboard.press('Space');
   check(`Space on a set member selects it and releases the other (${await toggleState('right')}, ${await toggleState('left')})`, (await toggleState('right')) === 'true' && (await toggleState('left')) === 'false');
+
+  // ── b-ribbon: double-click a tab, and Ctrl+F1 anywhere (TASK-735) ──
+  await page.evaluate(async () => {
+    document.getElementById('kb-host')?.remove();
+    const host = document.createElement('div');
+    host.id = 'kb-host';
+    host.style.cssText = 'position:fixed;top:0;left:0;z-index:99999;background:var(--b-bg);padding:8px';
+    host.innerHTML = '<button id="kb-before">before</button><b-ribbon id="kb-ribbon" expanded pinned style="width:900px"></b-ribbon><button id="kb-after">after</button>';
+    document.body.prepend(host);
+    await customElements.whenDefined('b-ribbon');
+    const r = document.getElementById('kb-ribbon');
+    window.__kbPins = [];
+    r.addEventListener('pin', (e) => window.__kbPins.push(e.detail.pinned));
+    r.setTabs([
+      { id: 'home', label: 'Home', groups: [{ id: 'g', label: 'G', items: [{ id: 'a', label: 'A' }] }] },
+      { id: 'view', label: 'View', groups: [{ id: 'v', label: 'V', items: [{ id: 'b', label: 'B' }] }] },
+    ]);
+    for (let i = 0; i < 30; i++) await new Promise((res) => setTimeout(res, 25));
+  });
+  const ribbonState = () => page.evaluate(() => {
+    const r = document.getElementById('kb-ribbon');
+    return `${r.hasAttribute('pinned') ? 'pinned' : 'unpinned'} ${r.hasAttribute('expanded') ? 'expanded' : 'collapsed'} ${r.getAttribute('active')}`;
+  });
+  const ctrlF1 = async (mods = ['Control']) => {
+    for (const m of mods) await page.keyboard.down(m);
+    await page.keyboard.press('F1');
+    for (const m of [...mods].reverse()) await page.keyboard.up(m);
+    await new Promise((r) => setTimeout(r, 40));
+  };
+  const tabHandle = async (id) => (await page.evaluateHandle((i) => document.getElementById('kb-ribbon').shadowRoot.querySelector(`#ribbon-tab-${i}`), id)).asElement();
+
+  await (await tabHandle('home')).click({ count: 2 });
+  await new Promise((r) => setTimeout(r, 40));
+  check(`double-clicking a tab collapses the ribbon to its tabs (${await ribbonState()})`, (await ribbonState()) === 'unpinned collapsed home');
+  await (await tabHandle('home')).click({ count: 2 });
+  await new Promise((r) => setTimeout(r, 40));
+  check(`double-clicking again brings it back, pinned (${await ribbonState()})`, (await ribbonState()) === 'pinned expanded home');
+  check(`each emits pin (${JSON.stringify(await page.evaluate(() => window.__kbPins))})`, JSON.stringify(await page.evaluate(() => window.__kbPins)) === '[false,true]');
+  await (await tabHandle('view')).click();
+  await new Promise((r) => setTimeout(r, 40));
+  check(`a single click still only selects a tab (${await ribbonState()})`, (await ribbonState()) === 'pinned expanded view');
+
+  await page.focus('#kb-after');
+  await ctrlF1();
+  check(`Ctrl+F1 works with focus outside the ribbon (${await ribbonState()})`, (await ribbonState()).startsWith('unpinned collapsed'));
+  await ctrlF1();
+  check(`Ctrl+F1 again brings it back (${await ribbonState()})`, (await ribbonState()).startsWith('pinned expanded'));
+  await page.evaluate(() => {
+    window.__kbAppF1 = (e) => { if (e.ctrlKey && e.key === 'F1') e.preventDefault(); };
+    window.addEventListener('keydown', window.__kbAppF1, true);
+  });
+  await ctrlF1();
+  check(`a key press the app handled first is left alone (${await ribbonState()})`, (await ribbonState()).startsWith('pinned expanded'));
+  await page.evaluate(() => window.removeEventListener('keydown', window.__kbAppF1, true));
+  await page.evaluate(() => document.getElementById('kb-ribbon').setAttribute('collapse-shortcut', 'none'));
+  await ctrlF1();
+  check(`collapse-shortcut="none" turns it off (${await ribbonState()})`, (await ribbonState()).startsWith('pinned expanded'));
+  await page.evaluate(() => document.getElementById('kb-ribbon').setAttribute('collapse-shortcut', 'Ctrl+Shift+F1'));
+  await ctrlF1();
+  const plain = await ribbonState();
+  await ctrlF1(['Control', 'Shift']);
+  check(`a rebound shortcut replaces Ctrl+F1 (${plain} → ${await ribbonState()})`, plain.startsWith('pinned expanded') && (await ribbonState()).startsWith('unpinned collapsed'));
+  const btn = await page.evaluate(() => {
+    const b = document.getElementById('kb-ribbon').shadowRoot.querySelector('#ribbon-toggle');
+    return `${b.getAttribute('title')} | ${b.getAttribute('aria-keyshortcuts')}`;
+  });
+  check(`the collapse button names the shortcut (${btn})`, btn.includes('(Ctrl+Shift+F1)') && btn.includes('Control+Shift+F1'));
+  await page.evaluate(() => document.getElementById('kb-host').remove());
+  let threw = false;
+  try { await ctrlF1(); } catch { threw = true; }
+  check('a removed ribbon leaves no listener behind (no error)', !threw);
 } finally {
   await browser.close();
   server.close();

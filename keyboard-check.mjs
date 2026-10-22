@@ -257,6 +257,83 @@ try {
     JSON.stringify(await tags()) === '["11111111","22222222"]');
   await page.keyboard.press('Tab');
   check(`with an empty buffer Tab still leaves the control (${await focused()})`, (await focused()) === 'kb-after');
+
+  // ── b-ribbon: arrow keys in the panel (TASK-731) ──
+  // The panel is one Tab stop and the arrows move by position. Before, every command was a Tab stop, Left/Right
+  // walked a flat list that included the commands of CLOSED flyouts, and folded groups' buttons were skipped.
+  const mountRibbon = (width) => page.evaluate(async (w) => {
+    document.getElementById('kb-host')?.remove();
+    const host = document.createElement('div');
+    host.id = 'kb-host';
+    host.style.cssText = 'position:fixed;top:0;left:0;z-index:99999;background:var(--b-bg);padding:8px';
+    host.innerHTML = `<button id="kb-before">before</button><b-ribbon id="kb-ribbon" expanded pinned style="width:${w}px"></b-ribbon><button id="kb-after">after</button>`;
+    document.body.prepend(host);
+    await customElements.whenDefined('b-ribbon');
+    const it = (g, ids) => ids.map((id) => ({ id, label: id, icon: '●' }));
+    document.getElementById('kb-ribbon').setTabs([
+      { id: 'home', label: 'Home', groups: [
+        { id: 'clip', label: 'Clipboard', icon: '📋', items: it('clip', ['Paste', 'Cut', 'Copy']) },
+        { id: 'rec', label: 'Records', icon: '🗂', items: it('rec', ['New', 'Delete', 'Duplicate']) },
+        { id: 'lay', label: 'Layout', icon: '▦', items: it('lay', ['Columns', 'Rows']) },
+        { id: 'exp', label: 'Export', icon: '📤', items: it('exp', ['PDF', 'CSV', 'Print']) },
+      ] },
+      { id: 'insert', label: 'Insert', groups: [{ id: 'ins', label: 'Insert', items: it('ins', ['Image']) }] },
+    ]);
+    for (let i = 0; i < 40; i++) await new Promise((r) => setTimeout(r, 25));
+  }, width);
+  /** The focused element inside the ribbon: a command's id, `chunk:<group>`, `tab:<id>`, else what focused() says. */
+  const inRibbon = () => page.evaluate(() => {
+    const el = document.getElementById('kb-ribbon')?.shadowRoot?.activeElement;
+    if (!el) return 'outside';
+    if (el.dataset.chunk) return `chunk:${el.dataset.chunk}`;
+    if (el.dataset.item) return (el.closest('.ribbon-flyout') ? 'flyout:' : '') + el.dataset.item;
+    if (el.classList.contains('ribbon-tab')) return `tab:${el.dataset.tab}`;
+    return el.id || el.tagName.toLowerCase();
+  });
+  const press = async (...keys) => { for (const k of keys) await page.keyboard.press(k); return inRibbon(); };
+
+  await mountRibbon(1000);
+  await focusBefore();
+  check(`precondition: Tab reaches the active ribbon tab (${await press('Tab')})`, (await inRibbon()) === 'tab:home');
+  check(`ArrowDown from a tab enters the panel at its first command (${await press('ArrowDown')})`, (await inRibbon()) === 'Paste');
+  check(`ArrowRight moves to the next group, same row (${await press('ArrowRight')})`, (await inRibbon()) === 'New');
+  check(`ArrowDown stays in the column (${await press('ArrowDown')})`, (await inRibbon()) === 'Delete');
+  check(`ArrowLeft goes back across the group boundary (${await press('ArrowLeft')})`, (await inRibbon()) === 'Cut');
+  check(`ArrowUp then ArrowUp from the top row returns to the tab (${await press('ArrowUp', 'ArrowUp')})`, (await inRibbon()) === 'tab:home');
+  await press('ArrowDown');
+  check(`End goes to the last command (${await press('End')})`, (await inRibbon()) === 'Print');
+  check(`ArrowRight at the end wraps to the first (${await press('ArrowRight')})`, (await inRibbon()) === 'Paste');
+  check(`Home goes to the first command (${await press('ArrowRight', 'Home')})`, (await inRibbon()) === 'Paste');
+  const zeroStops = () => page.evaluate(() => [...document.getElementById('kb-ribbon').shadowRoot
+    .querySelectorAll('.ribbon-panel-inner .ribbon-item, .ribbon-panel-inner .ribbon-chunk')].filter((e) => e.tabIndex === 0).map((e) => e.dataset.item ?? e.dataset.chunk));
+  await press('ArrowRight', 'ArrowDown');
+  check(`exactly one panel command is a Tab stop, the focused one (${JSON.stringify(await zeroStops())})`, JSON.stringify(await zeroStops()) === '["Delete"]');
+  const afterPanel = await press('Tab');
+  check(`Tab leaves the panel after one stop (${afterPanel}, ${await focused()})`, afterPanel === 'outside' && (await focused()) === 'kb-after');
+  await page.keyboard.down('Shift');
+  await page.keyboard.press('Tab');
+  await page.keyboard.up('Shift');
+  check(`Shift+Tab comes back to the command focused last (${await inRibbon()})`, (await inRibbon()) === 'Delete');
+  await page.evaluate(() => { document.getElementById('kb-ribbon').style.width = '700px'; });
+  for (let i = 0; i < 12; i++) await new Promise((r) => setTimeout(r, 25));
+  check(`a scaling re-render keeps focus on the same command (${await inRibbon()})`, (await inRibbon()) === 'Delete');
+
+  // Folded groups: one stop each, Enter or ArrowDown opens the flyout and moves into it, Escape comes back.
+  await mountRibbon(230);
+  const sizes = await page.evaluate(() => [...document.getElementById('kb-ribbon').shadowRoot.querySelectorAll('.ribbon-panel-inner > .ribbon-group')].map((g) => [...g.classList].find((c) => c.startsWith('size-'))));
+  check(`precondition: at 230px every group is folded (${sizes.join(',')})`, sizes.every((s) => s === 'size-popup'));
+  await focusBefore();
+  await press('Tab');
+  check(`ArrowDown from the tab reaches the first folded group (${await press('ArrowDown')})`, (await inRibbon()) === 'chunk:clip');
+  check(`ArrowRight moves between folded groups (${await press('ArrowRight')})`, (await inRibbon()) === 'chunk:rec');
+  check(`Enter opens the flyout and focuses its first command (${await press('Enter')})`, (await inRibbon()) === 'flyout:New');
+  check(`arrows move inside the flyout (${await press('ArrowRight')})`, (await inRibbon()) === 'flyout:Delete');
+  // A popover closes on Escape through a close request, a task later, and its focus return follows: wait for it.
+  const settled = async (want) => { for (let i = 0; i < 20 && (await inRibbon()) !== want; i++) await new Promise((r) => setTimeout(r, 25)); return inRibbon(); };
+  await page.keyboard.press('Escape');
+  check(`Escape closes it and gives focus back to its button (${await settled('chunk:rec')})`, (await inRibbon()) === 'chunk:rec');
+  check(`ArrowDown on a folded group opens it too (${await press('ArrowDown')})`, (await inRibbon()) === 'flyout:New');
+  await press('Escape');
 } finally {
   await browser.close();
   server.close();

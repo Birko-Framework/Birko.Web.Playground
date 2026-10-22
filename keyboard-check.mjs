@@ -334,6 +334,97 @@ try {
   check(`Escape closes it and gives focus back to its button (${await settled('chunk:rec')})`, (await inRibbon()) === 'chunk:rec');
   check(`ArrowDown on a folded group opens it too (${await press('ArrowDown')})`, (await inRibbon()) === 'flyout:New');
   await press('Escape');
+  await settled('chunk:clip');
+  // A close that focus had already left must not pull it back: open the flyout, click outside the ribbon.
+  await press('Enter');
+  await page.click('#kb-after');
+  for (let i = 0; i < 8; i++) await new Promise((r) => setTimeout(r, 25));
+  check(`a flyout closed by a click elsewhere leaves focus there (${await focused()})`, (await focused()) === 'kb-after');
+
+  // ── b-ribbon: split and menu buttons (TASK-732) ──
+  // Here rather than in verify.mjs: an auto popover closes every other one, and verify runs every suite at once.
+  await page.evaluate(async () => {
+    document.getElementById('kb-host')?.remove();
+    const host = document.createElement('div');
+    host.id = 'kb-host';
+    host.style.cssText = 'position:fixed;top:0;left:0;z-index:99999;background:var(--b-bg);padding:8px';
+    host.innerHTML = '<button id="kb-before">before</button><b-ribbon id="kb-ribbon" expanded pinned style="width:900px"></b-ribbon><button id="kb-after">after</button>';
+    document.body.prepend(host);
+    await customElements.whenDefined('b-ribbon');
+    window.__kbClicks = [];
+    const r = document.getElementById('kb-ribbon');
+    r.addEventListener('item-click', (e) => window.__kbClicks.push(e.detail));
+    r.setTabs([{ id: 'home', label: 'Home', groups: [
+      { id: 'clip', label: 'Clipboard', icon: '📋', items: [
+        { id: 'paste', label: 'Paste', icon: '📋', split: true, menu: [
+          { id: 'paste-text', label: 'Paste as text', shortcut: 'Ctrl+Shift+V' }, { id: 'paste-off', label: 'Paste off', disabled: true },
+          { separator: true }, { id: 'paste-special', label: 'Paste special' }] },
+        { id: 'cut', label: 'Cut', icon: '✂️' },
+      ] },
+      { id: 'exp', label: 'Export', icon: '📤', items: [
+        { id: 'csv', label: 'CSV', icon: '📊', menu: [{ id: 'csv-comma', label: 'Comma' }, { id: 'csv-semi', label: 'Semicolon' }] },
+      ] },
+    ] }]);
+    for (let i = 0; i < 30; i++) await new Promise((res) => setTimeout(res, 25));
+  });
+  const menuState = () => page.evaluate(() => {
+    const sr = document.getElementById('kb-ribbon').shadowRoot;
+    const open = [...sr.querySelectorAll('.ribbon-menu')].filter((m) => m.matches(':popover-open')).map((m) => m.getAttribute('aria-label'));
+    const el = sr.activeElement;
+    const focus = !el ? 'outside' : el.dataset.menuItem ? `menu:${el.dataset.menuItem}` : el.dataset.arrow ? `arrow:${el.dataset.arrow}` : el.dataset.item ?? el.tagName;
+    return { open, focus, clicks: window.__kbClicks };
+  });
+  const handle = (sel) => page.evaluateHandle((s) => document.getElementById('kb-ribbon').shadowRoot.querySelector(s), sel);
+
+  await (await handle('.ribbon-split-main')).click();
+  let st = await menuState();
+  check(`clicking the main part runs Paste and opens nothing (${JSON.stringify(st.clicks)})`, st.clicks.length === 1 && st.clicks[0].itemId === 'paste' && st.open.length === 0);
+  await (await handle('.ribbon-split-arrow')).click();
+  st = await menuState();
+  check(`clicking ▾ opens the menu, runs nothing, keeps focus on ▾ (${st.open}, ${st.focus})`, JSON.stringify(st.open) === '["Paste"]' && st.clicks.length === 1 && st.focus === 'arrow:paste');
+  await (await handle('.ribbon-menu-item[data-menu-item="paste-special"]')).click();
+  for (let i = 0; i < 6; i++) await new Promise((r) => setTimeout(r, 25));
+  st = await menuState();
+  check(`a clicked choice reports itself and its parent, and closes (${JSON.stringify(st.clicks.at(-1))})`,
+    st.clicks.at(-1)?.itemId === 'paste-special' && st.clicks.at(-1)?.parentId === 'paste' && st.open.length === 0);
+
+  // Keyboard: Enter on ▾ moves into the menu; arrows skip the disabled choice and wrap; Escape returns to ▾.
+  await (await handle('.ribbon-split-arrow')).focus();
+  await page.keyboard.press('Enter');
+  st = await menuState();
+  check(`Enter on ▾ opens the menu at its first choice (${st.focus})`, st.focus === 'menu:paste-text');
+  await page.keyboard.press('ArrowDown');
+  check(`ArrowDown skips the disabled choice and the separator (${(await menuState()).focus})`, (await menuState()).focus === 'menu:paste-special');
+  await page.keyboard.press('ArrowDown');
+  check(`ArrowDown wraps to the first (${(await menuState()).focus})`, (await menuState()).focus === 'menu:paste-text');
+  await page.keyboard.press('ArrowUp');
+  check(`ArrowUp wraps to the last (${(await menuState()).focus})`, (await menuState()).focus === 'menu:paste-special');
+  await page.keyboard.press('Escape');
+  for (let i = 0; i < 20 && (await menuState()).focus !== 'arrow:paste'; i++) await new Promise((r) => setTimeout(r, 25));
+  st = await menuState();
+  check(`Escape closes the menu and returns to ▾ (${st.open}, ${st.focus})`, st.open.length === 0 && st.focus === 'arrow:paste');
+  await (await handle('.ribbon-split-main')).focus();
+  await page.keyboard.down('Alt'); await page.keyboard.press('ArrowDown'); await page.keyboard.up('Alt');
+  st = await menuState();
+  check(`Alt+ArrowDown on the command opens its menu (${st.open}, ${st.focus})`, JSON.stringify(st.open) === '["Paste"]' && st.focus === 'menu:paste-text');
+  await page.keyboard.press('Enter');
+  for (let i = 0; i < 20 && (await menuState()).focus !== 'arrow:paste'; i++) await new Promise((r) => setTimeout(r, 25));
+  st = await menuState();
+  check(`Enter on a choice runs it, closes, focus back on ▾ (${JSON.stringify(st.clicks.at(-1))}, ${st.focus})`,
+    st.clicks.at(-1)?.itemId === 'paste-text' && st.open.length === 0 && st.focus === 'arrow:paste');
+  await (await handle('.ribbon-item[data-item="csv"]')).focus();
+  const n = (await menuState()).clicks.length;
+  await page.keyboard.press('Space');
+  st = await menuState();
+  check(`Space on a menu-only command opens it, emits nothing (${st.open}, ${st.focus})`, JSON.stringify(st.open) === '["CSV"]' && st.focus === 'menu:csv-comma' && st.clicks.length === n);
+  await page.keyboard.press('Tab');
+  for (let i = 0; i < 20 && ((await menuState()).open.length || (await menuState()).focus !== 'csv'); i++) await new Promise((r) => setTimeout(r, 25));
+  st = await menuState();
+  check(`Tab closes the menu and focus stays on its command (${st.open}, ${st.focus})`, st.open.length === 0 && st.focus === 'csv');
+  await page.keyboard.press('Space');
+  await page.click('#kb-after');
+  for (let i = 0; i < 8; i++) await new Promise((r) => setTimeout(r, 25));
+  check(`a menu closed by a click elsewhere leaves focus there (${await focused()})`, (await focused()) === 'kb-after' && (await menuState()).open.length === 0);
 } finally {
   await browser.close();
   server.close();

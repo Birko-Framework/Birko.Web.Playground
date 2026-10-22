@@ -83,6 +83,8 @@ if (new URLSearchParams(location.search).has('smoke')) {
   void import('./ribbon-scaling-smoke.js');
   // TASK-730 — b-ribbon groups are one height, rows line up across groups, labels sit under their group.
   void import('./ribbon-layout-smoke.js');
+  // TASK-732 — b-ribbon split and menu buttons: parts, ARIA, events with parentId, text labels, large, folded, mobile.
+  void import('./ribbon-menu-smoke.js');
   // STORY-052 / TASK-137 — control-side validation messages resolve through i18n. Registers global
   // translations, so it serialises itself after backport-smoke (which asserts them in English).
   void import('./i18n-message-smoke.js');
@@ -601,13 +603,14 @@ const CATALOGUE: ComponentDef[] = [
       // Priorities set deliberately so the degrade ORDER is visible while resizing: a LOWER
       // scalingPriority gives way first, so Export collapses long before Clipboard is touched. Clipboard
       // is floored at 'small' so it never folds into a flyout however narrow it gets — the hero group
-      // stays directly clickable. Mirrors the Avalonia gallery's demo exactly, for side-by-side review.
-      { id: 'clip', label: 'Clipboard', icon: '📋', scalingPriority: 100, minSize: 'small', items: [{ id: 'paste', label: 'Paste', icon: '📋' }, { id: 'cut', label: 'Cut', icon: '✂️' }, { id: 'copy', label: 'Copy', icon: '📄' }] },
+      // stays directly clickable. Mirrors the Avalonia gallery's demo, for side-by-side review, except Paste's split
+      // menu and CSV's menu (TASK-732): the Avalonia ribbon has no menus yet (TASK-742).
+      { id: 'clip', label: 'Clipboard', icon: '📋', scalingPriority: 100, minSize: 'small', items: [{ id: 'paste', label: 'Paste', icon: '📋', split: true, menu: [{ id: 'paste-text', label: 'Paste as text', icon: '📝', shortcut: 'Ctrl+Shift+V' }, { id: 'paste-picture', label: 'Paste as picture', icon: '🖼' }, { separator: true }, { id: 'paste-special', label: 'Paste special…', shortcut: 'Ctrl+Alt+V' }] }, { id: 'cut', label: 'Cut', icon: '✂️' }, { id: 'copy', label: 'Copy', icon: '📄' }] },
       { id: 'records', label: 'Records', icon: '🗃', scalingPriority: 80, items: [{ id: 'new', label: 'New', icon: '➕' }, { id: 'del', label: 'Delete', icon: '🗑' }, { id: 'dup', label: 'Duplicate', icon: '⧉' }] },
       { id: 'font', label: 'Font', icon: '🅰', scalingPriority: 60, items: [{ id: 'bold', label: 'Bold', icon: '𝐁' }, { id: 'italic', label: 'Italic', icon: '𝑰' }, { id: 'colour', label: 'Colour', icon: '🎨' }] },
       { id: 'layout', label: 'Layout', icon: '▥', scalingPriority: 40, items: [{ id: 'cols', label: 'Columns', icon: '▥' }, { id: 'rows', label: 'Rows', icon: '▤' }] },
       { id: 'review', label: 'Review', icon: '💬', scalingPriority: 20, items: [{ id: 'comment', label: 'Comment', icon: '💬' }, { id: 'track', label: 'Track', icon: '✓' }] },
-      { id: 'export', label: 'Export', icon: '📤', scalingPriority: 0, items: [{ id: 'pdf', label: 'PDF', icon: '📄' }, { id: 'csv', label: 'CSV', icon: '📊' }, { id: 'print', label: 'Print', icon: '🖨' }] },
+      { id: 'export', label: 'Export', icon: '📤', scalingPriority: 0, items: [{ id: 'pdf', label: 'PDF', icon: '📄' }, { id: 'csv', label: 'CSV', icon: '📊', menu: [{ id: 'csv-comma', label: 'Comma separated' }, { id: 'csv-semicolon', label: 'Semicolon separated' }, { id: 'csv-utf8', label: 'UTF-8 with BOM', disabled: true }] }, { id: 'print', label: 'Print', icon: '🖨' }] },
     ] },
     { id: 'insert', label: 'Insert', groups: [
       { id: 'media', label: 'Media', items: [{ id: 'image', label: 'Image', icon: '🖼️' }, { id: 'table', label: 'Table', icon: '▦' }] },

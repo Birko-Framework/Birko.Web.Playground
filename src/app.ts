@@ -67,6 +67,8 @@ if (new URLSearchParams(location.search).has('smoke')) {
   void import('./layout-persist-smoke.js');
   // TASK-725 — diffJson (paths, ignore, normalize, array matching) and b-json-diff (tree, only changes, side by side).
   void import('./json-diff-smoke.js');
+  // TASK-725 follow-up — a component's .sr-only text scrolls with the page's scroll container, never stretches the document.
+  void import('./sr-only-contain-smoke.js');
   // STORY-023 / TASK-035 — ElementInternals form association.
   void import('./form-assoc-smoke.js');
   // EPIC-001 — the `description` help-text row.

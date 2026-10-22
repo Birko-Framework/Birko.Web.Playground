@@ -93,6 +93,8 @@ if (new URLSearchParams(location.search).has('smoke')) {
   void import('./ribbon-toggle-smoke.js');
   // TASK-734 — b-ribbon contextual tabs: shown sets, band / pill / edge, colours, hide returns to the previous tab.
   void import('./ribbon-contextual-smoke.js');
+  // TASK-747 — every size in b-ribbon's stylesheet is a design token.
+  void import('./ribbon-tokens-smoke.js');
   // STORY-052 / TASK-137 — control-side validation messages resolve through i18n. Registers global
   // translations, so it serialises itself after backport-smoke (which asserts them in English).
   void import('./i18n-message-smoke.js');

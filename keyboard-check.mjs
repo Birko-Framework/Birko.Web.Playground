@@ -968,6 +968,114 @@ try {
   await new Promise((r) => setTimeout(r, 80));
   check(`a rebound combination replaces Alt+Win ("${notDefault}" → ${await tips()})`, notDefault === '' && (await tips()) === '1AHI');
   await page.evaluate(() => document.getElementById('kb-host').remove());
+  // ── b-ribbon: group launcher (TASK-733) ──
+  const mountL = (width = 900) => page.evaluate(async (w) => {
+    document.getElementById('kb-host')?.remove();
+    const host = document.createElement('div');
+    host.id = 'kb-host';
+    host.style.cssText = 'position:fixed;top:0;left:0;z-index:99999;background:var(--b-bg);padding:8px';
+    host.innerHTML = `<button id="kb-before">before</button><b-ribbon id="kb-ribbon" expanded pinned style="width:${w}px"></b-ribbon>`;
+    document.body.prepend(host);
+    await customElements.whenDefined('b-ribbon');
+    const r = document.getElementById('kb-ribbon');
+    window.__kbL = []; window.__kbClicks = [];
+    r.addEventListener('group-launcher', (e) => window.__kbL.push(e.detail));
+    r.addEventListener('item-click', (e) => window.__kbClicks.push(e.detail));
+    const it = (ids) => ids.map((id) => ({ id, label: id, icon: '●' }));
+    r.setTabs([{ id: 'home', label: 'Home', groups: [
+      { id: 'clip', label: 'Clipboard', icon: '📋', items: it(['Paste', 'Cut', 'Copy']) },
+      { id: 'font', label: 'Font', icon: '🅰', launcher: true, items: it(['Bold', 'Italic', 'Colour']) },
+      { id: 'para', label: 'Paragraph', icon: '¶', launcher: true, launcherLabel: 'Paragraph settings', items: it(['Left', 'Right']) },
+      { id: 'exp', label: 'Export', icon: '📤', items: it(['PDF', 'CSV', 'Print']) },
+    ] }]);
+    for (let i = 0; i < 30; i++) await new Promise((res) => setTimeout(res, 25));
+  }, width);
+  const lState = () => page.evaluate(() => ({ launches: window.__kbL, clicks: window.__kbClicks.length }));
+  const wait2 = (ms = 60) => new Promise((r) => setTimeout(r, ms));
+
+  await mountL();
+  const marks = await page.evaluate(() => {
+    const sr = document.getElementById('kb-ribbon').shadowRoot;
+    const ls = [...sr.querySelectorAll('.ribbon-panel-inner > .ribbon-group > .ribbon-launcher')];
+    const font = sr.querySelector('.ribbon-group[data-group="font"]');
+    const lb = font.querySelector('.ribbon-launcher').getBoundingClientRect();
+    const gb = font.getBoundingClientRect();
+    const tb = font.querySelector('.ribbon-group-label').getBoundingClientRect();
+    const range = document.createRange(); range.selectNodeContents(font.querySelector('.ribbon-group-label'));
+    const text = range.getBoundingClientRect();
+    return { names: ls.map((l) => l.getAttribute('aria-label')), corner: Math.abs(lb.right - gb.right) < 2 && Math.abs(lb.bottom - gb.bottom) < 2,
+      clear: text.right <= lb.left + 0.5, sameLine: lb.top < tb.bottom && lb.bottom > tb.top };
+  });
+  check(`launchers only on groups that ask, named (${JSON.stringify(marks.names)})`, JSON.stringify(marks.names) === '["More Font options","Paragraph settings"]');
+  check(`it sits at the group's bottom-right corner, beside the name and clear of it (${JSON.stringify(marks)})`, marks.corner && marks.clear && marks.sameLine);
+  await clickAt('.ribbon-group[data-group="font"] > .ribbon-launcher');
+  let ls = await lState();
+  check(`a click emits group-launcher and no item-click (${JSON.stringify(ls)})`, JSON.stringify(ls.launches) === '[{"tabId":"home","groupId":"font"}]' && ls.clicks === 0);
+  await page.mouse.move(5, 400);
+  await wait2(500);
+  const paraPos = await page.evaluate(() => {
+    const r = document.getElementById('kb-ribbon').shadowRoot.querySelector('.ribbon-group[data-group="para"] > .ribbon-launcher').getBoundingClientRect();
+    return { x: r.left + r.width / 2, y: r.top + r.height / 2 };
+  });
+  await page.mouse.move(paraPos.x, paraPos.y);
+  await wait2(700);
+  const tipText = await page.evaluate(() => {
+    const tip = document.getElementById('kb-ribbon').shadowRoot.querySelector('b-tooltip.ribbon-tooltip').shadowRoot.querySelector('.tip');
+    return tip.matches(':popover-open') ? tip.textContent.trim() : 'closed';
+  });
+  check(`hovering it shows its name as a tooltip (${tipText})`, tipText === 'Paragraph settings');
+  await page.mouse.move(5, 400);
+
+  // Keyboard: an arrow-key stop; Enter emits.
+  // It sits under the right end of the bottom row, so ArrowDown from the group's last command reaches it.
+  await page.evaluate(() => document.getElementById('kb-ribbon').shadowRoot.querySelector('.ribbon-panel-inner .ribbon-item[data-item="Colour"]').focus());
+  await page.keyboard.press('ArrowDown');
+  const onLauncher = await page.evaluate(() => document.getElementById('kb-ribbon').shadowRoot.activeElement?.dataset.launcher ?? document.getElementById('kb-ribbon').shadowRoot.activeElement?.dataset.item);
+  check(`ArrowDown from the group's last command reaches its launcher (${onLauncher})`, onLauncher === 'font');
+  await page.keyboard.press('Escape'); // its tooltip
+  await page.keyboard.press('Enter');
+  ls = await lState();
+  check(`Enter on it emits group-launcher (${ls.launches.length})`, ls.launches.length === 2 && ls.launches[1].groupId === 'font');
+
+  // Key tips: it gets a letter.
+  await page.click('#kb-before');
+  await page.keyboard.down('Alt'); await page.keyboard.down('Meta'); await page.keyboard.up('Meta'); await page.keyboard.up('Alt');
+  await wait2(80);
+  await page.keyboard.press('H');
+  await wait2(120);
+  const ltip = await page.evaluate(() => {
+    const sr = document.getElementById('kb-ribbon').shadowRoot;
+    const l = sr.querySelector('.ribbon-group[data-group="para"] > .ribbon-launcher').getBoundingClientRect();
+    const t = [...sr.querySelectorAll('.ribbon-keytip')].find((k) => Math.abs(parseFloat(k.style.left) - l.right) < 2 && Math.abs(parseFloat(k.style.top) - l.bottom) < 2);
+    return t?.textContent ?? '';
+  });
+  if (ltip) await page.keyboard.press(ltip);
+  await wait2(80);
+  ls = await lState();
+  check(`the launcher has a key tip (${ltip}) that runs it`, !!ltip && ls.launches.at(-1)?.groupId === 'para');
+
+  // Folded: the launcher moves into the flyout's header.
+  await mountL(230);
+  await page.evaluate(() => document.getElementById('kb-ribbon').shadowRoot.querySelector('.ribbon-chunk[data-chunk="font"]').click());
+  await wait2();
+  const head = await page.evaluate(() => {
+    const f = document.getElementById('kb-ribbon').shadowRoot.querySelector('.ribbon-group[data-group="font"] .ribbon-flyout');
+    return f.matches(':popover-open') ? (f.querySelector('.ribbon-flyout-header')?.textContent.trim() ?? 'no header') + ' / ' + (f.querySelector('.ribbon-flyout-header .ribbon-launcher')?.getAttribute('aria-label') ?? '') : 'closed';
+  });
+  check(`a folded group's flyout has a header with its launcher (${head})`, head === 'Font / More Font options');
+  await clickAt('.ribbon-group[data-group="font"] .ribbon-flyout .ribbon-launcher');
+  ls = await lState();
+  const flyOpen = await page.evaluate(() => document.getElementById('kb-ribbon').shadowRoot.querySelector('.ribbon-group[data-group="font"] .ribbon-flyout').matches(':popover-open'));
+  check(`clicking it emits and closes the flyout (${JSON.stringify(ls.launches)}, ${flyOpen})`, ls.launches.at(-1)?.groupId === 'font' && !flyOpen);
+
+  // Mobile list: listed under the group, fires once even after hover previews re-rendered the panel.
+  await mountL();
+  const tabPos2 = await page.evaluate(() => { const r = document.getElementById('kb-ribbon').shadowRoot.querySelector('.ribbon-tab').getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2 }; });
+  for (let i = 0; i < 3; i++) { await page.mouse.move(tabPos2.x, tabPos2.y); await wait2(260); await page.mouse.move(5, 400); await wait2(260); }
+  await page.evaluate(() => document.getElementById('kb-ribbon').shadowRoot.querySelector('.mobile-launcher[data-launcher="font"]').click());
+  ls = await lState();
+  check(`the mobile list's launcher fires once, after hover previews, with no item-click (${ls.launches.length}, ${ls.clicks})`, ls.launches.length === 1 && ls.clicks === 0);
+  await page.evaluate(() => document.getElementById('kb-host').remove());
 } finally {
   await browser.close();
   server.close();

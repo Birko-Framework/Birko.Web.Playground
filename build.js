@@ -81,6 +81,12 @@ copyCss();
 mkdirSync('wwwroot/locales', { recursive: true });
 copyFileSync(`${BIRKO_SRC}/Birko.Web.Components/locales/en.json`, 'wwwroot/locales/en.json');
 for (const f of readdirSync('locales')) if (f.endsWith('.json')) copyFileSync(`locales/${f}`, `wwwroot/locales/${f}`);
+// TASK-750 — i18n-chain-smoke's bundles, served as real files: the suite must not replace window.fetch, which
+// backport-smoke stubs while it runs beside it.
+for (const dir of ['', 'modules/orders']) {
+  mkdirSync(`wwwroot/__i18n-chain-smoke/${dir}`, { recursive: true });
+  for (const f of readdirSync(`fixtures/i18n-chain/${dir}`)) if (f.endsWith('.json')) copyFileSync(`fixtures/i18n-chain/${dir}/${f}`, `wwwroot/__i18n-chain-smoke/${dir}/${f}`);
+}
 copyFileSync('index.html', 'wwwroot/index.html'); // wwwroot is the self-contained web root
 copyFileSync('nojs.html', 'wwwroot/nojs.html'); // TASK-549/550 — server-rendered carousel / gallery markup for the no-JS check
 writePwaAssets();

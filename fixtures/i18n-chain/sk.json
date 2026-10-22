@@ -1,0 +1,10 @@
+{
+  "only": {
+    "sk": "len po slovensky"
+  },
+  "items": {
+    "one": "{count} položka",
+    "few": "{count} položky",
+    "other": "{count} položiek"
+  }
+}

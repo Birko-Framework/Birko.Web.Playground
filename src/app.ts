@@ -14,7 +14,10 @@ if (new URLSearchParams(location.search).has('smoke')) {
   // `?smoke=1&only=a-smoke,b-smoke` runs just those suites, to tell a suite's own flake from one another suite causes
   // (TASK-745). Without `only`, every suite runs, as verify.mjs needs.
   const only = new URLSearchParams(location.search).get('only')?.split(',').filter(Boolean);
-  const runs = (name: string) => !only || only.includes(name);
+  // The suites started, for one that must run alone after the others (i18n-chain-smoke, TASK-750).
+  const started: string[] = [];
+  (window as unknown as { __smokeSuites: string[] }).__smokeSuites = started;
+  const runs = (name: string) => { const on = !only || only.includes(name); if (on) started.push(name); return on; };
   if (runs('backport-smoke')) void import('./backport-smoke.js');
   // STORY-001 / TASK-001 — `bare` attribute on the form controls.
   if (runs('bare-smoke')) void import('./bare-smoke.js');
@@ -41,6 +44,8 @@ if (new URLSearchParams(location.search).has('smoke')) {
   if (runs('gallery-smoke')) void import('./gallery-smoke.js');
   // TASK-551 — {placeholders} filled in one pass, by one function, on every i18n path.
   if (runs('i18n-interpolate-smoke')) void import('./i18n-interpolate-smoke.js');
+  // TASK-750 — I18n fallback chains (cs → sk → en), and no change without them.
+  if (runs('i18n-chain-smoke')) void import('./i18n-chain-smoke.js');
   // TASK-547 — SseClient: one retry loop, a growing delay schedule and the _failing signal.
   if (runs('sse-retry-smoke')) void import('./sse-retry-smoke.js');
   // TASK-582 — BasePage renders a page's tour ? beside the title, named, wired once.

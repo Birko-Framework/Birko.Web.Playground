@@ -1,0 +1,7 @@
+{
+  "orders": {
+    "title": "Orders",
+    "empty": "No orders",
+    "help": "Orders help"
+  }
+}

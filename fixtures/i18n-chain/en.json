@@ -1,0 +1,11 @@
+{
+  "greet": "Hello",
+  "only": {
+    "sk": "Slovak only (en)",
+    "en": "English only"
+  },
+  "items": {
+    "one": "{count} item",
+    "other": "{count} items"
+  }
+}

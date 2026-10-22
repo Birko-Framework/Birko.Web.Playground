@@ -604,7 +604,7 @@ const CATALOGUE: ComponentDef[] = [
   // behaviour is observable: narrow the browser and the tab-strip and panel chevrons appear
   // (STORY-049/TASK-097). The old 2-tab / 2-group demo never overflowed, so the fix could not be
   // reviewed by hand.
-  { tag: 'b-ribbon', label: 'Ribbon', category: 'nav', wide: true, attrs: { expanded: '', pinned: '' }, setup: (el) => el.setTabs([
+  { tag: 'b-ribbon', label: 'Ribbon', category: 'nav', wide: true, attrs: { expanded: '', pinned: '', 'qat-key': 'playground' }, setup: (el) => { el.setTabs([
     { id: 'home', label: 'Home', groups: [
       // Priorities set deliberately so the degrade ORDER is visible while resizing: a LOWER
       // scalingPriority gives way first, so Export collapses long before Clipboard is touched. Clipboard
@@ -639,7 +639,7 @@ const CATALOGUE: ComponentDef[] = [
     { id: 'help', label: 'Help', groups: [
       { id: 'support', label: 'Support', items: [{ id: 'docs', label: 'Docs', icon: '📘' }, { id: 'contact', label: 'Contact', icon: '✉' }] },
     ] },
-  ]) },
+  ]); el.setQuickAccess([{ id: 'save', label: 'Save', icon: '💾', shortcut: 'Ctrl+S' }, { id: 'undo', label: 'Undo', icon: '↶', shortcut: 'Ctrl+Z' }, { id: 'redo', label: 'Redo', icon: '↷', shortcut: 'Ctrl+Y' }]); } },
 
   // ── command ──
   { tag: 'b-command-palette', label: 'Command palette', category: 'command',

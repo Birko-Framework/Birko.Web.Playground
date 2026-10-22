@@ -633,6 +633,188 @@ try {
   let threw = false;
   try { await ctrlF1(); } catch { threw = true; }
   check('a removed ribbon leaves no listener behind (no error)', !threw);
+
+  // ── b-ribbon: Quick Access Toolbar (TASK-737) ──
+  const mountQat = (attrs = '') => page.evaluate(async (extra) => {
+    document.getElementById('kb-host')?.remove();
+    const host = document.createElement('div');
+    host.id = 'kb-host';
+    host.style.cssText = 'position:fixed;top:0;left:0;z-index:99999;background:var(--b-bg);padding:8px';
+    host.innerHTML = `<button id="kb-before">before</button><b-ribbon id="kb-ribbon" expanded pinned qat-key="kbtest" ${extra} style="width:900px"></b-ribbon><button id="kb-after">after</button>`;
+    document.body.prepend(host);
+    await customElements.whenDefined('b-ribbon');
+    const r = document.getElementById('kb-ribbon');
+    window.__kbClicks = [];
+    window.__kbQat = [];
+    r.addEventListener('item-click', (e) => window.__kbClicks.push(e.detail));
+    r.addEventListener('quick-access-change', (e) => window.__kbQat.push(e.detail.refs));
+    r.setTabs([{ id: 'home', label: 'Home', groups: [
+      { id: 'clip', label: 'Clipboard', items: [{ id: 'cut', label: 'Cut', icon: '✂️' }, { id: 'bold', label: 'Bold', toggle: true }] },
+      { id: 'exp', label: 'Export', items: [{ id: 'csv', label: 'CSV', menu: [{ id: 'c1', label: 'Comma' }] }] },
+    ] }]);
+    r.setQuickAccess([{ id: 'save', label: 'Save', icon: '💾' }, { id: 'undo', label: 'Undo', icon: '↶' }]);
+    for (let i = 0; i < 30; i++) await new Promise((res) => setTimeout(res, 25));
+  }, attrs);
+  const qatState = () => page.evaluate(() => {
+    const sr = document.getElementById('kb-ribbon').shadowRoot;
+    const menu = sr.querySelector('.ribbon-shared-menu');
+    return {
+      buttons: [...sr.querySelectorAll('.ribbon-qat-btn[data-qat-ref]')].map((b) => b.getAttribute('aria-label')),
+      menu: menu.matches(':popover-open') ? [...menu.querySelectorAll('.ribbon-menu-item')].map((m) => m.textContent.trim() + (m.hasAttribute('aria-checked') ? `[${m.getAttribute('aria-checked')}]` : '')) : null,
+      focus: sr.activeElement ? (sr.activeElement.getAttribute('aria-label') ?? sr.activeElement.textContent.trim()) : 'outside',
+      stored: localStorage.getItem('birko-ribbon-qat:kbtest'),
+      clicks: window.__kbClicks, changes: window.__kbQat,
+    };
+  });
+  const sel = (q) => page.evaluateHandle((x) => document.getElementById('kb-ribbon').shadowRoot.querySelector(x), q).then((h) => h.asElement());
+  // Clicks by coordinates read at the moment of the click: the ribbon's hover preview re-renders its panel when the
+  // pointer crosses a tab, which detaches an element handle taken a moment earlier.
+  const clickAt = async (q, opts = {}) => {
+    const c = await page.evaluate((x) => {
+      const r = document.getElementById('kb-ribbon').shadowRoot.querySelector(x).getBoundingClientRect();
+      return { x: r.left + r.width / 2, y: r.top + r.height / 2 };
+    }, q);
+    await page.mouse.click(c.x, c.y, opts);
+  };
+  const pause = (ms = 60) => new Promise((r) => setTimeout(r, ms));
+  await page.evaluate(() => localStorage.removeItem('birko-ribbon-qat:kbtest'));
+
+  await mountQat();
+  let q = await qatState();
+  check(`the toolbar shows the app's commands (${q.buttons})`, JSON.stringify(q.buttons) === '["Save","Undo"]');
+  const geo = await page.evaluate(() => {
+    const sr = document.getElementById('kb-ribbon').shadowRoot;
+    const a = sr.querySelector('.ribbon-qat').getBoundingClientRect();
+    const t = sr.querySelector('.ribbon-tab').getBoundingClientRect();
+    return { before: a.right <= t.left + 1, sameRow: Math.abs((a.top + a.bottom) / 2 - (t.top + t.bottom) / 2) < 8 };
+  });
+  check(`by default it sits in the tab row, before the tabs (${JSON.stringify(geo)})`, geo.before && geo.sameRow);
+  await clickAt('.ribbon-qat-btn[data-qat-ref="qat:save"]');
+  q = await qatState();
+  check(`a toolbar button reports its command with source "qat" (${JSON.stringify(q.clicks.at(-1))})`, q.clicks.at(-1)?.itemId === 'save' && q.clicks.at(-1)?.source === 'qat');
+
+  // Keyboard: one Tab stop, arrows inside.
+  await focusBefore();
+  await page.keyboard.press('Tab');
+  q = await qatState();
+  check(`Tab reaches the toolbar first, on one button (${q.focus})`, q.focus === 'Save');
+  await page.keyboard.press('ArrowRight');
+  check(`ArrowRight moves inside the toolbar (${(await qatState()).focus})`, (await qatState()).focus === 'Undo');
+  await page.keyboard.press('Tab');
+  check(`the next Tab leaves it for the tabs (${(await qatState()).focus})`, (await qatState()).focus === 'Home');
+
+  // Add from a command's context menu (right-click), then use it.
+  await clickAt('.ribbon-panel-inner .ribbon-item[data-item="cut"]', { button: 'right' });
+  await pause();
+  q = await qatState();
+  check(`right-clicking a command offers "Add to Quick Access Toolbar" (${q.menu}, ${q.focus})`, JSON.stringify(q.menu) === '["Add to Quick Access Toolbar"]' && q.focus === 'Add to Quick Access Toolbar');
+  await page.keyboard.press('Enter');
+  await pause();
+  q = await qatState();
+  check(`Enter adds it, saves it, reports it (${q.buttons}; ${q.stored}; ${JSON.stringify(q.changes.at(-1))})`,
+    JSON.stringify(q.buttons) === '["Save","Undo","Cut"]' && q.stored === '["qat:save","qat:undo","item:home/clip/cut"]' && q.changes.length === 1);
+  await clickAt('.ribbon-qat-btn[data-qat-ref="item:home/clip/cut"]');
+  q = await qatState();
+  check(`the added button runs the command (${JSON.stringify(q.clicks.at(-1))})`, q.clicks.at(-1)?.itemId === 'cut' && q.clicks.at(-1)?.tabId === 'home' && q.clicks.at(-1)?.source === 'qat');
+  await clickAt('.ribbon-panel-inner .ribbon-item[data-item="csv"]', { button: 'right' });
+  await pause();
+  check(`a menu-only command cannot be added (${(await qatState()).menu})`, (await qatState()).menu === null);
+  await page.keyboard.press('Escape');
+
+  // Toggle commands keep their state in the toolbar too.
+  await clickAt('.ribbon-panel-inner .ribbon-item[data-item="bold"]', { button: 'right' });
+  await pause();
+  await page.keyboard.press('Enter');
+  await pause();
+  await clickAt('.ribbon-qat-btn[data-qat-ref="item:home/clip/bold"]');
+  const bold = await page.evaluate(() => {
+    const sr = document.getElementById('kb-ribbon').shadowRoot;
+    return `${sr.querySelector('.ribbon-qat-btn[data-qat-ref="item:home/clip/bold"]').getAttribute('aria-pressed')}/${sr.querySelector('.ribbon-panel-inner .ribbon-item[data-item="bold"]').getAttribute('aria-pressed')}`;
+  });
+  check(`a toggle pressed in the toolbar is pressed in the ribbon too (${bold})`, bold === 'true/true');
+
+  // Remove with Shift+F10 on a toolbar button.
+  await (await sel('.ribbon-qat-btn[data-qat-ref="item:home/clip/cut"]')).focus();
+  await page.keyboard.down('Shift'); await page.keyboard.press('F10'); await page.keyboard.up('Shift');
+  await pause();
+  q = await qatState();
+  check(`Shift+F10 on a toolbar button offers "Remove" (${q.menu})`, JSON.stringify(q.menu) === '["Remove from Quick Access Toolbar"]');
+  await page.keyboard.press('Enter');
+  await pause();
+  check(`Enter removes it (${(await qatState()).buttons})`, JSON.stringify((await qatState()).buttons) === '["Save","Undo","Bold"]');
+
+  // Customise: show/hide the defaults, reset.
+  await clickAt('.ribbon-qat-more');
+  await pause();
+  q = await qatState();
+  check(`▾ lists the commands as checkboxes, then Reset (${q.menu})`, JSON.stringify(q.menu) === '["Save[true]","Undo[true]","Bold[true]","Reset to default"]');
+  await page.keyboard.press('ArrowDown');
+  await page.keyboard.press('Enter');
+  await pause();
+  q = await qatState();
+  check(`unchecking Undo hides it, focus back on ▾ (${q.buttons}, ${q.focus})`, JSON.stringify(q.buttons) === '["Save","Bold"]' && q.focus === 'Customize Quick Access Toolbar');
+
+  // A hover preview re-renders the panel and used to re-bind menu handlers onto the OPEN shared menu, swallowing its
+  // choice: hover a tab while the ▾ menu is open, then choose.
+  await clickAt('.ribbon-qat-more');
+  await pause();
+  const tabPos = await page.evaluate(() => {
+    const r = document.getElementById('kb-ribbon').shadowRoot.querySelector('.ribbon-tab').getBoundingClientRect();
+    return { x: r.left + r.width / 2, y: r.top + r.height / 2 };
+  });
+  await page.mouse.move(tabPos.x, tabPos.y);
+  await pause(400); // past the pinned hover preview's 200 ms re-render
+  await page.mouse.move(5, 400);
+  await pause(400);
+  check(`precondition: the ▾ menu is still open after the hover (${(await qatState()).menu})`, (await qatState()).menu !== null);
+  await page.evaluate(() => document.getElementById('kb-ribbon').shadowRoot.querySelector('.ribbon-shared-menu .ribbon-menu-item[data-ref="qat:undo"]').focus());
+  const clicksBefore = (await qatState()).clicks.length;
+  await page.keyboard.press('Enter');
+  await pause();
+  q = await qatState();
+  check(`after a hover preview the ▾ menu still works, and emits no stray item-click (${q.buttons}, ${q.clicks.length - clicksBefore})`,
+    JSON.stringify(q.buttons) === '["Save","Undo","Bold"]' && q.clicks.length === clicksBefore);
+  // Undo is back; hide it again so the reload check below starts from Save, Bold.
+  await clickAt('.ribbon-qat-more');
+  await pause();
+  await page.keyboard.press('ArrowDown');
+  await page.keyboard.press('Enter');
+  await pause();
+
+  // The choice survives a reload; hostile storage is ignored.
+  await mountQat();
+  check(`the saved choice is restored (${(await qatState()).buttons})`, JSON.stringify((await qatState()).buttons) === '["Save","Bold"]');
+  await page.evaluate(() => localStorage.setItem('birko-ribbon-qat:kbtest', JSON.stringify(['qat:save', '<img src=x onerror=1>', 5, 'item:../../x', 'item:home/clip/gone'])));
+  await mountQat();
+  check(`malformed, foreign and unknown entries are ignored (${(await qatState()).buttons})`, JSON.stringify((await qatState()).buttons) === '["Save"]');
+  await page.evaluate(() => localStorage.setItem('birko-ribbon-qat:kbtest', '{"not":"a list"}'));
+  await mountQat();
+  check(`a stored value that is not a list falls back to the defaults (${(await qatState()).buttons})`, JSON.stringify((await qatState()).buttons) === '["Save","Undo"]');
+  await page.evaluate(() => localStorage.setItem('birko-ribbon-qat:kbtest', '["qat:save"]'));
+  await mountQat();
+  await clickAt('.ribbon-qat-more');
+  await pause();
+  await page.keyboard.press('End');
+  await page.keyboard.press('Enter');
+  await pause();
+  q = await qatState();
+  check(`Reset brings the defaults back and clears the storage (${q.buttons}, ${q.stored})`, JSON.stringify(q.buttons) === '["Save","Undo"]' && q.stored === null);
+
+  // Positions.
+  for (const pos of ['above', 'below']) {
+    await mountQat(`qat-position="${pos}"`);
+    const where = await page.evaluate((c) => {
+      const sr = document.getElementById('kb-ribbon').shadowRoot;
+      const row = sr.querySelector(`.ribbon-qat-row.${c}`);
+      const tabs = sr.querySelector('.ribbon-tab-row').getBoundingClientRect();
+      const panel = sr.querySelector('.ribbon-panel').getBoundingClientRect();
+      if (!row) return 'missing';
+      const r = row.getBoundingClientRect();
+      return c === 'above' ? (r.bottom <= tabs.top + 1 ? 'above the tabs' : 'wrong') : (r.top >= panel.bottom - 1 ? 'below the panel' : 'wrong');
+    }, pos);
+    check(`qat-position="${pos}" moves it (${where})`, where === (pos === 'above' ? 'above the tabs' : 'below the panel'));
+  }
+  await page.evaluate(() => localStorage.removeItem('birko-ribbon-qat:kbtest'));
 } finally {
   await browser.close();
   server.close();

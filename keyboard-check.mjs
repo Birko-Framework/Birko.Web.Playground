@@ -814,6 +814,36 @@ try {
     }, pos);
     check(`qat-position="${pos}" moves it (${where})`, where === (pos === 'above' ? 'above the tabs' : 'below the panel'));
   }
+  // Opt-in: a ribbon whose app never asked for a toolbar has none, and a right-click offers nothing.
+  await page.evaluate(async () => {
+    document.getElementById('kb-host')?.remove();
+    const host = document.createElement('div');
+    host.id = 'kb-host';
+    host.style.cssText = 'position:fixed;top:0;left:0;z-index:99999;background:var(--b-bg);padding:8px';
+    host.innerHTML = '<b-ribbon id="kb-ribbon" expanded pinned style="width:900px"></b-ribbon>';
+    document.body.prepend(host);
+    await customElements.whenDefined('b-ribbon');
+    document.getElementById('kb-ribbon').setTabs([{ id: 'home', label: 'Home', groups: [{ id: 'clip', label: 'Clipboard', items: [{ id: 'cut', label: 'Cut' }] }] }]);
+    for (let i = 0; i < 20; i++) await new Promise((res) => setTimeout(res, 25));
+  });
+  await clickAt('.ribbon-panel-inner .ribbon-item[data-item="cut"]', { button: 'right' });
+  await pause();
+  const off = await page.evaluate(() => {
+    const sr = document.getElementById('kb-ribbon').shadowRoot;
+    return `${sr.querySelectorAll('.ribbon-qat').length} toolbar, menu ${sr.querySelector('.ribbon-shared-menu').matches(':popover-open') ? 'open' : 'closed'}`;
+  });
+  check(`without setQuickAccess there is no toolbar and no "Add" menu (${off})`, off === '0 toolbar, menu closed');
+  await page.evaluate(() => document.getElementById('kb-ribbon').setQuickAccess([]));
+  await pause();
+  await clickAt('.ribbon-panel-inner .ribbon-item[data-item="cut"]', { button: 'right' });
+  await pause();
+  await page.keyboard.press('Enter');
+  await pause();
+  const filled = await page.evaluate(() => [...document.getElementById('kb-ribbon').shadowRoot.querySelectorAll('.ribbon-qat-btn[data-qat-ref]')].map((b) => b.getAttribute('aria-label')).join(','));
+  check(`setQuickAccess([]) gives an empty toolbar the user can fill (${filled})`, filled === 'Cut');
+  await page.evaluate(() => document.getElementById('kb-ribbon').setQuickAccess(null));
+  await pause();
+  check('setQuickAccess(null) turns it off again', await page.evaluate(() => !document.getElementById('kb-ribbon').shadowRoot.querySelector('.ribbon-qat')));
   await page.evaluate(() => localStorage.removeItem('birko-ribbon-qat:kbtest'));
 } finally {
   await browser.close();

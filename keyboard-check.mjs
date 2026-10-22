@@ -223,6 +223,40 @@ try {
   await page.evaluate(() => document.querySelector('ud-kb-page').deleteRow('b'));
   for (let i = 0; i < 50 && (await rowsText()).includes('Bravo'); i++) await new Promise((r) => setTimeout(r, 50));
   check('a pointer-started delete does not move focus to Undo', !(await focusedIsAction()));
+
+  // ── b-tag-input keeps focus across a commit (TASK-729) ──
+  // Each commit re-renders, and the positional morph puts the new chip where the input was, replacing the focused
+  // element: after "type, Enter" focus was on <body>, so the second value typed went nowhere.
+  await page.evaluate(async () => {
+    document.getElementById('kb-host')?.remove();
+    const host = document.createElement('div');
+    host.id = 'kb-host';
+    host.style.cssText = 'position:fixed;top:0;left:0;z-index:99999;background:var(--b-bg);padding:8px;width:400px';
+    host.innerHTML = '<b-tag-input id="kb-tags" label="Codes"></b-tag-input><button id="kb-after">after</button>';
+    document.body.prepend(host);
+    await customElements.whenDefined('b-tag-input');
+    for (let i = 0; i < 50 && !document.querySelector('#kb-tags').shadowRoot?.querySelector('input'); i++) await new Promise((r) => setTimeout(r, 20));
+  });
+  const tags = () => page.evaluate(() => document.querySelector('#kb-tags').getTags());
+  const tagInput = await page.evaluateHandle(() => document.querySelector('#kb-tags').shadowRoot.querySelector('input'));
+  await tagInput.click();
+  await page.keyboard.type('11111111');
+  await page.keyboard.press('Enter');
+  check(`after Enter focus stays in the tag input (${await focused()})`, (await focused()) === 'input');
+  await page.keyboard.type('22222222');
+  await page.keyboard.press('Enter');
+  check(`type, Enter, type, Enter keeps both tags (${JSON.stringify(await tags())})`,
+    JSON.stringify(await tags()) === '["11111111","22222222"]');
+  await page.keyboard.type('33333333,44444444');
+  await page.keyboard.press('Tab');
+  check(`a separator then Tab commit both and keep focus (${JSON.stringify(await tags())}, ${await focused()})`,
+    (await tags()).length === 4 && (await focused()) === 'input');
+  await page.keyboard.press('Backspace');
+  await page.keyboard.press('Backspace');
+  check(`repeated Backspace removes one tag per press (${JSON.stringify(await tags())})`,
+    JSON.stringify(await tags()) === '["11111111","22222222"]');
+  await page.keyboard.press('Tab');
+  check(`with an empty buffer Tab still leaves the control (${await focused()})`, (await focused()) === 'kb-after');
 } finally {
   await browser.close();
   server.close();

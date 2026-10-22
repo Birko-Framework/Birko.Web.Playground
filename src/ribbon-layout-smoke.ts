@@ -85,6 +85,29 @@ void (async () => {
       if (label) check(`${tag}: the label is first in the markup (read before the commands)`, label === label.parentElement!.firstElementChild);
       el.remove();
     }
+    // TASK-743: a folded group without an icon showed nothing in compact mode, a 7px empty button. It shows its initial.
+    {
+      const el = document.createElement('b-ribbon') as Ribbon;
+      el.style.width = '260px';
+      el.setAttribute('expanded', '');
+      el.setAttribute('pinned', '');
+      host.appendChild(el);
+      await settle(20);
+      el.setTabs([{ id: 'home', label: 'Home', groups: GROUPS.map(({ icon: _icon, ...g }) => (g.id === 'font' ? { ...g, label: '<b>font</b>' } : g)) }]);
+      await settle(160);
+      const groups = [...el.shadowRoot!.querySelectorAll<HTMLElement>('.ribbon-panel-inner > .ribbon-group')];
+      const compact = groups.every((g) => g.classList.contains('size-popup') && g.classList.contains('compact'));
+      const shown = groups.map((g) => {
+        const chunk = g.querySelector<HTMLElement>('.ribbon-chunk')!.getBoundingClientRect();
+        const ini = g.querySelector<HTMLElement>('.ribbon-chunk-initial');
+        const r = ini?.getBoundingClientRect();
+        return `${ini?.textContent ?? '-'}:${Math.round(chunk.height)}:${r && r.width > 8 && r.height > 8 ? 'seen' : 'unseen'}`;
+      });
+      check(`260px, no icons: every compact folded button shows its group's initial (${shown.join(' ')})`,
+        compact && shown.join(' ') === shown.map((_, i) => `${'CRFLRE'[i]}:${shown[i].split(':')[1]}:seen`).join(' ') && shown.every((x) => Number(x.split(':')[1]) >= 20));
+      check('the initial is text from the label, never its markup', !el.shadowRoot!.querySelector('.ribbon-chunk-initial b'));
+      el.remove();
+    }
   } catch (e) {
     check(`unexpected throw: ${(e as Error).message}`, false);
   }

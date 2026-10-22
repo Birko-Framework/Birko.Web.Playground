@@ -1,6 +1,6 @@
 // TASK-730 (FEATURE-019 D1) — b-ribbon's groups are one height, their command rows line up, and each label sits
 // under its group. Measured before: the Home tab's six groups were 97, 95, 94, 68, 71 and 97px tall, so the
-// separators (each group's border-left) ended at different heights, and rows drifted with icon sizes.
+// separators ended at different heights, and rows drifted with icon sizes.
 // Checked at a wide width (medium groups), a middle one (some small) and a narrow one (folded groups).
 import 'birko-web-components/nav';
 
@@ -68,6 +68,18 @@ void (async () => {
         const fills = popups.map((g) => Math.round(g.querySelector<HTMLElement>('.ribbon-chunk')!.getBoundingClientRect().height) === Math.round(g.getBoundingClientRect().height));
         check(`${tag}: a folded group is one full-height button`, fills.every(Boolean));
       }
+
+      // The divider sits halfway between two groups' commands. As a border-left on the next group it was 1px from
+      // that group's first command and 21px from the previous group's last one (reported from the Playground).
+      const cmds = (g: HTMLElement) => [...g.querySelectorAll<HTMLElement>(':scope > .ribbon-chunk, :scope > .ribbon-group-items > .ribbon-item')].map((i) => i.getBoundingClientRect());
+      const sides = groups.slice(1).map((g, i) => {
+        const line = g.getBoundingClientRect().left + parseFloat(getComputedStyle(g, '::before').left);
+        const before = line - Math.max(...cmds(groups[i]).map((r) => r.right));
+        const after = Math.min(...cmds(g).map((r) => r.left)) - (line + 1);
+        return [before, after];
+      });
+      check(`${tag}: each divider is halfway between the groups' commands (${sides.map(([b, a]) => `${b.toFixed(1)}/${a.toFixed(1)}`).join(' ')})`,
+        sides.length === 5 && sides.every(([b, a]) => Math.abs(b - a) <= 1 && b > 0));
 
       const label = sr.querySelector<HTMLElement>('.ribbon-group-label');
       if (label) check(`${tag}: the label is first in the markup (read before the commands)`, label === label.parentElement!.firstElementChild);

@@ -89,6 +89,8 @@ if (new URLSearchParams(location.search).has('smoke')) {
   void import('./tooltip-theme-smoke.js');
   // TASK-744 — the base pages' empty-filter state is renderEmptyFilter(): default markup unchanged, overridable.
   void import('./empty-filter-smoke.js');
+  // TASK-739 — b-ribbon toggle buttons and one-of sets: ARIA, clicks, setPressed, re-render, mobile.
+  void import('./ribbon-toggle-smoke.js');
   // STORY-052 / TASK-137 — control-side validation messages resolve through i18n. Registers global
   // translations, so it serialises itself after backport-smoke (which asserts them in English).
   void import('./i18n-message-smoke.js');
@@ -611,8 +613,8 @@ const CATALOGUE: ComponentDef[] = [
       // menu and CSV's menu (TASK-732): the Avalonia ribbon has no menus yet (TASK-742).
       { id: 'clip', label: 'Clipboard', icon: '📋', scalingPriority: 100, minSize: 'small', items: [{ id: 'paste', label: 'Paste', icon: '📋', description: 'Add content from the clipboard.', shortcut: 'Ctrl+V', split: true, menu: [{ id: 'paste-text', label: 'Paste as text', icon: '📝', shortcut: 'Ctrl+Shift+V' }, { id: 'paste-picture', label: 'Paste as picture', icon: '🖼' }, { separator: true }, { id: 'paste-special', label: 'Paste special…', shortcut: 'Ctrl+Alt+V' }] }, { id: 'cut', label: 'Cut', icon: '✂️', description: 'Remove the selection and put it on the clipboard.', shortcut: 'Ctrl+X' }, { id: 'copy', label: 'Copy', icon: '📄', description: 'Put a copy of the selection on the clipboard.', shortcut: 'Ctrl+C' }] },
       { id: 'records', label: 'Records', icon: '🗃', scalingPriority: 80, items: [{ id: 'new', label: 'New', icon: '➕' }, { id: 'del', label: 'Delete', icon: '🗑' }, { id: 'dup', label: 'Duplicate', icon: '⧉' }] },
-      { id: 'font', label: 'Font', icon: '🅰', scalingPriority: 60, items: [{ id: 'bold', label: 'Bold', icon: '𝐁', description: 'Make the selected text bold.', shortcut: 'Ctrl+B' }, { id: 'italic', label: 'Italic', icon: '𝑰' }, { id: 'colour', label: 'Colour', icon: '🎨' }] },
-      { id: 'layout', label: 'Layout', icon: '▥', scalingPriority: 40, items: [{ id: 'cols', label: 'Columns', icon: '▥' }, { id: 'rows', label: 'Rows', icon: '▤' }] },
+      { id: 'font', label: 'Font', icon: '🅰', scalingPriority: 60, items: [{ id: 'bold', label: 'Bold', icon: '𝐁', description: 'Make the selected text bold.', shortcut: 'Ctrl+B', toggle: true, pressed: true }, { id: 'italic', label: 'Italic', icon: '𝑰', toggle: true }, { id: 'colour', label: 'Colour', icon: '🎨' }] },
+      { id: 'layout', label: 'Layout', icon: '▥', scalingPriority: 40, items: [{ id: 'cols', label: 'Columns', icon: '▥', toggleGroup: 'orient', pressed: true }, { id: 'rows', label: 'Rows', icon: '▤', toggleGroup: 'orient' }] },
       { id: 'review', label: 'Review', icon: '💬', scalingPriority: 20, items: [{ id: 'comment', label: 'Comment', icon: '💬' }, { id: 'track', label: 'Track', icon: '✓' }] },
       { id: 'export', label: 'Export', icon: '📤', scalingPriority: 0, items: [{ id: 'pdf', label: 'PDF', icon: '📄' }, { id: 'csv', label: 'CSV', icon: '📊', menu: [{ id: 'csv-comma', label: 'Comma separated' }, { id: 'csv-semicolon', label: 'Semicolon separated' }, { id: 'csv-utf8', label: 'UTF-8 with BOM', disabled: true }] }, { id: 'print', label: 'Print', icon: '🖨' }] },
     ] },

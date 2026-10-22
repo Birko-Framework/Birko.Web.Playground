@@ -531,6 +531,37 @@ try {
   } else {
     check('precondition: at 60px a group is folded', false);
   }
+
+  // ── b-ribbon: toggle buttons from the keyboard (TASK-739) ──
+  await page.evaluate(async () => {
+    document.getElementById('kb-host')?.remove();
+    const host = document.createElement('div');
+    host.id = 'kb-host';
+    host.style.cssText = 'position:fixed;top:0;left:0;z-index:99999;background:var(--b-bg);padding:8px';
+    host.innerHTML = '<button id="kb-before">before</button><b-ribbon id="kb-ribbon" expanded pinned style="width:900px"></b-ribbon><button id="kb-after">after</button>';
+    document.body.prepend(host);
+    await customElements.whenDefined('b-ribbon');
+    document.getElementById('kb-ribbon').setTabs([{ id: 'home', label: 'Home', groups: [
+      { id: 'font', label: 'Font', items: [{ id: 'bold', label: 'Bold', toggle: true }, { id: 'italic', label: 'Italic', toggle: true }] },
+      { id: 'align', label: 'Alignment', items: [{ id: 'left', label: 'Left', toggleGroup: 'al', pressed: true }, { id: 'right', label: 'Right', toggleGroup: 'al' }] },
+    ] }]);
+    for (let i = 0; i < 30; i++) await new Promise((res) => setTimeout(res, 25));
+  });
+  const toggleState = (id) => page.evaluate((i) => {
+    const b = document.getElementById('kb-ribbon').shadowRoot.querySelector(`.ribbon-panel-inner .ribbon-item[data-item="${i}"]`);
+    return b.getAttribute('aria-pressed') ?? b.getAttribute('aria-checked');
+  }, id);
+  await focusBefore();
+  await page.keyboard.press('Tab');
+  await page.keyboard.press('ArrowDown');
+  await page.keyboard.press('Space');
+  check(`Space on a toggle turns it on (${await toggleState('bold')})`, (await toggleState('bold')) === 'true');
+  await page.keyboard.press('Enter');
+  check(`Enter turns it off again (${await toggleState('bold')})`, (await toggleState('bold')) === 'false');
+  await page.keyboard.press('ArrowRight');
+  await page.keyboard.press('ArrowDown');
+  await page.keyboard.press('Space');
+  check(`Space on a set member selects it and releases the other (${await toggleState('right')}, ${await toggleState('left')})`, (await toggleState('right')) === 'true' && (await toggleState('left')) === 'false');
 } finally {
   await browser.close();
   server.close();

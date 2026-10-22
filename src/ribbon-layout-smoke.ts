@@ -69,20 +69,50 @@ void (async () => {
         check(`${tag}: a folded group is one full-height button`, fills.every(Boolean));
       }
 
-      // The divider sits halfway between two groups' commands. As a border-left on the next group it was 1px from
-      // that group's first command and 21px from the previous group's last one (reported from the Playground).
-      const cmds = (g: HTMLElement) => [...g.querySelectorAll<HTMLElement>(':scope > .ribbon-chunk, :scope > .ribbon-group-items > .ribbon-item')].map((i) => i.getBoundingClientRect());
+      // The divider sits halfway between two groups. As a border-left on the next group it was 1px from that group's
+      // first command and 21px from the previous group's last one (reported from the Playground).
       const sides = groups.slice(1).map((g, i) => {
         const line = g.getBoundingClientRect().left + parseFloat(getComputedStyle(g, '::before').left);
-        const before = line - Math.max(...cmds(groups[i]).map((r) => r.right));
-        const after = Math.min(...cmds(g).map((r) => r.left)) - (line + 1);
-        return [before, after];
+        return [line - groups[i].getBoundingClientRect().right, g.getBoundingClientRect().left - (line + 1)];
       });
-      check(`${tag}: each divider is halfway between the groups' commands (${sides.map(([b, a]) => `${b.toFixed(1)}/${a.toFixed(1)}`).join(' ')})`,
+      check(`${tag}: each divider is halfway between the groups (${sides.map(([b, a]) => `${b.toFixed(1)}/${a.toFixed(1)}`).join(' ')})`,
         sides.length === 5 && sides.every(([b, a]) => Math.abs(b - a) <= 1 && b > 0));
+      // And a group's commands are centred in it, so a group whose name is wider than its commands does not leave
+      // all the extra space before the next divider (TASK-746).
+      const cmds = (g: HTMLElement) => [...g.querySelectorAll<HTMLElement>(':scope > .ribbon-chunk, :scope > .ribbon-group-items > .ribbon-item')].map((i) => i.getBoundingClientRect());
+      const margins = groups.map((g) => {
+        const box = g.getBoundingClientRect();
+        const rs = cmds(g);
+        return [Math.min(...rs.map((r) => r.left)) - box.left, box.right - Math.max(...rs.map((r) => r.right))];
+      });
+      check(`${tag}: each group's commands are centred in it (${margins.map(([l, r]) => `${l.toFixed(1)}/${r.toFixed(1)}`).join(' ')})`,
+        margins.every(([l, r]) => Math.abs(l - r) <= 1));
 
       const label = sr.querySelector<HTMLElement>('.ribbon-group-label');
       if (label) check(`${tag}: the label is first in the markup (read before the commands)`, label === label.parentElement!.firstElementChild);
+      el.remove();
+    }
+    // TASK-746: the fold decision read the gap token with parseFloat, so `1.5rem` counted as 1.5px a gap. Between
+    // 470 and 525px it kept groups larger than fitted, and the panel clipped up to 49px of the last group.
+    {
+      const el = document.createElement('b-ribbon') as Ribbon;
+      el.style.width = '540px';
+      el.setAttribute('expanded', '');
+      el.setAttribute('pinned', '');
+      host.appendChild(el);
+      await settle(20);
+      el.setTabs([{ id: 'home', label: 'Home', groups: GROUPS }]);
+      await settle(160);
+      const clipped: string[] = [];
+      for (let w = 540; w >= 460; w -= 5) {
+        el.style.width = `${w}px`;
+        await settle(60);
+        const inner = el.shadowRoot!.querySelector<HTMLElement>('.ribbon-panel-inner')!;
+        const edge = inner.getBoundingClientRect().right - parseFloat(getComputedStyle(inner).paddingRight);
+        const last = [...inner.querySelectorAll<HTMLElement>(':scope > .ribbon-group')].at(-1)!.getBoundingClientRect().right;
+        if (last - edge > 0.5) clipped.push(`${w}px by ${Math.round(last - edge)}px`);
+      }
+      check(`460-540px: no group is clipped by the panel (${clipped.join(', ') || 'none'})`, clipped.length === 0);
       el.remove();
     }
     // TASK-743: a folded group without an icon showed nothing in compact mode, a 7px empty button. It shows its initial.

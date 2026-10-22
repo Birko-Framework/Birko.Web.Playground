@@ -91,6 +91,8 @@ if (new URLSearchParams(location.search).has('smoke')) {
   void import('./empty-filter-smoke.js');
   // TASK-739 — b-ribbon toggle buttons and one-of sets: ARIA, clicks, setPressed, re-render, mobile.
   void import('./ribbon-toggle-smoke.js');
+  // TASK-734 — b-ribbon contextual tabs: shown sets, band / pill / edge, colours, hide returns to the previous tab.
+  void import('./ribbon-contextual-smoke.js');
   // STORY-052 / TASK-137 — control-side validation messages resolve through i18n. Registers global
   // translations, so it serialises itself after backport-smoke (which asserts them in English).
   void import('./i18n-message-smoke.js');
@@ -639,7 +641,13 @@ const CATALOGUE: ComponentDef[] = [
     { id: 'help', label: 'Help', groups: [
       { id: 'support', label: 'Support', items: [{ id: 'docs', label: 'Docs', icon: '📘' }, { id: 'contact', label: 'Contact', icon: '✉' }] },
     ] },
-  ]); el.setQuickAccess([{ id: 'save', label: 'Save', icon: '💾', shortcut: 'Ctrl+S' }, { id: 'undo', label: 'Undo', icon: '↶', shortcut: 'Ctrl+Z' }, { id: 'redo', label: 'Redo', icon: '↷', shortcut: 'Ctrl+Y' }]); } },
+    { id: 'table-design', label: 'Table Design', contextualSet: 'table', groups: [
+      { id: 'tstyle', label: 'Table style', items: [{ id: 'header-row', label: 'Header row', icon: '▦', toggle: true, pressed: true }, { id: 'banded', label: 'Banded rows', icon: '▤', toggle: true }] },
+    ] },
+    { id: 'table-layout', label: 'Layout', contextualSet: 'table', groups: [
+      { id: 'rowscols', label: 'Rows & columns', items: [{ id: 'ins-row', label: 'Insert row', icon: '➕' }, { id: 'del-row', label: 'Delete row', icon: '➖' }] },
+    ] },
+  ]); el.setContextualSets([{ id: 'table', label: 'Table', color: 'success' }]); el.showContextual('table'); el.setQuickAccess([{ id: 'save', label: 'Save', icon: '💾', shortcut: 'Ctrl+S' }, { id: 'undo', label: 'Undo', icon: '↶', shortcut: 'Ctrl+Z' }, { id: 'redo', label: 'Redo', icon: '↷', shortcut: 'Ctrl+Y' }]); } },
 
   // ── command ──
   { tag: 'b-command-palette', label: 'Command palette', category: 'command',

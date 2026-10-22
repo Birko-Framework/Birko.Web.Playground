@@ -845,6 +845,129 @@ try {
   await pause();
   check('setQuickAccess(null) turns it off again', await page.evaluate(() => !document.getElementById('kb-ribbon').shadowRoot.querySelector('.ribbon-qat')));
   await page.evaluate(() => localStorage.removeItem('birko-ribbon-qat:kbtest'));
+  // ── b-ribbon: key tips (TASK-736) ──
+  const mountKt = (width = 900, attrs = '') => page.evaluate(async ({ w, extra }) => {
+    document.getElementById('kb-host')?.remove();
+    const host = document.createElement('div');
+    host.id = 'kb-host';
+    host.style.cssText = 'position:fixed;top:0;left:0;z-index:99999;background:var(--b-bg);padding:8px';
+    host.innerHTML = `<input id="kb-input"><b-ribbon id="kb-ribbon" expanded pinned ${extra} style="width:${w}px"></b-ribbon>`;
+    document.body.prepend(host);
+    await customElements.whenDefined('b-ribbon');
+    const r = document.getElementById('kb-ribbon');
+    window.__kbClicks = [];
+    r.addEventListener('item-click', (e) => window.__kbClicks.push(e.detail));
+    r.setTabs([
+      { id: 'home', label: 'Home', groups: [
+        { id: 'clip', label: 'Clipboard', icon: '📋', items: [
+          { id: 'paste', label: 'Paste', keytip: 'V', split: true, menu: [{ id: 'pt', label: 'Paste as text' }, { id: 'pp', label: 'Picture' }] },
+          { id: 'cut', label: 'Cut' }, { id: 'copy', label: 'Copy' }] },
+        { id: 'num', label: 'Number', icon: '🔢', items: [{ id: 'cislo', label: 'Číslo' }] },
+        ...(w < 300 ? [
+          { id: 'rec', label: 'Records', icon: '🗂', items: [{ id: 'new', label: 'New' }, { id: 'del', label: 'Delete' }, { id: 'dup', label: 'Duplicate' }] },
+          { id: 'exp', label: 'Export', icon: '📤', items: [{ id: 'pdf', label: 'PDF' }, { id: 'csv2', label: 'CSV' }, { id: 'print', label: 'Print' }] },
+        ] : []),
+      ] },
+      { id: 'insert', label: 'Insert', groups: [{ id: 'ins', label: 'Insert', items: [{ id: 'image', label: 'Image' }] }] },
+      { id: 'data', label: 'Data', keytip: 'A', groups: [{ id: 'd', label: 'D', items: [{ id: 'sort', label: 'Sort' }] }] },
+    ]);
+    r.setQuickAccess([{ id: 'save', label: 'Save', icon: '💾' }]);
+    for (let i = 0; i < 30; i++) await new Promise((res) => setTimeout(res, 25));
+  }, { w: width, extra: attrs });
+  const tips = () => page.evaluate(() => {
+    const layer = document.getElementById('kb-ribbon').shadowRoot.querySelector('.ribbon-keytips');
+    return layer.matches(':popover-open') ? [...layer.querySelectorAll('.ribbon-keytip')].map((t) => t.textContent).sort().join('') : '';
+  });
+  const combo = async (mods = ['Alt', 'Meta']) => {
+    for (const m of mods) await page.keyboard.down(m);
+    for (const m of [...mods].reverse()) await page.keyboard.up(m);
+    await new Promise((r) => setTimeout(r, 80));
+  };
+  const key = async (k) => { await page.keyboard.press(k); await new Promise((r) => setTimeout(r, 80)); };
+  const last = async () => JSON.stringify((await page.evaluate(() => window.__kbClicks)).at(-1) ?? null);
+  const active = () => page.evaluate(() => document.getElementById('kb-ribbon').getAttribute('active'));
+
+  await mountKt();
+  await page.focus('#kb-input');
+  await page.keyboard.type('abc');
+  check(`typing in an input is untouched and shows no tips (${await page.evaluate(() => document.getElementById('kb-input').value)}, "${await tips()}")`,
+    (await page.evaluate(() => document.getElementById('kb-input').value)) === 'abc' && (await tips()) === '');
+  await combo();
+  check(`Alt+Win shows a letter on every tab and a digit on the toolbar (${await tips()})`, (await tips()) === '1AHI');
+  await key('A');
+  check(`a declared tab tip opens its tab (${await active()}; ${await tips()})`, (await active()) === 'data' && (await tips()) === 'S');
+  await key('Escape');
+  check(`Escape goes back to the tab tips (${await tips()})`, (await tips()) === '1AHI');
+  await key('H');
+  check(`H opens Home and shows its commands' tips (${await tips()})`, (await active()) === 'home' && (await tips()) === 'CIOPV');
+  const letters = await page.evaluate(() => {
+    const sr = document.getElementById('kb-ribbon').shadowRoot;
+    const out = {};
+    for (const t of sr.querySelectorAll('.ribbon-keytip')) {
+      const x = parseFloat(t.style.left), y = parseFloat(t.style.top);
+      const el = [...sr.querySelectorAll('.ribbon-panel-inner .ribbon-item, .ribbon-panel-inner .ribbon-split-arrow')]
+        .find((e) => { const r = e.getBoundingClientRect(); return Math.abs(r.right - x) < 2 && Math.abs(r.bottom - y) < 2; });
+      out[el?.dataset.item ?? (el?.dataset.arrow ? `arrow:${el.dataset.arrow}` : '?')] = t.textContent;
+    }
+    return out;
+  });
+  check(`letters: declared V for Paste, first free letters, accents folded (${JSON.stringify(letters)})`,
+    letters.paste === 'V' && letters.cut === 'C' && letters.copy === 'O' && letters.cislo === 'I');
+  await key('C');
+  check(`a command's letter runs it and ends the mode (${await last()}; "${await tips()}")`, JSON.parse(await last())?.itemId === 'cut' && (await tips()) === '');
+
+  // Menu level: the split ▾ opens its menu with its own tips.
+  await combo();
+  await key('H');
+  const arrowTip = letters['arrow:paste'];
+  await key(arrowTip);
+  check(`the ▾ part's letter (${arrowTip}) opens its menu with tips on its choices (${await tips()})`, (await tips()) === 'AP' || (await tips()).length === 2);
+  await key('I'); // "Picture": P belongs to "Paste as text", so its first free letter is I
+  check(`a choice's letter runs it (${await last()})`, JSON.parse(await last())?.itemId === 'pp' && JSON.parse(await last())?.parentId === 'paste');
+
+  // The toolbar's digit, a lone modifier, a stray letter, a click.
+  await combo();
+  await key('1');
+  check(`a toolbar digit runs its command (${await last()})`, JSON.parse(await last())?.itemId === 'save' && JSON.parse(await last())?.source === 'qat');
+  await combo();
+  await page.keyboard.press('Shift');
+  check(`a lone modifier keeps the tips up (${await tips()})`, (await tips()) === '1AHI');
+  await page.focus('#kb-input');
+  await combo(); // toggles off (it was on), then on again
+  await combo();
+  await key('Z');
+  check(`a letter with no tip ends the mode and is not typed (${await page.evaluate(() => document.getElementById('kb-input').value)}, "${await tips()}")`,
+    (await page.evaluate(() => document.getElementById('kb-input').value)) === 'abc' && (await tips()) === '');
+  await combo();
+  await page.mouse.click(5, 300);
+  await new Promise((r) => setTimeout(r, 80));
+  check(`a click ends the mode ("${await tips()}")`, (await tips()) === '');
+
+  // Folded groups: a group's letter opens its flyout with tips on its commands.
+  await mountKt(190); // two more groups, so they fold while the tabs still have room
+  check(`precondition: at 190px the groups are folded (${await page.evaluate(() => [...document.getElementById('kb-ribbon').shadowRoot.querySelectorAll('.ribbon-panel-inner > .ribbon-group')].map((g) => g.classList.contains('size-popup')).join(','))})`,
+    await page.evaluate(() => [...document.getElementById('kb-ribbon').shadowRoot.querySelectorAll('.ribbon-panel-inner > .ribbon-group')].every((g) => g.classList.contains('size-popup'))));
+  await combo();
+  await key('H');
+  const commandTips = await tips();
+  await key('C'); // Clipboard, folded
+  const flyoutTips = await tips();
+  check(`a folded group's letter opens its flyout with its own tips (${commandTips} → ${flyoutTips})`, flyoutTips.includes('V') && flyoutTips.length >= 3);
+  await key('V');
+  check(`and a letter there runs the command (${await last()})`, JSON.parse(await last())?.itemId === 'paste');
+
+  // Configuration.
+  await mountKt(900, 'keytip-shortcut="none"');
+  await combo();
+  check(`keytip-shortcut="none" turns it off ("${await tips()}")`, (await tips()) === '');
+  await mountKt(900, 'keytip-shortcut="Ctrl+Shift+K"');
+  await combo();
+  const notDefault = await tips();
+  await page.keyboard.down('Control'); await page.keyboard.down('Shift'); await page.keyboard.press('K');
+  await page.keyboard.up('Shift'); await page.keyboard.up('Control');
+  await new Promise((r) => setTimeout(r, 80));
+  check(`a rebound combination replaces Alt+Win ("${notDefault}" → ${await tips()})`, notDefault === '' && (await tips()) === '1AHI');
+  await page.evaluate(() => document.getElementById('kb-host').remove());
 } finally {
   await browser.close();
   server.close();

@@ -87,6 +87,8 @@ if (new URLSearchParams(location.search).has('smoke')) {
   void import('./ribbon-menu-smoke.js');
   // TASK-738 — b-tooltip light theme and structured text; b-ribbon commands described, no native title.
   void import('./tooltip-theme-smoke.js');
+  // TASK-744 — the base pages' empty-filter state is renderEmptyFilter(): default markup unchanged, overridable.
+  void import('./empty-filter-smoke.js');
   // STORY-052 / TASK-137 — control-side validation messages resolve through i18n. Registers global
   // translations, so it serialises itself after backport-smoke (which asserts them in English).
   void import('./i18n-message-smoke.js');

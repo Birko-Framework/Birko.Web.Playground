@@ -845,6 +845,59 @@ try {
   await pause();
   check('setQuickAccess(null) turns it off again', await page.evaluate(() => !document.getElementById('kb-ribbon').shadowRoot.querySelector('.ribbon-qat')));
   await page.evaluate(() => localStorage.removeItem('birko-ribbon-qat:kbtest'));
+  // TASK-748: link commands can be added, and stay links in the toolbar (the FinStat tester's endpoints are links).
+  {
+    await page.evaluate(() => localStorage.removeItem('birko-ribbon-qat:kbtest'));
+    await mountQat(); // the ribbon keeps the toolbar choice in memory too
+    await page.evaluate(async () => {
+      const r = document.getElementById('kb-ribbon');
+      r.setTabs([{ id: 'home', label: 'Home', groups: [
+        { id: 'clip', label: 'Clipboard', items: [{ id: 'cut', label: 'Cut', icon: '✂️' }] },
+        { id: 'nav', label: 'Endpoints', items: [{ id: 'elite', label: 'Elite', icon: '★', href: '#kb-elite' }] },
+      ] }]);
+      r.setQuickAccess([{ id: 'save', label: 'Save', icon: '💾' }, { id: 'home-link', label: 'Home page', icon: '⌂', href: '#kb-home' }, { id: 'off', label: 'Off', icon: '⊘', href: '#kb-off', disabled: true }]);
+      for (let i = 0; i < 20; i++) await new Promise((res) => setTimeout(res, 25));
+    });
+    const linkState = () => page.evaluate(() => {
+      const sr = document.getElementById('kb-ribbon').shadowRoot;
+      return [...sr.querySelectorAll('.ribbon-qat-btn[data-qat-ref]')].map((b) => `${b.getAttribute('aria-label')}:${b.tagName.toLowerCase()}${b.getAttribute('href') ? `:${b.getAttribute('href')}` : ''}`).join(',');
+    });
+    check(`an app's default link is a link in the toolbar (${await linkState()})`, (await linkState()) === 'Save:button,Home page:a:#kb-home,Off:a:#kb-off');
+    await clickAt('.ribbon-panel-inner [data-item="elite"]', { button: 'right' });
+    await pause();
+    const offer = (await qatState()).menu;
+    check(`a link command offers "Add to Quick Access Toolbar" (${offer})`, JSON.stringify(offer) === '["Add to Quick Access Toolbar"]');
+    await page.evaluate(() => document.getElementById('kb-ribbon').shadowRoot.querySelector('.ribbon-shared-menu [data-qat-action="add"]').click());
+    await pause();
+    check(`and is added as a link to the same address (${await linkState()})`, (await linkState()) === 'Save:button,Home page:a:#kb-home,Off:a:#kb-off,Elite:a:#kb-elite');
+    const geo = await page.evaluate(() => [...document.getElementById('kb-ribbon').shadowRoot.querySelectorAll('.ribbon-qat-btn[data-qat-ref]')].map((b) => {
+      const cs = getComputedStyle(b);
+      return [Math.round(b.getBoundingClientRect().height), cs.boxSizing, cs.paddingLeft, cs.minWidth, cs.textDecorationLine, cs.color].join('/');
+    }));
+    check(`a toolbar link is sized and drawn as a button (${geo.join(' ')})`, geo.length === 4 && new Set([geo[0], geo[1], geo[3]]).size === 1);
+    await page.evaluate(() => { history.replaceState(null, '', location.pathname + location.search); window.__kbClicks.length = 0; });
+    await clickAt('.ribbon-qat-btn[data-qat-ref="item:home/nav/elite"]');
+    await pause();
+    let ls = await page.evaluate(() => ({ hash: location.hash, click: window.__kbClicks.at(-1) }));
+    check(`clicking it follows the link and reports item-click from the toolbar (${ls.hash}, ${JSON.stringify(ls.click)})`,
+      ls.hash === '#kb-elite' && ls.click?.source === 'qat' && ls.click?.itemId === 'elite' && ls.click?.tabId === 'home' && ls.click?.groupId === 'nav');
+    await page.evaluate(() => document.getElementById('kb-ribbon').shadowRoot.querySelector('.ribbon-qat-btn[data-qat-ref]').focus());
+    await page.keyboard.press('ArrowRight');
+    await page.keyboard.press('ArrowRight');
+    await page.keyboard.press('ArrowRight');
+    check(`the arrows reach it like any toolbar button (${(await qatState()).focus})`, (await qatState()).focus === 'Elite');
+    await page.evaluate(() => { history.replaceState(null, '', location.pathname + location.search); window.__kbClicks.length = 0; });
+    await page.keyboard.press('Enter');
+    await pause();
+    ls = await page.evaluate(() => ({ hash: location.hash, n: window.__kbClicks.length }));
+    check(`Enter on it follows the link and reports once (${ls.hash}, ${ls.n})`, ls.hash === '#kb-elite' && ls.n === 1);
+    await page.evaluate(() => { history.replaceState(null, '', location.pathname + location.search); window.__kbClicks.length = 0; });
+    await clickAt('.ribbon-qat-btn[aria-label="Off"]');
+    await pause();
+    ls = await page.evaluate(() => ({ hash: location.hash, n: window.__kbClicks.length }));
+    check(`a disabled link in the toolbar neither navigates nor reports (${ls.hash || 'no hash'}, ${ls.n})`, ls.hash === '' && ls.n === 0);
+    await page.evaluate(() => { history.replaceState(null, '', location.pathname + location.search); localStorage.removeItem('birko-ribbon-qat:kbtest'); });
+  }
   // ── b-ribbon: key tips (TASK-736) ──
   const mountKt = (width = 900, attrs = '') => page.evaluate(async ({ w, extra }) => {
     document.getElementById('kb-host')?.remove();

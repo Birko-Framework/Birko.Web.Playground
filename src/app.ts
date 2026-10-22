@@ -11,96 +11,100 @@ void Object.keys(BirkoWebComponents).length;
 if (new URLSearchParams(location.search).has('kb')) void import('./undo-delete-kb.js');
 
 if (new URLSearchParams(location.search).has('smoke')) {
-  void import('./backport-smoke.js');
+  // `?smoke=1&only=a-smoke,b-smoke` runs just those suites, to tell a suite's own flake from one another suite causes
+  // (TASK-745). Without `only`, every suite runs, as verify.mjs needs.
+  const only = new URLSearchParams(location.search).get('only')?.split(',').filter(Boolean);
+  const runs = (name: string) => !only || only.includes(name);
+  if (runs('backport-smoke')) void import('./backport-smoke.js');
   // STORY-001 / TASK-001 — `bare` attribute on the form controls.
-  void import('./bare-smoke.js');
+  if (runs('bare-smoke')) void import('./bare-smoke.js');
   // TASK-499 — `b-table` header escaping: a plain `label` stays escaped, `headerRender` is the
   // HTML opt-in, and `b-data-table`'s select-all checkbox renders and works.
-  void import('./table-header-smoke.js');
+  if (runs('table-header-smoke')) void import('./table-header-smoke.js');
   // `b-select` `creatable`, standalone and through a b-form schema.
-  void import('./select-creatable-smoke.js');
+  if (runs('select-creatable-smoke')) void import('./select-creatable-smoke.js');
   // TASK-489 — `b-select` searchable mode as an ARIA combobox: roles, arrow keys, focus.
-  void import('./select-combobox-smoke.js');
+  if (runs('select-combobox-smoke')) void import('./select-combobox-smoke.js');
   // TASK-490 — a creatable b-multi-select commits unless a `create` listener vetoes it.
-  void import('./multi-select-create-smoke.js');
+  if (runs('multi-select-create-smoke')) void import('./multi-select-create-smoke.js');
   // TASK-497 — every b-range thumb sits on its track (range mode hung below it).
-  void import('./range-geometry-smoke.js');
+  if (runs('range-geometry-smoke')) void import('./range-geometry-smoke.js');
   // TASK-496 — picker triggers announce their popup; the popup is keyboard-usable.
-  void import('./picker-popup-smoke.js');
+  if (runs('picker-popup-smoke')) void import('./picker-popup-smoke.js');
   // TASK-484 — b-input prefix / suffix slots and clearable: geometry at every size, clear semantics.
-  void import('./input-adornment-smoke.js');
+  if (runs('input-adornment-smoke')) void import('./input-adornment-smoke.js');
   // TASK-548 — b-qty-stepper: exact steps, snap on commit, keyboard, form association.
-  void import('./qty-stepper-smoke.js');
+  if (runs('qty-stepper-smoke')) void import('./qty-stepper-smoke.js');
   // TASK-549 — b-carousel: controls, inert slides, swipe/drag, per-view from CSS, autoplay rules.
-  void import('./carousel-smoke.js');
+  if (runs('carousel-smoke')) void import('./carousel-smoke.js');
   // TASK-550 — b-gallery: thumbnails, index start vs leash, zoom dialog and focus return, narrow dots.
-  void import('./gallery-smoke.js');
+  if (runs('gallery-smoke')) void import('./gallery-smoke.js');
   // TASK-551 — {placeholders} filled in one pass, by one function, on every i18n path.
-  void import('./i18n-interpolate-smoke.js');
+  if (runs('i18n-interpolate-smoke')) void import('./i18n-interpolate-smoke.js');
   // TASK-547 — SseClient: one retry loop, a growing delay schedule and the _failing signal.
-  void import('./sse-retry-smoke.js');
+  if (runs('sse-retry-smoke')) void import('./sse-retry-smoke.js');
   // TASK-582 — BasePage renders a page's tour ? beside the title, named, wired once.
-  void import('./page-tour-smoke.js');
+  if (runs('page-tour-smoke')) void import('./page-tour-smoke.js');
   // TASK-579 — b-rating: names, form association, read-only, Home/End, contrast in every theme.
-  void import('./rating-smoke.js');
+  if (runs('rating-smoke')) void import('./rating-smoke.js');
   // TASK-545 — b-toast action (Undo) and base-crud-page's deleteMode 'undo' with its required restore.
-  void import('./undo-delete-smoke.js');
+  if (runs('undo-delete-smoke')) void import('./undo-delete-smoke.js');
   // TASK-597 — a toast's message and icon are text: markup in them is shown, never parsed or run.
-  void import('./toast-escape-smoke.js');
+  if (runs('toast-escape-smoke')) void import('./toast-escape-smoke.js');
   // TASK-581 — SyncManager backoff, retry cap, dead state, per-entity ordering, retry/discard.
-  void import('./sync-retry-smoke.js');
+  if (runs('sync-retry-smoke')) void import('./sync-retry-smoke.js');
   // TASK-583 — BaseListPage liveRefresh: debounced reload on entity-changed, deferred under the modal.
-  void import('./live-refresh-smoke.js');
+  if (runs('live-refresh-smoke')) void import('./live-refresh-smoke.js');
   // TASK-523 — WsClient.request: id correlation, error replies, timeout, close/disconnect rejection.
-  void import('./ws-request-smoke.js');
+  if (runs('ws-request-smoke')) void import('./ws-request-smoke.js');
   // TASK-526 — RuntimeConfig: defaults < server < local, declared keys/types only, secrets never stored.
-  void import('./runtime-config-smoke.js');
+  if (runs('runtime-config-smoke')) void import('./runtime-config-smoke.js');
   // TASK-552 — b-editable-table shows its data after setData() and a row removal, typed cells included.
-  void import('./editable-table-sync-smoke.js');
+  if (runs('editable-table-sync-smoke')) void import('./editable-table-sync-smoke.js');
   // TASK-580 — b-modal's title is a heading (h2 or heading-level), labels the dialog, and is text.
-  void import('./modal-title-smoke.js');
+  if (runs('modal-title-smoke')) void import('./modal-title-smoke.js');
   // TASK-598 — SyncManager recovers a write a closed tab left `syncing`, and one tab drains at a time.
-  void import('./sync-interrupt-smoke.js');
+  if (runs('sync-interrupt-smoke')) void import('./sync-interrupt-smoke.js');
   // TASK-524 — OAuth redirect sign-in: auth fragment, JWT expiry, scheduled and 401 refresh, the clients' token.
-  void import('./auth-session-smoke.js');
+  if (runs('auth-session-smoke')) void import('./auth-session-smoke.js');
   // TASK-525 — b-tabs reorder, b-split-panel resize with persisted sizes, captureLayout / applyLayout.
-  void import('./layout-persist-smoke.js');
+  if (runs('layout-persist-smoke')) void import('./layout-persist-smoke.js');
   // TASK-725 — diffJson (paths, ignore, normalize, array matching) and b-json-diff (tree, only changes, side by side).
-  void import('./json-diff-smoke.js');
+  if (runs('json-diff-smoke')) void import('./json-diff-smoke.js');
   // TASK-725 follow-up — a component's .sr-only text scrolls with the page's scroll container, never stretches the document.
-  void import('./sr-only-contain-smoke.js');
+  if (runs('sr-only-contain-smoke')) void import('./sr-only-contain-smoke.js');
   // TASK-727 — xmlToTree / xmlToLines and b-json-diff format="xml" (original XML in the side-by-side view).
-  void import('./xml-diff-smoke.js');
+  if (runs('xml-diff-smoke')) void import('./xml-diff-smoke.js');
   // STORY-023 / TASK-035 — ElementInternals form association.
-  void import('./form-assoc-smoke.js');
+  if (runs('form-assoc-smoke')) void import('./form-assoc-smoke.js');
   // EPIC-001 — the `description` help-text row.
-  void import('./description-smoke.js');
+  if (runs('description-smoke')) void import('./description-smoke.js');
   // STORY-002 / TASK-002 — the raw-vs-bare grid benchmark that gates the b-editable-table migration.
-  void import('./grid-bench-smoke.js');
+  if (runs('grid-bench-smoke')) void import('./grid-bench-smoke.js');
   // STORY-049 / TASK-097 — the ribbon's overflow affordance (tab strip + panel, incl. resize-only).
-  void import('./ribbon-overflow-smoke.js');
+  if (runs('ribbon-overflow-smoke')) void import('./ribbon-overflow-smoke.js');
   // STORY-049 / TASK-099 — the scaling policy (parity with the C# original) and the rendered variants.
-  void import('./ribbon-scaling-smoke.js');
+  if (runs('ribbon-scaling-smoke')) void import('./ribbon-scaling-smoke.js');
   // TASK-730 — b-ribbon groups are one height, rows line up across groups, labels sit under their group.
-  void import('./ribbon-layout-smoke.js');
+  if (runs('ribbon-layout-smoke')) void import('./ribbon-layout-smoke.js');
   // TASK-732 — b-ribbon split and menu buttons: parts, ARIA, events with parentId, text labels, large, folded, mobile.
-  void import('./ribbon-menu-smoke.js');
+  if (runs('ribbon-menu-smoke')) void import('./ribbon-menu-smoke.js');
   // TASK-738 — b-tooltip light theme and structured text; b-ribbon commands described, no native title.
-  void import('./tooltip-theme-smoke.js');
+  if (runs('tooltip-theme-smoke')) void import('./tooltip-theme-smoke.js');
   // TASK-744 — the base pages' empty-filter state is renderEmptyFilter(): default markup unchanged, overridable.
-  void import('./empty-filter-smoke.js');
+  if (runs('empty-filter-smoke')) void import('./empty-filter-smoke.js');
   // TASK-739 — b-ribbon toggle buttons and one-of sets: ARIA, clicks, setPressed, re-render, mobile.
-  void import('./ribbon-toggle-smoke.js');
+  if (runs('ribbon-toggle-smoke')) void import('./ribbon-toggle-smoke.js');
   // TASK-734 — b-ribbon contextual tabs: shown sets, band / pill / edge, colours, hide returns to the previous tab.
-  void import('./ribbon-contextual-smoke.js');
+  if (runs('ribbon-contextual-smoke')) void import('./ribbon-contextual-smoke.js');
   // TASK-747 — every size in b-ribbon's stylesheet is a design token.
-  void import('./ribbon-tokens-smoke.js');
+  if (runs('ribbon-tokens-smoke')) void import('./ribbon-tokens-smoke.js');
   // STORY-052 / TASK-137 — control-side validation messages resolve through i18n. Registers global
   // translations, so it serialises itself after backport-smoke (which asserts them in English).
-  void import('./i18n-message-smoke.js');
+  if (runs('i18n-message-smoke')) void import('./i18n-message-smoke.js');
   // EPIC-001 / TASK-568 — b-modal starts on its slotted content and never cancels Tab. Opens a modal, so it
   // serialises itself after the suites a modal would disturb.
-  void import('./modal-focus-smoke.js');
+  if (runs('modal-focus-smoke')) void import('./modal-focus-smoke.js');
 }
 
 // ── BMobileAppShell demo (EPIC-016 / TASK-049) ───────────────────────────────

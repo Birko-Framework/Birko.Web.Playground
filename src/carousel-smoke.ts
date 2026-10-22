@@ -109,6 +109,32 @@ void (async () => {
       !b.hasAttribute('aria-roledescription') && !b.hasAttribute('role') && !b.hasAttribute('aria-label') && !b.inert);
     check(`…and the rest are renumbered ("${extra.getAttribute('aria-label')}")`, extra.getAttribute('aria-label') === '2 of 2');
 
+    // ── a busy page (TASK-745) ──
+    // A main-thread stall in the middle of a smooth scroll: the 150ms scroll debounce used to fire then and settle on
+    // the slide the scroll had reached, so the index jumped back and slide-change fired for a slide nobody chose. Where
+    // the engine has scrollend, only scrollend settles.
+    if ('onscrollend' in window) {
+      p = await mount('', 5);
+      p.el.goTo(4);
+      await new Promise<void>((res) => p.vp.addEventListener('scroll', () => res(), { once: true }));
+      const until = performance.now() + 250;
+      while (performance.now() < until) { /* stall, as a busy page does */ }
+      const landed = await waitFor(() => p.aligned(4) || p.vp.scrollLeft >= p.vp.scrollWidth - p.vp.clientWidth - 1);
+      await sleep(250);
+      check(`a stall mid-scroll settles once, on the chosen slide (${p.el.index}, ${JSON.stringify(p.events)}, landed ${landed})`,
+        landed && p.el.index === 4 && p.events.join() === '4');
+      // But a user who takes over mid-scroll wins: the slide their scroll rests on is the answer, not the old target.
+      p = await mount('', 5);
+      p.el.goTo(4);
+      await new Promise<void>((res) => p.vp.addEventListener('scroll', () => res(), { once: true }));
+      p.vp.dispatchEvent(new PointerEvent('pointerdown', { pointerType: 'touch', bubbles: true }));
+      p.vp.scrollTo({ left: p.slides[1].getBoundingClientRect().left - p.vp.getBoundingClientRect().left + p.vp.scrollLeft, behavior: 'auto' });
+      await waitFor(() => p.el.index === 1, 1500);
+      await sleep(250);
+      check(`a user scroll during a programmatic one settles where the user left it (${p.el.index}, ${JSON.stringify(p.events)})`,
+        p.el.index === 1 && p.events.at(-1) === 1 && p.aligned(1));
+    }
+
     // ── loop ──
     p = await mount('loop', 3);
     check('loop: previous is enabled at the start', !p.prevBtn()!.disabled);

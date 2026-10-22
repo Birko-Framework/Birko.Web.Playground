@@ -58,7 +58,13 @@ node verify.mjs             # every section renders, no EMPTY component, no page
 node device-fix-check.mjs   # geometry + contrast at viewports/themes verify.mjs never visits (exit 1 on FAIL)
 node entry-points-check.mjs # each Birko.Web.Components file imported alone registers all it renders (no build needed)
 node keyboard-check.mjs     # trusted key presses: tab stops, native radio arrows (an in-page KeyboardEvent has no default action)
+node ribbon-a11y-check.mjs  # what a screen reader gets from b-ribbon, read from Chromium's accessibility tree
 ```
+
+**A flaky suite: run it alone before blaming it.** `verify.mjs` loads `/?smoke=1`, which runs every `*-smoke` suite
+at once in one page. `/?smoke=1&only=carousel-smoke,gallery-smoke` runs just those, so a suite's own flake can be told
+from one another suite causes. TASK-745 found the carousel clean alone (0/20) and failing beside the grid benchmark
+and the locale switches, whose main-thread stalls exposed a real `SlideTrack` defect.
 
 `verify.mjs` loads **one** 800x600 light-theme page, which is blind to a whole class of defect — the
 2026-08-01 device pass found three at once that it could not have seen. `device-fix-check.mjs` covers that

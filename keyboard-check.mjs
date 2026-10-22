@@ -891,6 +891,16 @@ try {
     await pause();
     ls = await page.evaluate(() => ({ hash: location.hash, n: window.__kbClicks.length }));
     check(`Enter on it follows the link and reports once (${ls.hash}, ${ls.n})`, ls.hash === '#kb-elite' && ls.n === 1);
+    // A middle-click opens it in a new tab, as on the ribbon command: the browser itself does it, because it is a link.
+    await page.evaluate(() => { window.__kbClicks.length = 0; });
+    const opened = new Promise((res) => {
+      const t = setTimeout(() => res(null), 3000);
+      browser.once('targetcreated', async (target) => { clearTimeout(t); res(target.url()); });
+    });
+    await clickAt('.ribbon-qat-btn[data-qat-ref="item:home/nav/elite"]', { button: 'middle' });
+    const tabUrl = await opened;
+    for (const p of await browser.pages()) if (p !== page) await p.close();
+    check(`a middle-click opens it in a new tab (${tabUrl ?? 'no new tab'})`, !!tabUrl && tabUrl.endsWith('#kb-elite'));
     await page.evaluate(() => { history.replaceState(null, '', location.pathname + location.search); window.__kbClicks.length = 0; });
     await clickAt('.ribbon-qat-btn[aria-label="Off"]');
     await pause();

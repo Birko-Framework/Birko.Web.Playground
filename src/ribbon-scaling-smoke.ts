@@ -145,7 +145,8 @@ void (async () => {
       const el = await mountRibbon([G3('Clipboard', 0)], 1400, 'small');
       eq('small can be requested outright', sizesOf(el), ['small']);
       const item = el.shadowRoot!.querySelector('.ribbon-group.size-small .ribbon-item') as HTMLElement;
-      check('a small item still carries its name', (item?.getAttribute('title') ?? '').length > 0);
+      // Its name is aria-label (and the tooltip's heading, TASK-738), no longer a native title.
+      check('a small item still carries its name', (item?.getAttribute('aria-label') ?? '').length > 0);
       const labelSpan = item?.querySelector('.ribbon-item-label') as HTMLElement | null;
       check('a small item does not draw its label',
         !!labelSpan && getComputedStyle(labelSpan).display === 'none');
@@ -205,7 +206,7 @@ void (async () => {
       check('the group name is not drawn on the chunk face',
         !!name && getComputedStyle(name).display === 'none');
       check('but the chunk still carries the name',
-        (chunk?.getAttribute('aria-label') ?? '').length > 0 && (chunk?.getAttribute('title') ?? '').length > 0);
+        (chunk?.getAttribute('aria-label') ?? '').length > 0);
 
       const track = el.shadowRoot!.querySelector('.ribbon-panel-inner') as HTMLElement;
       check(`and the row fits, so no group is clipped (${track.scrollWidth} <= ${track.clientWidth})`,

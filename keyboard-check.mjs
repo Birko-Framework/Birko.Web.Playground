@@ -330,16 +330,22 @@ try {
   check(`arrows move inside the flyout (${await press('ArrowRight')})`, (await inRibbon()) === 'flyout:Delete');
   // A popover closes on Escape through a close request, a task later, and its focus return follows: wait for it.
   const settled = async (want) => { for (let i = 0; i < 20 && (await inRibbon()) !== want; i++) await new Promise((r) => setTimeout(r, 25)); return inRibbon(); };
+  // A focused command shows its tooltip (TASK-738), and Escape dismisses that first without moving focus (WCAG
+  // 1.4.13); the second Escape closes the flyout.
+  await page.keyboard.press('Escape');
+  check(`the first Escape only hides the tooltip (${await inRibbon()})`, (await inRibbon()) === 'flyout:Delete');
   await page.keyboard.press('Escape');
   check(`Escape closes it and gives focus back to its button (${await settled('chunk:rec')})`, (await inRibbon()) === 'chunk:rec');
   check(`ArrowDown on a folded group opens it too (${await press('ArrowDown')})`, (await inRibbon()) === 'flyout:New');
-  await press('Escape');
-  await settled('chunk:clip');
+  await press('Escape', 'Escape');
+  await settled('chunk:rec');
+  await press('ArrowLeft');
   // A close that focus had already left must not pull it back: open the flyout, click outside the ribbon.
   await press('Enter');
-  await page.click('#kb-after');
+  // #kb-before, not #kb-after: the open flyout hangs over #kb-after, so a click there lands inside the flyout.
+  await page.click('#kb-before');
   for (let i = 0; i < 8; i++) await new Promise((r) => setTimeout(r, 25));
-  check(`a flyout closed by a click elsewhere leaves focus there (${await focused()})`, (await focused()) === 'kb-after');
+  check(`a flyout closed by a click elsewhere leaves focus there (${await focused()})`, (await focused()) === 'kb-before');
 
   // ── b-ribbon: split and menu buttons (TASK-732) ──
   // Here rather than in verify.mjs: an auto popover closes every other one, and verify runs every suite at once.
@@ -425,6 +431,106 @@ try {
   await page.click('#kb-after');
   for (let i = 0; i < 8; i++) await new Promise((r) => setTimeout(r, 25));
   check(`a menu closed by a click elsewhere leaves focus there (${await focused()})`, (await focused()) === 'kb-after' && (await menuState()).open.length === 0);
+
+  // ── b-ribbon: tooltips through the shared b-tooltip (TASK-738) ──
+  await page.evaluate(async () => {
+    document.getElementById('kb-host')?.remove();
+    const host = document.createElement('div');
+    host.id = 'kb-host';
+    host.style.cssText = 'position:fixed;top:0;left:0;z-index:99999;background:var(--b-bg);padding:8px';
+    host.innerHTML = '<button id="kb-before">before</button><b-ribbon id="kb-ribbon" expanded pinned style="width:900px"></b-ribbon><button id="kb-after">after</button>';
+    document.body.prepend(host);
+    await customElements.whenDefined('b-ribbon');
+    document.getElementById('kb-ribbon').setTabs([{ id: 'home', label: 'Home', groups: [
+      { id: 'clip', label: 'Clipboard', icon: '📋', items: [
+        { id: 'paste', label: 'Paste', icon: '📋', description: 'Add content from the clipboard.', shortcut: 'Ctrl+V', split: true, menu: [{ id: 'pt', label: 'Paste as text' }] },
+        { id: 'cut', label: 'Cut', icon: '✂️', description: 'Remove the selection.', shortcut: 'Ctrl+X' },
+        { id: 'copy', label: 'Copy', icon: '📄' },
+      ] },
+    ] }]);
+    for (let i = 0; i < 30; i++) await new Promise((res) => setTimeout(res, 25));
+  });
+  const tipState = () => page.evaluate(() => {
+    const sr = document.getElementById('kb-ribbon').shadowRoot;
+    const tipEl = sr.querySelector('b-tooltip.ribbon-tooltip')?.shadowRoot?.querySelector('.tip');
+    const open = !!tipEl?.matches(':popover-open');
+    return { open, text: open ? [...tipEl.children].map((c) => c.textContent.replace(/\s+/g, ' ').trim()).join(' ') : '', focus: sr.activeElement?.dataset?.item ?? sr.activeElement?.dataset?.arrow ?? (sr.activeElement ? sr.activeElement.className : 'outside') };
+  });
+  const centre = (sel) => page.evaluate((s) => {
+    const r = document.getElementById('kb-ribbon').shadowRoot.querySelector(s).getBoundingClientRect();
+    return { x: r.left + r.width / 2, y: r.top + r.height / 2 };
+  }, sel);
+  const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+
+  await page.mouse.move(5, 300);
+  await wait(400);
+  let c = await centre('.ribbon-item[data-item="cut"]');
+  await page.mouse.move(c.x, c.y);
+  await wait(200);
+  check(`hovering does not show the tooltip at once (${(await tipState()).open})`, !(await tipState()).open);
+  await wait(500);
+  let ts = await tipState();
+  check(`after the delay it shows name, shortcut and description (${ts.text})`, ts.open && ts.text === 'Cut (Ctrl+X) Remove the selection.');
+  c = await centre('.ribbon-item[data-item="copy"]');
+  await page.mouse.move(c.x, c.y);
+  await wait(60);
+  ts = await tipState();
+  check(`moving to the next command shows its tooltip at once (${ts.text})`, ts.open && ts.text === 'Copy');
+  c = await centre('.ribbon-split-arrow');
+  await page.mouse.move(c.x, c.y);
+  await wait(60);
+  check(`the ▾ part has its own tooltip (${(await tipState()).text})`, (await tipState()).text === 'More options: Paste');
+  await page.mouse.move(5, 300);
+  await wait(60);
+  check('leaving the ribbon hides it', !(await tipState()).open);
+  await page.mouse.move(5, 300);
+  await wait(500); // cool down: past the "warm" window the next hover waits for the delay again
+
+  // Keyboard focus shows it at once; Escape hides it without leaving the command; a second Escape goes to the tab.
+  await focusBefore();
+  await page.keyboard.press('Tab');
+  await page.keyboard.press('ArrowDown');
+  ts = await tipState();
+  check(`keyboard focus shows the focused command's tooltip at once (${ts.focus}: ${ts.text})`, ts.open && ts.focus === 'paste' && ts.text === 'Paste (Ctrl+V) Add content from the clipboard.');
+  await page.keyboard.press('ArrowDown');
+  ts = await tipState();
+  check(`and follows the focus (${ts.text})`, ts.text === 'Cut (Ctrl+X) Remove the selection.');
+  await page.keyboard.press('Escape');
+  ts = await tipState();
+  check(`Escape hides it and focus stays on the command (${ts.open}, ${ts.focus})`, !ts.open && ts.focus === 'cut');
+  await page.keyboard.press('Escape');
+  check(`a second Escape goes back to the tab (${(await tipState()).focus})`, (await tipState()).focus.includes('ribbon-tab'));
+  await page.keyboard.press('ArrowDown');
+  await page.keyboard.press('ArrowRight');
+  check(`on the ▾ part (${(await tipState()).text})`, (await tipState()).text === 'More options: Paste');
+  await page.keyboard.press('Enter');
+  for (let i = 0; i < 10; i++) await wait(20);
+  check(`opening the menu hides the tooltip (${(await tipState()).open})`, !(await tipState()).open);
+  await page.keyboard.press('Escape');
+  await page.click('#kb-after');
+
+  // Over a folded group's flyout: the tooltip is in the top layer, above the popover.
+  await page.evaluate(() => { document.getElementById('kb-ribbon').style.width = '60px'; });
+  for (let i = 0; i < 12; i++) await wait(25);
+  const chunk = (await page.evaluateHandle(() => document.getElementById('kb-ribbon').shadowRoot.querySelector('.ribbon-chunk'))).asElement();
+  if (chunk) {
+    await chunk.click();
+    await wait(60);
+    c = await centre('.ribbon-flyout .ribbon-item[data-item="cut"]');
+    await page.mouse.move(c.x, c.y);
+    await wait(700);
+    // The top layer paints popovers in the order they opened, so "on top" is: both open, the tooltip opened after
+    // the flyout (it is shown on hover, the flyout was already up). Hit-testing cannot see it: pointer-events: none.
+    const top = await page.evaluate(() => {
+      const sr = document.getElementById('kb-ribbon').shadowRoot;
+      const tip = sr.querySelector('b-tooltip.ribbon-tooltip').shadowRoot.querySelector('.tip');
+      const flyout = sr.querySelector('.ribbon-flyout:popover-open');
+      return `${tip.matches(':popover-open') ? 'tip open' : 'tip closed'}, ${flyout ? 'flyout open' : 'flyout closed'}, ${tip.text ?? tip.textContent.trim()}`;
+    });
+    check(`over a flyout the tooltip is in the top layer with it (${top})`, top.startsWith('tip open, flyout open'));
+  } else {
+    check('precondition: at 60px a group is folded', false);
+  }
 } finally {
   await browser.close();
   server.close();

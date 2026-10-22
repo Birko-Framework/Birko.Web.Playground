@@ -180,8 +180,18 @@ void (async () => {
       check('and the ancestor that would have clipped it still does clip, so that matters',
         getComputedStyle(panelInner).overflow === 'hidden');
 
-      chunk.click();
-      await settle(20);
+      // A modal another suite opens (gallery-smoke's zoom) closes every popover in the page, this flyout with it: the
+      // three checks below failed about one run in three. Wait for no modal, and retry once if one opened meanwhile.
+      const modalOpen = () => {
+        const walk = (root: Document | ShadowRoot): boolean => [...root.querySelectorAll('*')].some((n) => n.matches('dialog:modal') || (!!n.shadowRoot && walk(n.shadowRoot)));
+        return walk(document);
+      };
+      for (let attempt = 0; attempt < 2; attempt++) {
+        for (let i = 0; i < 200 && modalOpen(); i++) await settle(25);
+        chunk.click();
+        await settle(20);
+        if (flyout.matches(':popover-open') || !modalOpen()) break;
+      }
       check('clicking the chunk opens the flyout', getComputedStyle(flyout).display !== 'none');
       check('and it is in the top layer while open', flyout.matches(':popover-open'));
       check('and reports itself expanded', chunk.getAttribute('aria-expanded') === 'true');

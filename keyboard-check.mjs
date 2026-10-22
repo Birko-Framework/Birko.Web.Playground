@@ -1076,6 +1076,148 @@ try {
   ls = await lState();
   check(`the mobile list's launcher fires once, after hover previews, with no item-click (${ls.launches.length}, ${ls.clicks})`, ls.launches.length === 1 && ls.clicks === 0);
   await page.evaluate(() => document.getElementById('kb-host').remove());
+  // ── b-ribbon: galleries (TASK-740) ──
+  const mountG = (width = 1000, attrs = '', galleryStyle = undefined) => page.evaluate(async ({ w, extra, gs }) => {
+    document.getElementById('kb-host')?.remove();
+    const host = document.createElement('div');
+    host.id = 'kb-host';
+    host.style.cssText = 'position:fixed;top:0;left:0;z-index:99999;background:var(--b-bg);padding:8px';
+    host.innerHTML = `<button id="kb-before">before</button><b-ribbon id="kb-ribbon" expanded pinned ${extra} style="width:${w}px"></b-ribbon>`;
+    document.body.prepend(host);
+    await customElements.whenDefined('b-ribbon');
+    const r = document.getElementById('kb-ribbon');
+    window.__kbClicks = [];
+    r.addEventListener('item-click', (e) => window.__kbClicks.push(e.detail));
+    const names = ['Normal', 'No spacing', 'Heading 1', 'Heading 2', 'Title', 'Subtitle', 'Quote', 'List'];
+    const it = (ids) => ids.map((id) => ({ id, label: id, icon: '●' }));
+    r.setTabs([{ id: 'home', label: 'Home', groups: [
+      { id: 'clip', label: 'Clipboard', icon: '📋', items: it(['Paste', 'Cut', 'Copy']) },
+      { id: 'st', label: 'Styles', icon: '🅂', items: [{ id: 'styles', label: 'Styles', gallery: { selected: 's0', visible: 4, columns: 4, style: gs,
+        items: names.map((n, i) => ({ id: `s${i}`, label: n, preview: i === 7 ? '<b>x</b>' : n.slice(0, 2) })) } }] },
+      { id: 'exp', label: 'Export', icon: '📤', items: it(['PDF', 'CSV', 'Print']) },
+    ] }]);
+    for (let i = 0; i < 30; i++) await new Promise((res) => setTimeout(res, 25));
+  }, { w: width, extra: attrs, gs: galleryStyle });
+  const gState = () => page.evaluate(() => {
+    const sr = document.getElementById('kb-ribbon').shadowRoot;
+    const g = sr.querySelector('.ribbon-panel-inner .ribbon-gallery');
+    const grid = sr.querySelector('.ribbon-gallery-grid');
+    const a = sr.activeElement;
+    return {
+      row: g ? [...g.querySelectorAll('.ribbon-gallery-row > .ribbon-gallery-tile')].map((t) => t.dataset.choice + (t.getAttribute('aria-checked') === 'true' ? '*' : '')) : null,
+      grid: grid?.matches(':popover-open') ?? false,
+      focus: a ? (a.dataset.choice ? `${a.closest('.ribbon-gallery-grid') ? 'grid:' : ''}${a.dataset.choice}` : a.dataset.galleryStep ? `step:${a.dataset.galleryStep}` : a.hasAttribute('data-gallery-expand') ? 'expand' : a.tagName) : 'outside',
+      clicks: window.__kbClicks,
+    };
+  });
+  const pauseG = (ms = 60) => new Promise((r) => setTimeout(r, ms));
+
+  await mountG();
+  let gs = await gState();
+  check(`a framed gallery shows its first tiles, the current one checked (${gs.row})`, JSON.stringify(gs.row) === '["s0*","s1","s2","s3"]');
+  const roles = await page.evaluate(() => {
+    const g = document.getElementById('kb-ribbon').shadowRoot.querySelector('.ribbon-panel-inner .ribbon-gallery');
+    return `${g.querySelector('.ribbon-gallery-row').getAttribute('role')}/${g.querySelector('.ribbon-gallery-tile').getAttribute('role')}/${g.querySelector('.ribbon-gallery-tile').getAttribute('aria-label')}`;
+  });
+  check(`its tiles are radios in a named radiogroup (${roles})`, roles === 'radiogroup/radio/Normal');
+  await clickAt('.ribbon-panel-inner .ribbon-gallery-row > [data-choice="s2"]');
+  gs = await gState();
+  check(`picking a tile makes it current and reports it with its gallery (${gs.row}; ${JSON.stringify(gs.clicks.at(-1))})`,
+    JSON.stringify(gs.row) === '["s0","s1","s2*","s3"]' && gs.clicks.at(-1)?.itemId === 's2' && gs.clicks.at(-1)?.parentId === 'styles');
+  const stepState = () => page.evaluate(() => [...document.getElementById('kb-ribbon').shadowRoot.querySelectorAll('.ribbon-panel-inner [data-gallery-step]')].map((b) => b.getAttribute('aria-disabled') === 'true' ? 'off' : 'on').join(','));
+  check(`at the start ▲ is off, ▼ on (${await stepState()})`, (await stepState()) === 'off,on');
+  await clickAt('.ribbon-panel-inner [data-gallery-step="1"]');
+  gs = await gState();
+  check(`▼ shows the next tiles (${gs.row}; ${await stepState()})`, JSON.stringify(gs.row) === '["s4","s5","s6","s7"]' && (await stepState()) === 'on,off');
+  check('a preview is text, never markup', await page.evaluate(() => !document.getElementById('kb-ribbon').shadowRoot.querySelector('.ribbon-gallery-preview b')));
+  await clickAt('.ribbon-panel-inner [data-gallery-step="-1"]');
+
+  // The grid: Enter on ▾ opens it on the current tile; arrows by one and by a row; Enter picks; focus comes back.
+  await page.evaluate(() => document.getElementById('kb-ribbon').shadowRoot.querySelector('.ribbon-panel-inner [data-gallery-expand]').focus());
+  await page.keyboard.press('Enter');
+  await pauseG();
+  gs = await gState();
+  check(`Enter on ▾ opens the full grid on the current choice (${gs.grid}, ${gs.focus})`, gs.grid && gs.focus === 'grid:s2');
+  await page.keyboard.press('ArrowDown');
+  check(`ArrowDown moves a row down (${(await gState()).focus})`, (await gState()).focus === 'grid:s6');
+  await page.keyboard.press('ArrowRight');
+  check(`ArrowRight moves one along (${(await gState()).focus})`, (await gState()).focus === 'grid:s7');
+  await page.keyboard.press('Enter');
+  await pauseG(100);
+  gs = await gState();
+  check(`Enter picks it, closes the grid, focus back on the gallery (${gs.grid}, ${gs.focus}, ${JSON.stringify(gs.clicks.at(-1))})`,
+    !gs.grid && gs.clicks.at(-1)?.itemId === 's7' && (gs.focus === 'expand' || gs.focus === 's7'));
+  await page.evaluate(() => document.getElementById('kb-ribbon').shadowRoot.querySelector('.ribbon-panel-inner [data-gallery-expand]').focus());
+  await page.keyboard.press('Enter');
+  await pauseG();
+  await page.keyboard.press('Escape');
+  for (let i = 0; i < 20 && ((await gState()).grid || (await gState()).focus !== 'expand'); i++) await pauseG(25);
+  gs = await gState();
+  check(`Escape closes the grid, focus back on ▾ (${gs.grid}, ${gs.focus})`, !gs.grid && gs.focus === 'expand');
+
+  // App control and the three looks.
+  const clicksSoFar = (await gState()).clicks.length;
+  await page.evaluate(() => document.getElementById('kb-ribbon').setGallerySelection('styles', 's1'));
+  await pauseG();
+  gs = await gState();
+  check(`setGallerySelection moves the choice without an event (${gs.row}, ${gs.clicks.length - clicksSoFar})`, gs.row.includes('s1*') && gs.clicks.length === clicksSoFar);
+  check('getGallerySelection reads it', (await page.evaluate(() => document.getElementById('kb-ribbon').getGallerySelection('styles'))) === 's1');
+  await mountG(1000, 'gallery-style="open"');
+  const open = await page.evaluate(() => {
+    const g = document.getElementById('kb-ribbon').shadowRoot.querySelector('.ribbon-panel-inner .ribbon-gallery');
+    return `${g.classList.contains('style-open')}/${g.querySelectorAll('.ribbon-gallery-line > [data-gallery-step]').length}/${g.querySelector('.ribbon-gallery-more')?.textContent.trim()}`;
+  });
+  check(`gallery-style="open": arrows around the row and "More" under it (${open})`, open === 'true/2/More ▾');
+  await mountG(1000, 'gallery-style="open"', 'dropdown');
+  const dd = await page.evaluate(() => {
+    const g = document.getElementById('kb-ribbon').shadowRoot.querySelector('.ribbon-panel-inner .ribbon-gallery');
+    return `${g.classList.contains('style-dropdown')}/${g.querySelectorAll('.ribbon-gallery-row .ribbon-gallery-tile').length}/${g.querySelector('.ribbon-gallery-current .ribbon-gallery-name')?.textContent.trim()}`;
+  });
+  check(`a gallery can override the style; dropdown shows only the current choice (${dd})`, dd === 'true/0/Normal ▾');
+
+  // Key tips: the gallery's letters, a level for its grid.
+  await mountG();
+  await page.click('#kb-before');
+  await page.keyboard.down('Alt'); await page.keyboard.down('Meta'); await page.keyboard.up('Meta'); await page.keyboard.up('Alt');
+  await pauseG(80);
+  await page.keyboard.press('H');
+  await pauseG(120);
+  const expandTip = await page.evaluate(() => {
+    const sr = document.getElementById('kb-ribbon').shadowRoot;
+    const b = sr.querySelector('.ribbon-panel-inner [data-gallery-expand]').getBoundingClientRect();
+    return [...sr.querySelectorAll('.ribbon-keytip')].find((k) => Math.abs(parseFloat(k.style.left) - b.right) < 2 && Math.abs(parseFloat(k.style.top) - b.bottom) < 2)?.textContent ?? '';
+  });
+  if (expandTip) await page.keyboard.press(expandTip);
+  await pauseG(120);
+  const gridTips = await page.evaluate(() => [...document.getElementById('kb-ribbon').shadowRoot.querySelectorAll('.ribbon-keytip')].length);
+  check(`▾ has a key tip (${expandTip}) that opens the grid with a letter per tile (${gridTips})`, !!expandTip && (await gState()).grid && gridTips === 8);
+  await page.keyboard.press('T'); // Title
+  await pauseG(100);
+  check(`a tile's letter in the grid picks it (${JSON.stringify((await gState()).clicks.at(-1))})`, (await gState()).clicks.at(-1)?.itemId === 's4');
+
+  // Mobile and folded.
+  const mob = await page.evaluate(() => [...document.getElementById('kb-ribbon').shadowRoot.querySelectorAll('.mobile-gallery')].map((m) => m.dataset.choice + (m.getAttribute('aria-checked') === 'true' ? '*' : '')).join(','));
+  check(`the mobile list offers the choices as radios (${mob})`, mob === 's0,s1,s2,s3,s4*,s5,s6,s7');
+  await page.evaluate(() => document.getElementById('kb-ribbon').shadowRoot.querySelector('.mobile-gallery[data-choice="s6"]').click());
+  check(`and a choice there is picked (${JSON.stringify((await gState()).clicks.at(-1))})`, (await gState()).clicks.at(-1)?.itemId === 's6');
+  await mountG(200);
+  await page.evaluate(() => document.getElementById('kb-ribbon').shadowRoot.querySelector('.ribbon-chunk[data-chunk="st"]')?.click());
+  await pauseG();
+  await page.evaluate(() => document.getElementById('kb-ribbon').shadowRoot.querySelector('.ribbon-flyout [data-gallery-expand]')?.click());
+  await pauseG();
+  const both = await page.evaluate(() => {
+    const sr = document.getElementById('kb-ribbon').shadowRoot;
+    return `${!!sr.querySelector('.ribbon-flyout:popover-open')}/${!!sr.querySelector('.ribbon-gallery-grid:popover-open')}`;
+  });
+  check(`in a folded group the grid opens over the flyout without closing it (${both})`, both === 'true/true');
+  await page.evaluate(() => document.getElementById('kb-ribbon').shadowRoot.querySelector('.ribbon-gallery-grid:popover-open [data-choice="s3"]').click());
+  await pauseG();
+  const closed = await page.evaluate(() => {
+    const sr = document.getElementById('kb-ribbon').shadowRoot;
+    return `${!!sr.querySelector('.ribbon-flyout:popover-open')}/${!!sr.querySelector('.ribbon-gallery-grid:popover-open')}`;
+  });
+  check(`and a pick closes both (${closed}, ${(await gState()).clicks.at(-1)?.itemId})`, closed === 'false/false' && (await gState()).clicks.at(-1)?.itemId === 's3');
+  await page.evaluate(() => document.getElementById('kb-host').remove());
 } finally {
   await browser.close();
   server.close();

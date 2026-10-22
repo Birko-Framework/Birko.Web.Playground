@@ -617,6 +617,10 @@ const CATALOGUE: ComponentDef[] = [
       { id: 'records', label: 'Records', icon: '🗃', scalingPriority: 80, items: [{ id: 'new', label: 'New', icon: '➕' }, { id: 'del', label: 'Delete', icon: '🗑' }, { id: 'dup', label: 'Duplicate', icon: '⧉' }] },
       { id: 'font', label: 'Font', icon: '🅰', scalingPriority: 60, launcher: true, items: [{ id: 'bold', label: 'Bold', icon: '𝐁', description: 'Make the selected text bold.', shortcut: 'Ctrl+B', toggle: true, pressed: true }, { id: 'italic', label: 'Italic', icon: '𝑰', toggle: true }, { id: 'colour', label: 'Colour', icon: '🎨' }] },
       { id: 'layout', label: 'Layout', icon: '▥', scalingPriority: 40, items: [{ id: 'cols', label: 'Columns', icon: '▥', toggleGroup: 'orient', pressed: true }, { id: 'rows', label: 'Rows', icon: '▤', toggleGroup: 'orient' }] },
+      { id: 'styles', label: 'Styles', icon: '🅂', scalingPriority: 30, items: [{ id: 'style-gallery', label: 'Styles', gallery: { selected: 'normal', visible: 4, items: [
+        { id: 'normal', label: 'Normal', preview: 'Aa' }, { id: 'nospace', label: 'No spacing', preview: 'Aa' }, { id: 'h1', label: 'Heading 1', preview: 'H1' },
+        { id: 'h2', label: 'Heading 2', preview: 'H2' }, { id: 'title', label: 'Title', preview: 'T' }, { id: 'subtitle', label: 'Subtitle', preview: 'S' },
+        { id: 'quote', label: 'Quote', preview: '“”' }, { id: 'list', label: 'List', preview: '•' }] } }] },
       { id: 'review', label: 'Review', icon: '💬', scalingPriority: 20, items: [{ id: 'comment', label: 'Comment', icon: '💬' }, { id: 'track', label: 'Track', icon: '✓' }] },
       { id: 'export', label: 'Export', icon: '📤', scalingPriority: 0, items: [{ id: 'pdf', label: 'PDF', icon: '📄' }, { id: 'csv', label: 'CSV', icon: '📊', menu: [{ id: 'csv-comma', label: 'Comma separated' }, { id: 'csv-semicolon', label: 'Semicolon separated' }, { id: 'csv-utf8', label: 'UTF-8 with BOM', disabled: true }] }, { id: 'print', label: 'Print', icon: '🖨' }] },
     ] },

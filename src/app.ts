@@ -65,6 +65,8 @@ if (new URLSearchParams(location.search).has('smoke')) {
   void import('./auth-session-smoke.js');
   // TASK-525 — b-tabs reorder, b-split-panel resize with persisted sizes, captureLayout / applyLayout.
   void import('./layout-persist-smoke.js');
+  // TASK-725 — diffJson (paths, ignore, normalize, array matching) and b-json-diff (tree, only changes, side by side).
+  void import('./json-diff-smoke.js');
   // STORY-023 / TASK-035 — ElementInternals form association.
   void import('./form-assoc-smoke.js');
   // EPIC-001 — the `description` help-text row.
@@ -541,6 +543,11 @@ const CATALOGUE: ComponentDef[] = [
   { tag: 'b-code-block', label: 'Code block', category: 'data', attrs: { language: 'js' }, render: () => 'const x = 42;\nconsole.log(x);' },
   { tag: 'b-definition-list', label: 'Definition list', category: 'data', render: () => '<dt>Term</dt><dd>A definition</dd><dt>Another</dt><dd>Its value</dd>' },
   { tag: 'b-json-viewer', label: 'JSON viewer', category: 'data', render: () => '{ "name": "birko", "version": 1, "ok": true }' },
+  { tag: 'b-json-diff', label: 'JSON diff', category: 'data', wide: true, attrs: { 'label-a': 'production', 'label-b': 'localhost' }, setup: (el) => {
+    el.setOptions({ ignore: ['**.Url'], arrays: [{ path: 'Items', key: 'Id' }] });
+    el.setData({ Name: 'Birko', Version: 1, Url: 'https://a', Items: [{ Id: 1, Price: 10 }, { Id: 2, Price: 20 }], Legacy: true },
+      { Name: 'Birko', Version: 2, Url: 'https://b', Items: [{ Id: 2, Price: 20 }, { Id: 1, Price: 12 }, { Id: 3, Price: 5 }], Tags: ['new'] });
+  } },
   { tag: 'b-xml-viewer', label: 'XML viewer', category: 'data', setup: (el) => el.setSource('<root><item id="1">hello</item><item id="2">world</item></root>') },
   { tag: 'b-table', label: 'Table', category: 'data', wide: true, setup: (el) => { el.setColumns([{ key: 'name', label: 'Name' }, { key: 'role', label: 'Role' }, { key: 'city', label: 'City' }]); el.setData([{ name: 'Ada', role: 'Admin', city: 'London' }, { name: 'Linus', role: 'User', city: 'Helsinki' }, { name: 'Grace', role: 'User', city: 'New York' }]); } },
   { tag: 'b-data-table', label: 'Data table', category: 'data', wide: true, setup: (el) => {
@@ -1181,7 +1188,7 @@ function injectStyles(): void {
     .pg-stage > :is(b-input,b-textarea,b-select,b-search-input,b-multi-select,b-tag-input,b-color-picker,
       b-date-picker,b-datetime-picker,b-date-range-picker,b-time,b-range,b-file-upload,b-markdown-editor,
       b-inline-edit,b-segmented,b-option-group,b-form,b-progress,b-table,b-data-table,b-editable-table,
-      b-chart,b-json-viewer,b-xml-viewer,b-object-tree,b-definition-list,b-code-block,b-pre,b-stat,b-card,
+      b-chart,b-json-viewer,b-json-diff,b-xml-viewer,b-object-tree,b-definition-list,b-code-block,b-pre,b-stat,b-card,
       b-accordion,b-tabs,b-breadcrumb,b-tree-menu,b-sidebar,b-ribbon,b-kanban,b-chat,b-pagination,
       b-stale-banner,b-toast-item,b-split-panel) { width:100%; }
     /* Mobile app-shell demo: render at phone size inside a framed device, so its full-height

@@ -88,6 +88,10 @@ void (async () => {
       check(`${tag}: each group's commands are centred in it (${margins.map(([l, r]) => `${l.toFixed(1)}/${r.toFixed(1)}`).join(' ')})`,
         margins.every(([l, r]) => Math.abs(l - r) <= 1));
 
+      // TASK-749: the tab row starts at the ribbon's top. The shared tooltip's host sat in flow before it and put an
+      // empty 21px strip above every ribbon (reported by the FinStat web tester).
+      const gapTop = sr.querySelector<HTMLElement>('.ribbon-tab-row')!.getBoundingClientRect().top - el.getBoundingClientRect().top;
+      check(`${tag}: the tab row starts at the ribbon's top (${gapTop.toFixed(1)}px)`, Math.abs(gapTop) < 0.5);
       const label = sr.querySelector<HTMLElement>('.ribbon-group-label');
       if (label) check(`${tag}: the label is first in the markup (read before the commands)`, label === label.parentElement!.firstElementChild);
       el.remove();

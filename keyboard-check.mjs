@@ -624,11 +624,37 @@ try {
   const plain = await ribbonState();
   await ctrlF1(['Control', 'Shift']);
   check(`a rebound shortcut replaces Ctrl+F1 (${plain} → ${await ribbonState()})`, plain.startsWith('pinned expanded') && (await ribbonState()).startsWith('unpinned collapsed'));
+  // The collapse arrow shows only while pinned (D6 changed 2026-10-23), so pin it back before reading it.
+  await ctrlF1(['Control', 'Shift']);
   const btn = await page.evaluate(() => {
     const b = document.getElementById('kb-ribbon').shadowRoot.querySelector('#ribbon-toggle');
     return `${b.getAttribute('title')} | ${b.getAttribute('aria-keyshortcuts')}`;
   });
   check(`the collapse button names the shortcut (${btn})`, btn.includes('(Ctrl+Shift+F1)') && btn.includes('Control+Shift+F1'));
+
+  // ── D6 changed by the user (2026-10-23): collapsed and unpinned are one state, one control at a time ──
+  const ctrls = () => page.evaluate(() => {
+    const root = document.getElementById('kb-ribbon').shadowRoot;
+    const inRow = (sel) => !!root.querySelector(`.ribbon-strip ${sel}, .ribbon-tabs-row ${sel}, .ribbon-header ${sel}`) || (!!root.querySelector(sel) && !root.querySelector(sel).closest('.ribbon-panel'));
+    return `toggle:${inRow('#ribbon-toggle')} pin:${!!root.querySelector('.ribbon-panel #ribbon-pin')} rowpin:${!!root.querySelector('#ribbon-pin') && !root.querySelector('#ribbon-pin').closest('.ribbon-panel')}`;
+  });
+  check(`pinned: the tab row has the collapse arrow and no pin (${await ctrls()})`, (await ctrls()) === 'toggle:true pin:false rowpin:false');
+  await page.evaluate(() => document.getElementById('kb-ribbon').shadowRoot.querySelector('#ribbon-toggle').click());
+  await new Promise((r) => setTimeout(r, 40));
+  check(`the arrow collapses as Office does: unpinned (${await ribbonState()})`, (await ribbonState()).startsWith('unpinned collapsed'));
+  check(`collapsed: no arrow in the tab row, and the pin is on the panel (${await ctrls()})`, (await ctrls()) === 'toggle:false pin:true rowpin:false');
+  await (await tabHandle('home')).click();
+  await new Promise((r) => setTimeout(r, 60));
+  check(`a tab opens the panel over the page, still unpinned (${await ribbonState()})`, (await ribbonState()).startsWith('unpinned expanded'));
+  await page.evaluate(() => document.getElementById('kb-ribbon').shadowRoot.querySelector('.ribbon-panel #ribbon-pin').click());
+  await new Promise((r) => setTimeout(r, 40));
+  check(`the panel's pin keeps it open, pinned (${await ribbonState()})`, (await ribbonState()).startsWith('pinned expanded'));
+  await page.evaluate(() => { const r = document.getElementById('kb-ribbon'); r.removeAttribute('pinned'); r.removeAttribute('expanded'); r.setAttribute('pinned', ''); });
+  await new Promise((r) => setTimeout(r, 40));
+  check(`restored "pinned" without "expanded" opens the panel, never the third state (${await ribbonState()})`, (await ribbonState()).startsWith('pinned expanded'));
+  await page.evaluate(() => document.getElementById('kb-ribbon').removeAttribute('expanded'));
+  await new Promise((r) => setTimeout(r, 40));
+  check(`closing a pinned ribbon's panel unpins it (${await ribbonState()})`, (await ribbonState()).startsWith('unpinned collapsed'));
   await page.evaluate(() => document.getElementById('kb-host').remove());
   let threw = false;
   try { await ctrlF1(); } catch { threw = true; }

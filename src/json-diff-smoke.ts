@@ -1,6 +1,6 @@
 // TASK-725 — diffJson (birko-web-core): changes by path, ignore patterns, normalizers, array matching by index / key /
 // unordered, summary and tree; b-json-diff: tree with statuses, only-changes, side-by-side marks, labels, events.
-import { diffJson, formatJsonPath, matchJsonPath, type JsonDiffNode } from 'birko-web-core';
+import { diffJson, formatJsonPath, getI18n, matchJsonPath, type JsonDiffNode } from 'birko-web-core';
 import type { BJsonDiff } from 'birko-web-components';
 import { focusable } from './smoke-focus.js';
 
@@ -212,6 +212,26 @@ void (async () => {
       await tick();
       check(`equal bodies say so (${root.querySelector('.summary')?.textContent})`, root.querySelector('.summary')?.textContent === 'No differences');
       host.remove();
+    }
+
+    // ── 10. Strings come from bwc.jsonDiff (Birko TASK-765: the bundle had them under bwc.daterange.jsonDiff) ──
+    {
+      const bundle = await (await fetch('locales/en.json')).json() as { bwc?: { jsonDiff?: { title?: string } } };
+      eq('the shipped en.json has bwc.jsonDiff.title', bundle.bwc?.jsonDiff?.title ?? null, 'JSON diff');
+      // Added, rendered, read and restored with no await between, so another suite's locale switch cannot land inside.
+      const i18n = getI18n();
+      const locale = i18n.locale;
+      const before = i18n.t('bwc.jsonDiff.title');
+      i18n.addMessages(locale, { bwc: { jsonDiff: { title: 'Rozdiel JSON' } } });
+      const host = document.createElement('div');
+      host.style.cssText = 'position:fixed;left:0;top:0;width:900px;opacity:0;pointer-events:none;';
+      const el = document.createElement('b-json-diff') as BJsonDiff;
+      host.appendChild(el);
+      document.body.appendChild(host);
+      const title = el.shadowRoot?.querySelector('.title')?.textContent ?? null;
+      i18n.addMessages(locale, { bwc: { jsonDiff: { title: before === 'bwc.jsonDiff.title' ? 'JSON diff' : before } } });
+      host.remove();
+      eq(`an app's bwc.jsonDiff.title reaches the title (${locale})`, title, 'Rozdiel JSON');
     }
   } catch (e) {
     check(`unexpected throw: ${(e as Error).message}`, false);

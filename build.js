@@ -80,6 +80,8 @@ copyCss();
 // in the console nor leaves the review with English-only labels.
 mkdirSync('wwwroot/locales', { recursive: true });
 copyFileSync(`${BIRKO_SRC}/Birko.Web.Components/locales/en.json`, 'wwwroot/locales/en.json');
+// Birko TASK-769 — the shared diff vectors, fetched by diff-vectors-smoke.
+copyFileSync(`${BIRKO_SRC}/Birko.Web.Core/src/diff/diff-vectors.json`, 'wwwroot/__diff-vectors.json');
 for (const f of readdirSync('locales')) if (f.endsWith('.json')) copyFileSync(`locales/${f}`, `wwwroot/locales/${f}`);
 // TASK-750 — i18n-chain-smoke's bundles, served as real files: the suite must not replace window.fetch, which
 // backport-smoke stubs while it runs beside it.

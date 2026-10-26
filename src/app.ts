@@ -80,6 +80,8 @@ if (new URLSearchParams(location.search).has('smoke')) {
   if (runs('sr-only-contain-smoke')) void import('./sr-only-contain-smoke.js');
   // TASK-727 — xmlToTree / xmlToLines and b-json-diff format="xml" (original XML in the side-by-side view).
   if (runs('xml-diff-smoke')) void import('./xml-diff-smoke.js');
+  // Birko TASK-769 — the shared diff vectors (also run by the C# port in Birko.Xaml.Core) against the web engine.
+  if (runs('diff-vectors-smoke')) void import('./diff-vectors-smoke.js');
   // STORY-023 / TASK-035 — ElementInternals form association.
   if (runs('form-assoc-smoke')) void import('./form-assoc-smoke.js');
   // EPIC-001 — the `description` help-text row.

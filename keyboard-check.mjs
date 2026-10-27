@@ -1519,6 +1519,50 @@ try {
   check(`and closes once Enter reports the value, as after a command (${shut})`, !shut && (await fState()).changes.at(-1)?.value === '3');
   await page.evaluate(() => document.getElementById('kb-host').remove());
   }
+
+  // ── b-carousel rotation-control="hover" (TASK-777, for FlowerFur's hero): a real Tab reaches the hidden stop button
+  // and shows it; a real pointer over the carousel shows it; away from it, it hides ──
+  {
+  await page.setViewport({ width: 1000, height: 700 });
+  await page.evaluate(async () => {
+    document.getElementById('kb-host')?.remove();
+    const host = document.createElement('div');
+    host.id = 'kb-host';
+    host.style.cssText = 'position:fixed;top:0;left:0;z-index:99999;background:var(--b-bg);padding:8px;width:400px';
+    host.innerHTML = '<button id="kb-before">before</button><b-carousel autoplay="5000" rotation-control="hover">'
+      + [1, 2, 3].map((i) => `<div style="height:120px">S${i}</div>`).join('') + '</b-carousel><button id="kb-after">after</button>';
+    document.body.prepend(host);
+    await customElements.whenDefined('b-carousel');
+    for (let i = 0; i < 50 && !host.querySelector('b-carousel').shadowRoot?.querySelector('.rotation'); i++) await new Promise((r) => setTimeout(r, 20));
+  });
+  const rotation = () => page.evaluate(() => {
+    const b = document.querySelector('#kb-host b-carousel').shadowRoot.querySelector('.rotation');
+    return { opacity: getComputedStyle(b).opacity, label: b.getAttribute('aria-label') };
+  });
+  const settle = () => new Promise((r) => setTimeout(r, 250));
+  await page.mouse.move(900, 650);
+  await settle();
+  check(`carousel hover mode: the stop button is hidden at rest (opacity ${(await rotation()).opacity})`, (await rotation()).opacity === '0');
+  await focusBefore();
+  await page.keyboard.press('Tab');
+  await settle();
+  check(`Tab into the carousel lands on the stop button (focus ${await focused()})`,
+    (await page.evaluate(() => document.querySelector('#kb-host b-carousel').shadowRoot.activeElement?.classList.contains('rotation'))) === true);
+  check(`…and shows it (opacity ${(await rotation()).opacity}, "${(await rotation()).label}")`, (await rotation()).opacity === '1');
+  await page.keyboard.press('Enter');
+  check(`Enter on it works while shown ("${(await rotation()).label}")`, (await rotation()).label === 'Stop automatic slide show');
+  await page.evaluate(() => document.getElementById('kb-after').focus());
+  await settle();
+  check(`focus leaving hides it again (opacity ${(await rotation()).opacity})`, (await rotation()).opacity === '0');
+  const box = await page.evaluate(() => { const r = document.querySelector('#kb-host b-carousel').getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 }; });
+  await page.mouse.move(box.x, box.y);
+  await settle();
+  check(`a pointer over the carousel shows it (opacity ${(await rotation()).opacity})`, (await rotation()).opacity === '1');
+  await page.mouse.move(900, 650);
+  await settle();
+  check(`the pointer leaving hides it (opacity ${(await rotation()).opacity})`, (await rotation()).opacity === '0');
+  await page.evaluate(() => document.getElementById('kb-host').remove());
+  }
 } finally {
   await browser.close();
   server.close();

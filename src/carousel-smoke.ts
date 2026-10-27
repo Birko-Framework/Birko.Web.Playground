@@ -218,6 +218,16 @@ void (async () => {
     check(`autoplay switched on after a focus starts playing ("${rot()?.getAttribute('aria-label')}")`,
       rot()?.getAttribute('aria-label') === 'Stop automatic slide show');
     check('…and advances', await waitFor(() => p.el.index === 1, 2000));
+
+    // ── rotation-control="hover" (TASK-777): hidden at rest, still a tab stop. Shown by hover and focus within is
+    // keyboard-check.mjs's: verify.mjs's page never holds document focus (document.hasFocus() is false), so a
+    // programmatic focus here does not match :focus-within ──
+    const look = () => { const cs = getComputedStyle(rot()!); return `${cs.opacity}/${cs.pointerEvents}/${cs.display === 'none' ? 'gone' : 'laid-out'}`; };
+    p = await mount('autoplay="5000"', 3);
+    check(`default: the control is shown at rest (${look()})`, look() === '1/auto/laid-out');
+    p = await mount('autoplay="5000" rotation-control="hover"', 3);
+    check(`hover mode: hidden at rest, takes no pointer input, still laid out (${look()})`, look() === '0/none/laid-out');
+    check('hover mode: still named and a tab stop', rot()!.getAttribute('aria-label') === 'Stop automatic slide show' && rot()!.tabIndex === 0);
     host.innerHTML = '';
 
     // ── reduced motion: autoplay never starts ──

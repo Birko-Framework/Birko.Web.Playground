@@ -1561,6 +1561,22 @@ try {
   await page.mouse.move(900, 650);
   await settle();
   check(`the pointer leaving hides it (opacity ${(await rotation()).opacity})`, (await rotation()).opacity === '0');
+  // FlowerFur's human test: a mouse click on the button focuses it, and :focus-within kept it shown after the pointer
+  // left, until a click outside.
+  await page.mouse.move(box.x, box.y);
+  await settle();
+  const btn = await page.evaluate(() => { const r = document.querySelector('#kb-host b-carousel').shadowRoot.querySelector('.rotation').getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 }; });
+  const before = (await rotation()).label;
+  await page.mouse.click(btn.x, btn.y);
+  await settle();
+  check(`a mouse click on it toggles rotation ("${before}" → "${(await rotation()).label}")`, (await rotation()).label !== before);
+  check(`…and focuses it (focus ${await focused()})`, (await page.evaluate(() => document.querySelector('#kb-host b-carousel').shadowRoot.activeElement?.classList.contains('rotation'))) === true);
+  await page.mouse.move(900, 650);
+  await settle();
+  check(`after a click, the pointer leaving hides it though it keeps focus (opacity ${(await rotation()).opacity})`, (await rotation()).opacity === '0');
+  await page.keyboard.press('Tab');
+  await settle();
+  check(`a key after the click is keyboard focus again: Tab to the next control shows it (opacity ${(await rotation()).opacity})`, (await rotation()).opacity === '1');
   await page.evaluate(() => document.getElementById('kb-host').remove());
   }
 } finally {

@@ -20,14 +20,32 @@ harness). Created in TASK-038 (EPIC-013 reference consumers).
   gallery + token editor + export UI.
 - `index.html` — links `css/*`, hosts `<style id="playground-theme">` (live edits applied here) + `app.js`.
 - `build.js` / `package.json` / `tsconfig.json` — esbuild build + aliases.
-- `locales/` — partial `cs.json` / `sk.json` for the header **Locale** switch; `build.js` copies them plus the library's
+- `component-docs.mjs` — parses `Birko.Web.Components/README.md` (one-line summaries) and `API.md` (attribute /
+  method / event tables, `Slot:` lines) at build time and serves them as the virtual module `pg:component-docs`
+  (typed in `src/pg-modules.d.ts`). It feeds each card's ⓘ tooltip, so the reference shown beside a live component is
+  the library's own documentation, not a copy here.
+- `locales/` — partial `cs.json` / `sk.json` for the ribbon's **Locale** set; `build.js` copies them plus the library's
   `Birko.Web.Components/locales/en.json` into `wwwroot/locales/`, which is where `getI18n().setLocale()` fetches from.
 - `wwwroot/` — build output (`app.js` + copied `css/`); git-ignored.
 
 ## Conventions
 - The gallery is driven by a manifest (`src/catalogue.ts` when split out) so new `b-*` components don't silently go missing; keep it in sync with the `Birko.Web.Components` catalogue.
+- **The header is a `b-ribbon` (`#pg-ribbon`), grouped by task** (decided 2026-10-28): Gallery (category one-of set +
+  Find filter), Appearance (theme set, locale set, Design tokens, Generate CSS), Lab, Help (About, Tour, docs links).
+  The app acts on the ribbon's own `item-click` / `item-change` / `tab-change`, and the checks dispatch those same
+  events on `#pg-ribbon` (`item-click` `{ itemId: 'cat:<category>' }` builds a section, `itemId: 'tokens'` opens the
+  token drawer) — never a hidden side door. Its `collapse-shortcut` and `keytip-shortcut` are `none`: both keys are
+  page-wide, and the gallery's Ribbon card is the one demonstrating them (keyboard-check fails otherwise).
+- **Every card says what it is.** A visible line from `ABOUT` in `app.ts` (curated copy, keyed by catalogue `label`)
+  and an ⓘ tooltip from `pg:component-docs`. A new catalogue entry needs an `ABOUT` line; `reportMissing()` warns
+  without one.
+- **Test harnesses go in `category: 'lab'`**, not among the components: the grid benchmark, device probes and wiring
+  checks (help-text row, page tour). The Lab grid opens with a banner saying they are not components, and still is a
+  `.pg-grid`, so verify.mjs renders and counts it like any section.
+- **The introduction is Help → About** (`#pg-about`, a `b-modal`), not a panel above the gallery. A first visit gets
+  one dismissible line (`#pg-hint`); its dismissal keeps the old `pg-intro-dismissed` key.
 - The token editor parses `wwwroot/css/tokens.css` at runtime so the editable token list stays in sync with the framework automatically.
-- **One setter owns `data-theme`.** The header switcher, the description-card switcher and anything else
+- **One setter owns `data-theme`.** The ribbon's theme set, the description-card switcher and anything else
   added later bind via `bindThemeSwitcher()` / `onThemeChange()` in `app.ts` — never by reading or writing
   the attribute directly. Two controls writing it independently is how they silently drift apart. The pick
   persists under the `pg-theme` localStorage key and is re-applied by a blocking inline script in

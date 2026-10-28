@@ -73,14 +73,14 @@ await page.goto(base, { waitUntil: 'networkidle0' });
 // Register the worker through the app's own button, so this exercises the path the app actually
 // uses rather than a URL this file made up.
 const swMessage = await page.evaluate(async () => {
-  // The gallery builds each category lazily, on the nav switcher's 'change' — so the card holding
+  // The gallery builds each category lazily, on the ribbon's category item-click — so the card holding
   // the SW button does not exist until its section is populated. verify.mjs forces every section the
   // same way; doing it here too is what lets this check drive the app's own button rather than
   // inventing a URL of its own, which would test this file instead of the app.
-  const nav = document.querySelector('#pg-nav');
+  const nav = document.querySelector('#pg-ribbon');
   const gallery = document.querySelector('#pg-gallery');
   for (const sec of gallery?.querySelectorAll(':scope > .pg-grid') ?? []) {
-    nav?.dispatchEvent(new CustomEvent('change', { detail: { value: sec.dataset.cat }, bubbles: true }));
+    nav?.dispatchEvent(new CustomEvent('item-click', { detail: { itemId: `cat:${sec.dataset.cat}` } }));
   }
   await new Promise((r) => setTimeout(r, 400));
 

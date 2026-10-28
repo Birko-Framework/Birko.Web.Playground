@@ -132,7 +132,8 @@ const preview = await pgPage.evaluate(async ({ edits, fixture, measureSrc }) => 
   const before = measure();
 
   // Drive the real controls, not the model: the wiring is the half that has broken here before.
-  document.querySelector('#open-tokens')?.click();
+  // The Design tokens command lives in the ribbon's shadow root; its item-click is what the app listens to.
+  document.querySelector('#pg-ribbon')?.dispatchEvent(new CustomEvent('item-click', { detail: { tabId: 'appearance', groupId: 'design', itemId: 'tokens' } }));
   await new Promise((r) => setTimeout(r, 400));
   const applied = [];
   for (const [name, value] of edits) {

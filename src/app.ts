@@ -119,7 +119,7 @@ if (new URLSearchParams(location.search).has('smoke')) {
 // supplies a tiny concrete subclass — a consumer, not framework code — registered as
 // <pg-mobile-shell> and shown phone-framed in the Navigation section.
 import { BMobileAppShell, BasePage, type Surface } from 'birko-web-shell';
-import type { TourStep } from 'birko-web-components/layout';
+import { tour, type TourStep } from 'birko-web-components/layout';
 import { createWakeLockManager, createAudioCue, registerServiceWorker, getI18n } from 'birko-web-core';
 // Imperative dialog helpers (TASK-063) — the lean subpath, not the layout/inputs barrels.
 import {
@@ -438,7 +438,13 @@ interface ControlDef {
 interface ComponentDef {
   tag: string;
   label: string;
-  category: 'inputs' | 'layout' | 'data' | 'feedback' | 'nav' | 'command';
+  /**
+   * `lab` is not a component category: it holds the harnesses that exist to verify Birko.Web (a benchmark, device
+   * probes, a wiring check), kept out of the gallery a first-time visitor reads and shown under the ribbon's Lab tab.
+   */
+  category: 'inputs' | 'layout' | 'data' | 'feedback' | 'nav' | 'command' | 'lab';
+  /** One sentence under the card title: what it is and what it is for. `ABOUT` supplies it when unset. */
+  about?: string;
   render?: () => string;            // inner markup for one instance
   attrs?: Record<string, string>;   // static attributes applied to the instance
   controls?: ControlDef[];          // live attribute toggles
@@ -493,7 +499,7 @@ const CATALOGUE: ComponentDef[] = [
   { tag: 'b-color-picker', label: 'Color picker', category: 'inputs', attrs: { value: '#25ba7acc', label: 'Brand color', alpha: '' } },
   { tag: 'b-range', label: 'Range', category: 'inputs', attrs: { min: '0', max: '100', value: '60' },
     controls: [{ label: 'orientation', attr: 'orientation', options: ['horizontal', 'vertical'] }] },
-  { tag: 'pg-description', label: 'Help text — the `description` row', category: 'inputs',
+  { tag: 'pg-description', label: 'Help text — the `description` row', category: 'lab',
     note: 'STORY-029/TASK-091: persistent help text under a control, wired into aria-describedby (a page-rendered sibling cannot be, since the control is in shadow DOM). Each numbered row answers one human-test question — SR announcement, error+description together, wrapping in a narrow column, help-row contrast per theme (with a live theme switcher — the shipped themes were never linked in index.html before, so the gallery could only be seen in light), hint+description coexisting, and bare dropping the row.' },
   { tag: 'pg-equalizer', label: 'Range — vertical (equalizer)', category: 'inputs',
     note: 'A row of vertical b-range sliders (orientation="vertical", display="slider") — the equalizer/mixer layout (TASK-053).' },
@@ -552,17 +558,17 @@ const CATALOGUE: ComponentDef[] = [
     launch: { label: 'Open dialog', run: (el) => el.show() } },
   { tag: 'b-chat', label: 'Chat', category: 'layout', wide: true, setup: (el) => el.setMessages([{ id: '1', role: 'assistant', content: 'Hi! How can I help?' }, { id: '2', role: 'user', content: 'Show me the gallery.' }]) },
   { tag: 'b-tour', label: 'Tour', category: 'layout',
-    launch: { label: 'Start tour', run: (el) => el.start([
+    launch: { label: 'Start tour', run: (el) => el.run([
       { target: '.pg-header .pg-brand', title: 'Welcome', body: 'This is the Birko.Web playground.', placement: 'bottom' },
-      { target: '#pg-nav', title: 'Sections', body: 'Switch component categories here.', placement: 'bottom' },
-      { target: '#open-tokens', title: 'Design tokens', body: 'Tweak design tokens live.', placement: 'bottom' },
-    ], { id: 'pg-demo-tour' }) } },
+      { target: '#pg-ribbon', title: 'Sections', body: 'Switch component categories, themes and tokens on the ribbon.', placement: 'bottom' },
+      { title: 'Design tokens', body: 'Appearance → Design tokens edits the --b-* set live.' },
+    ], () => { /* done: nothing to remember for a demo */ }) } }, // the element's run(); start() is the `tour` manager's
 
-  { tag: 'pg-page-tour', label: 'Page tour button (BasePage)', category: 'layout', wide: true,
+  { tag: 'pg-page-tour', label: 'Page tour button (BasePage)', category: 'lab', wide: true,
     note: 'TASK-582: a Birko.Web.Shell page that returns tourSteps() gets a ? beside its title, with or without header actions. Press it to start the tour; it replays every time.' },
 
   // ── data ──
-  { tag: 'pg-grid-bench', label: 'Grid benchmark — raw vs bare cells', category: 'data',
+  { tag: 'pg-grid-bench', label: 'Grid benchmark — raw vs bare cells', category: 'lab',
     note: 'STORY-002/TASK-002: the benchmark that gates migrating b-editable-table cells onto <b-input bare size=\"sm\">. Button-driven (allocates 3000 cells). Measures build, re-render, 50-keystroke edit latency, caret survival and node/shadow-root count for both variants.' },
   { tag: 'b-badge', label: 'Badge', category: 'data', render: () => 'New', controls: [STATUS] },
   { tag: 'b-tag', label: 'Tag', category: 'data', render: () => 'tag', controls: [TAG_COLOR, SIZE, REMOVABLE] },
@@ -603,7 +609,7 @@ const CATALOGUE: ComponentDef[] = [
   { tag: 'b-sync-status', label: 'Sync status', category: 'feedback',
     note: 'Offline / syncing / synced chip bound to an outbox SyncSource (EPIC-002 backport). Shown with 2 pending writes (syncing); it hides when online + idle and shows "offline" when disconnected.',
     setup: (el) => el.bind({ get pendingCount() { return 2; }, onChange() { return () => {}; } }) },
-  { tag: 'pg-device-demo', label: 'Device utils (wake lock / audio cue / SW)', category: 'feedback',
+  { tag: 'pg-device-demo', label: 'Device utils (wake lock / audio cue / SW)', category: 'lab',
     note: 'EPIC-016 backports: Screen Wake Lock, iOS-safe audio cue, and opt-in PWA service-worker register/unregister. Buttons drive each; the playground never auto-registers a SW.' },
   { tag: 'pg-dialogs', label: 'Dialogs (imperative helpers)', category: 'feedback',
     note: 'TASK-063: birko-web-components/dialogs — confirm / confirmDelete / alert / prompt / choose / promptForm / busy / notify. Click a button; the awaited result shows below. All are themed native <dialog> (top layer).' },
@@ -681,8 +687,150 @@ const CATALOGUE: ComponentDef[] = [
 ];
 
 const CATEGORY_LABELS: Record<string, string> = {
-  inputs: 'Inputs', layout: 'Layout', data: 'Data', feedback: 'Feedback', nav: 'Navigation', command: 'Command',
+  inputs: 'Inputs', layout: 'Layout', data: 'Data', feedback: 'Feedback', nav: 'Navigation', command: 'Command', lab: 'Lab',
 };
+
+const CATEGORY_ICONS: Record<string, string> = {
+  inputs: '⌨', layout: '▦', data: '▤', feedback: '◔', nav: '☰', command: '⌘', lab: '⚗',
+};
+
+// What each section is for — the ribbon shows it as the category command's tooltip.
+const CATEGORY_ABOUT: Record<string, string> = {
+  inputs: 'Form controls: every one is form-associated, labelled and keyboard-operable.',
+  layout: 'Structure and overlays: cards, tabs, panels, modals, drawers and guided tours.',
+  data: 'Showing data: tables, charts, JSON and XML viewers, a kanban board.',
+  feedback: 'Telling the user what is happening: progress, empty and stale states, toasts, sync.',
+  nav: 'Getting around an app: breadcrumbs, trees, a sidebar, a ribbon and a mobile shell.',
+  command: 'The Ctrl+K command palette.',
+  lab: 'Test harnesses used to verify Birko.Web — not components you ship.',
+};
+
+/**
+ * The visible line under each card title, keyed by catalogue `label` (unique, unlike `tag`: b-rating appears twice).
+ * Curated presentation copy, so it is written here rather than scraped; the ⓘ tooltip carries the reference half
+ * (attributes, methods, events), generated from Birko.Web.Components' own README and API.md at build time.
+ * `reportMissing()` warns about a catalogue entry without one.
+ */
+const ABOUT: Record<string, string> = {
+  'Button': 'The standard action button, in four variants and three sizes; can submit its form.',
+  'Checkbox': 'A form-associated on/off choice with a label.',
+  'Radio': 'One choice out of a named group.',
+  'Switch': 'An on/off toggle for settings that apply at once.',
+  'Input': 'A labelled text field with help text, validation, adornments and a clear button.',
+  'Textarea': 'A labelled multi-line text field.',
+  'Search input': 'A search box that reports the query after a short pause in typing.',
+  'Select': 'A dropdown with optional search and creatable values.',
+  'Multi-select': 'Pick several values from a list, shown as removable chips.',
+  'Color picker': 'Pick a colour, with optional alpha, as hex.',
+  'Range': 'A slider for one value or a from–to range.',
+  'Range — vertical (equalizer)': 'The same b-range turned vertical: a bank of sliders like an equalizer.',
+  'Date picker': 'A calendar dropdown for a date, in the current locale.',
+  'Datetime picker': 'A date and a time in one control.',
+  'Date range': 'Pick a from–to date range on one calendar.',
+  'Time': 'A time-only picker with hour and minute steppers.',
+  'File upload': 'Pick or drop files, with type, size and count limits.',
+  'Inline edit': 'Text that turns into a field when clicked and saves on Enter.',
+  'Markdown editor': 'A split-view Markdown editor with a toolbar and live preview.',
+  'Tag input': 'Type free-form tags; Enter adds one, duplicates are refused.',
+  'Quantity stepper': 'A number with − / + steps that never drift (0.1 × 3 is exactly 0.3), with a unit.',
+  'Rating': 'A star rating input; arrow keys move and pick.',
+  'Rating — custom icon (heart)': 'The same rating with any icon in place of the star.',
+  'Segmented': 'A row of connected buttons that picks one of 2–4 short options.',
+  'Option group': 'A labelled single choice shown as a list of options.',
+  'Form': 'A form built from a schema, with validation and error messages.',
+  'Button group': 'Buttons joined into one cluster.',
+  'Carousel': 'A row of slides with arrows, dots, swipe and optional auto-rotation.',
+  'Gallery': 'Product images: one large, thumbnails, swipe and a zoom view.',
+  'Card': 'A bordered surface with a header, body and footer.',
+  'Accordion': 'Sections that expand and collapse.',
+  'Toolbar': 'A horizontal bar that lays out button groups, with an end slot.',
+  'Split panel': 'Master and detail side by side, resizable, collapsing on narrow screens.',
+  'Tooltip': 'A short hint shown on hover or keyboard focus.',
+  'Tabs': 'Switch between panels of content.',
+  'Dropdown menu': 'A button that opens a menu of actions.',
+  'Modal': 'A dialog over the page that keeps focus inside it until closed.',
+  'Drawer': 'A panel that slides in from the edge.',
+  'Confirm dialog': 'Ask "are you sure?" before a destructive action.',
+  'Chat': 'A message list with a composer, for assistants, support and team chat.',
+  'Tour': 'A step-by-step guided tour that spotlights parts of the page.',
+  'Badge': 'A small status label.',
+  'Tag': 'A label with an optional colour dot that can be removed.',
+  'Stat': 'A KPI tile: caption, large value and a change chip.',
+  'Pagination': 'Page through a long list, with the total count.',
+  'Pre': 'A preformatted text block that scrolls when it is long.',
+  'Code block': 'Highlighted code with a copy button and line numbers.',
+  'Definition list': 'Term and description pairs in four layouts.',
+  'JSON viewer': 'Read a JSON value as a tree you can expand, collapse and copy.',
+  'JSON diff': 'Compare two JSON or XML bodies as a tree of changes or side by side.',
+  'XML viewer': 'Read XML as a collapsible, coloured tree.',
+  'Table': 'A client-side table with sorting, row clicks and row actions.',
+  'Data table': 'A server-fed table with search, filters, paging, bulk actions and inline editing.',
+  'Editable table': 'A table where every cell is an input, for data entry.',
+  'Chart': 'Line, bar, area, pie, donut and scatter charts, drawn as SVG or canvas.',
+  'Kanban': 'A board of columns with drag-and-drop cards and nested sub-tasks.',
+  'Object tree': 'Any JavaScript value as an expandable property tree.',
+  'Empty state': 'What to show when there is nothing to show, with an action.',
+  'Progress': 'A determinate or indeterminate bar or ring.',
+  'Spinner': 'An indeterminate loading indicator.',
+  'Skeleton': 'Grey placeholder shapes while content loads.',
+  'Stale banner': 'A warning that the data on screen came from the cache.',
+  'Toast item': 'One notification toast, with an optional Undo action.',
+  'Sync status': 'How many offline changes are still waiting to be sent.',
+  'Dialogs (imperative helpers)': 'confirm, prompt, alert, choose, busy and notify as awaitable functions — no markup.',
+  'Breadcrumb': 'Where you are, as a trail of links.',
+  'Tree menu': 'A nested menu with expand, collapse and keyboard navigation.',
+  'Sidebar': 'Side navigation that collapses to a narrow rail.',
+  'Mobile app shell': 'A phone layout: top bar, content and bottom navigation, from birko-web-shell.',
+  'Ribbon': 'An Office-style ribbon: tabs, groups, menus, toggles and a Quick Access Toolbar. The header above is one.',
+  'Command palette': 'Ctrl+K search over commands from pluggable providers.',
+  // ── lab ──
+  'Help text — the `description` row': 'Checks the help-text row under inputs: announced, beside an error, wrapping, legible.',
+  'Page tour button (BasePage)': 'Checks that a birko-web-shell page with tour steps shows a ? beside its title.',
+  'Grid benchmark — raw vs bare cells': 'Times building and editing a large grid of raw versus bare inputs.',
+  'Device utils (wake lock / audio cue / SW)': 'Probes the device helpers: screen wake lock, an audio cue and the service worker.',
+};
+
+function aboutOf(def: ComponentDef): string {
+  return def.about ?? ABOUT[def.label] ?? '';
+}
+
+// ── Component reference (the ⓘ tooltip) ─────────────────────────────────────
+// Generated by build.js from Birko.Web.Components/README.md and API.md, so it cannot drift from the library.
+interface ComponentDoc { summary?: string; attributes?: string[]; methods?: string[]; events?: string[]; slots?: string }
+import COMPONENT_DOCS from 'pg:component-docs';
+const DOCS = COMPONENT_DOCS as Record<string, ComponentDoc>;
+
+const API_URL = 'https://github.com/Birko-Framework/Birko.Web/blob/main/Birko.Web.Components/API.md';
+
+function escapeHtml(s: string): string {
+  return s.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]!));
+}
+
+// Up to `max` names, then "+N more" — a tooltip that lists 26 attributes is a page, not a hint.
+function listOf(names: string[] | undefined, max = 8): string {
+  if (!names?.length) return '';
+  const shown = names.slice(0, max).map((n) => `<code>${escapeHtml(n)}</code>`).join(', ');
+  return names.length > max ? `${shown} <em>+${names.length - max} more</em>` : shown;
+}
+
+/** Markup for a card's ⓘ tooltip, and the same facts as plain text for its aria-description. */
+function infoFor(def: ComponentDef): { html: string; text: string } {
+  const doc = def.tag.startsWith('b-') ? DOCS[def.tag] : undefined;
+  const lead = aboutOf(def);
+  const rows: [string, string][] = [];
+  if (doc?.summary && doc.summary !== lead) rows.push(['From the docs', escapeHtml(doc.summary)]);
+  if (doc?.attributes?.length) rows.push(['Attributes', listOf(doc.attributes)]);
+  if (doc?.methods?.length) rows.push(['Methods', listOf(doc.methods)]);
+  if (doc?.events?.length) rows.push(['Events', listOf(doc.events)]);
+  if (doc?.slots) rows.push(['Slots', escapeHtml(doc.slots)]);
+  // A pg-* entry is the playground's own markup: it has no API to list, and its `note` (shown on the card already) is
+  // written for the library's maintainers.
+  if (!doc) rows.push(['Source', 'built for this playground, in <code>src/app.ts</code>']);
+  const html = `<strong>&lt;${escapeHtml(def.tag)}&gt;</strong><br>${escapeHtml(lead)}`
+    + rows.map(([k, v]) => `<br><span class="pg-tip-k">${k}:</span> ${v}`).join('');
+  const text = [lead, ...rows.map(([k, v]) => `${k}: ${v.replace(/<[^>]+>/g, '')}`)].join('. ');
+  return { html, text };
+}
 
 // ── Theme switch ─────────────────────────────────────────────────────────────
 // The shipped themes are linked in index.html and each activates on a `data-theme` value on <html>
@@ -739,53 +887,31 @@ function el<K extends keyof HTMLElementTagNameMap>(tag: K, cls?: string, html?: 
 
 function renderApp(root: HTMLElement): void {
   root.innerHTML = `
+    <!-- The header is a b-ribbon, dogfooded: the playground's own commands are the best live demo of it. Tabs are
+         grouped by task (FEATURE decision 2026-10-28): Gallery picks a category, Appearance holds theme / locale /
+         tokens / CSS export, Lab holds the test harnesses, Help the intro and the docs. Every command carries a
+         description, which the ribbon shows as its tooltip. -->
     <header class="pg-header">
-      <div class="pg-brand">
-        <strong>Birko.Web Playground</strong>
-        <span class="pg-sub">component gallery · live token editor</span>
-      </div>
-      <b-segmented id="pg-nav" class="pg-nav"></b-segmented>
-      <div class="pg-themes" title="The global i18n locale (getI18n().setLocale). Components re-render and format numbers in it — e.g. b-qty-stepper shows 1,5 under cs / sk (TASK-548).">
-        <span class="pg-themes-label">Locale</span>
-        <b-segmented id="pg-locale" label="Locale"></b-segmented>
-      </div>
-      <div class="pg-themes" title="Every shipped theme, applied to the whole gallery via data-theme on <html>. Inverse is a partial theme (surfaces only) meant for scoped regions.">
-        <span class="pg-themes-label">Theme</span>
-        <b-segmented id="pg-theme" label="Theme"></b-segmented>
-      </div>
-      <div class="pg-actions">
-        <b-button id="open-tokens" size="sm">🎨 Design tokens</b-button>
-        <b-button id="open-export" size="sm" variant="primary">Generate CSS</b-button>
-      </div>
+      <!-- collapse-shortcut / keytip-shortcut off: both are page-wide keys, and the Ribbon card in the gallery is the
+           one demonstrating them — a second ribbon answering Ctrl+F1 and Alt+Win would take them over. -->
+      <b-ribbon id="pg-ribbon" pinned label-ribbon="Playground" collapse-shortcut="none" keytip-shortcut="none">
+        <a slot="before-tabs" class="pg-brand" href="./" aria-label="Birko.Web Playground, home">
+          <span class="pg-logo" aria-hidden="true">B</span>
+          <span class="pg-brand-text"><strong>Birko.Web</strong><span class="pg-sub">Playground</span></span>
+        </a>
+      </b-ribbon>
     </header>
     <main class="pg-main">
-      <!-- Published at https://birko-framework.github.io/Birko.Web.Playground/, so most people who
-           open this have never seen Birko.Web and arrive with no context: the gallery alone looks
-           like a component dump. This says what they are looking at and where to get it, in the
-           three sentences somebody will actually read. Dismissed state is per-browser and
-           deliberately NOT synced anywhere — a returning developer should not see it, a first-time
-           visitor always should. -->
-      <section id="pg-intro" class="pg-intro" hidden>
-        <div class="pg-intro-body">
-          <h1 class="pg-intro-title">Birko.Web — the component library, running</h1>
-          <p class="pg-intro-text">
-            Every <code>b-*</code> component below is the real thing, built from source: flip its
-            attributes and watch the live instance react. <strong>Design tokens</strong> opens the
-            <code>--b-*</code> set and restyles the whole gallery as you edit; <strong>Generate
-            CSS</strong> hands you a paste-ready theme file from whatever you changed.
-          </p>
-          <p class="pg-intro-text pg-intro-muted">
-            Framework-agnostic custom elements — no build step required to consume them, and no
-            runtime dependency to take on.
-          </p>
-          <div class="pg-intro-links">
-            <a class="pg-intro-link" href="https://github.com/Birko-Framework/Birko.Web">Birko.Web source</a>
-            <a class="pg-intro-link" href="https://github.com/Birko-Framework/Birko.Framework/wiki/Web-UI">Usage guide</a>
-            <a class="pg-intro-link" href="https://github.com/Birko-Framework/Birko.Web.Playground">This playground</a>
-          </div>
-        </div>
-        <button id="pg-intro-close" class="pg-intro-close" aria-label="Dismiss introduction">&times;</button>
-      </section>
+      <!-- Published at https://birko-framework.github.io/Birko.Web.Playground/, so most people who open this have
+           never seen Birko.Web and arrive with no context. The introduction lives in Help → About (the #pg-about
+           modal below), not above the gallery, where it pushed every component down on every visit (decision
+           2026-10-28). A first-time visitor gets this one line pointing at it; dismissing it is per-browser and
+           deliberately NOT synced — a returning developer should not see it, a first-time visitor always should. -->
+      <div id="pg-hint" class="pg-hint" role="note" hidden>
+        <span class="pg-hint-text">ℹ New here? Every card is a live <code>b-*</code> component — hover ⓘ for its API.</span>
+        <button id="pg-hint-about" class="pg-hint-link" type="button">About this playground</button>
+        <button id="pg-hint-close" class="pg-hint-close" type="button" aria-label="Dismiss the hint">&times;</button>
+      </div>
       <div id="pg-gallery" class="pg-gallery"></div>
     </main>
 
@@ -810,20 +936,188 @@ function renderApp(root: HTMLElement): void {
         <b-button id="copy-btn" size="sm">Copy</b-button>
         <b-button id="download-btn" size="sm">Download .css</b-button>
       </div>
+    </b-modal>
+
+    <b-modal id="pg-about" title="Birko.Web — the component library, running">
+      <div class="pg-about">
+        <p>
+          Every <code>b-*</code> component in the gallery is the real thing, built from source: flip its attributes
+          with the selects under it and watch the live instance react. The line under each name says what it is;
+          <strong>ⓘ</strong> lists its attributes, methods and events, straight from the library's API reference.
+        </p>
+        <p>
+          <strong>Appearance → Design tokens</strong> opens the <code>--b-*</code> set and restyles the whole gallery
+          as you edit; <strong>Generate CSS</strong> hands you a paste-ready theme file from whatever you changed.
+          The <strong>Lab</strong> tab holds the test harnesses used to verify the library.
+        </p>
+        <p class="pg-about-muted">
+          Framework-agnostic custom elements — no build step required to consume them, and no runtime dependency to
+          take on.
+        </p>
+        <div class="pg-about-links">
+          <a href="https://github.com/Birko-Framework/Birko.Web" target="_blank" rel="noopener">Birko.Web source</a>
+          <a href="${API_URL}" target="_blank" rel="noopener">Component API</a>
+          <a href="https://github.com/Birko-Framework/Birko.Framework/wiki/Web-UI" target="_blank" rel="noopener">Usage guide</a>
+          <a href="https://github.com/Birko-Framework/Birko.Web.Playground" target="_blank" rel="noopener">This playground</a>
+        </div>
+      </div>
+      <div slot="footer" class="pg-modal-foot">
+        <b-button id="pg-about-tour" size="sm" variant="secondary">🧭 Take the tour</b-button>
+        <b-button id="pg-about-close" size="sm" variant="primary">Start exploring</b-button>
+      </div>
     </b-modal>`;
   injectStyles();
-  requestAnimationFrame(() => bindThemeSwitcher(root.querySelector<Seg>('#pg-theme')));
-  requestAnimationFrame(() => {
-    const seg = root.querySelector<Seg>('#pg-locale');
-    if (!seg) return;
-    seg.setOptions([{ value: 'en', label: 'EN' }, { value: 'cs', label: 'CS' }, { value: 'sk', label: 'SK' }]);
-    seg.value = getI18n().locale;
-    // No locale bundles are served here, so only number/date formatting changes; labels stay English.
-    seg.addEventListener('change', (e) => { void getI18n().setLocale((e as CustomEvent<{ value?: string }>).detail?.value ?? 'en'); });
-  });
-  setupGallery(root);
+  const gallery = setupGallery(root);
+  setupRibbon(root, gallery);
+  setupAbout(root);
   void initTokenEditor(root);
   reportMissing();
+}
+
+// ── Ribbon header ────────────────────────────────────────────────────────────
+// Every command the old header had, plus the docs, as ribbon commands. The app listens to the ribbon's own
+// `item-click` / `item-change` / `tab-change`, which is also what verify.mjs and subpath-check.mjs dispatch — so the
+// checks drive the same listener a click does, not a side door.
+type Ribbon = HTMLElement & {
+  setTabs(tabs: unknown[]): void;
+  setPressed(itemId: string, pressed: boolean, tabId?: string): void;
+};
+
+const THEME_ABOUT: Record<string, string> = {
+  light: 'The base theme — tokens.css with no override.',
+  dark: 'Dark surfaces for low light.',
+  neon: 'A high-contrast dark theme with saturated accents.',
+  finstat: 'A branded theme: the tokens a product would ship.',
+  inverse: 'A partial theme (surfaces only) for scoped regions such as a dark header on a light page.',
+};
+
+const LOCALES = [{ value: 'en', label: 'EN' }, { value: 'cs', label: 'CS' }, { value: 'sk', label: 'SK' }];
+
+const HELP_LINKS: Record<string, { label: string; url: string; icon: string; about: string }> = {
+  'doc:source': { label: 'Birko.Web source', icon: '⌥', url: 'https://github.com/Birko-Framework/Birko.Web', about: 'The library on GitHub: Core, Components and Shell.' },
+  'doc:api': { label: 'Component API', icon: '📘', url: API_URL, about: 'Every attribute, method and event of every b-* component.' },
+  'doc:guide': { label: 'Usage guide', icon: '📖', url: 'https://github.com/Birko-Framework/Birko.Framework/wiki/Web-UI', about: 'How to use Birko.Web in an app, on the framework wiki.' },
+  'doc:repo': { label: 'This playground', icon: '⚙', url: 'https://github.com/Birko-Framework/Birko.Web.Playground', about: 'The source of this page and its verification scripts.' },
+};
+
+function setupRibbon(root: HTMLElement, gallery: Gallery): void {
+  const ribbon = root.querySelector<Ribbon>('#pg-ribbon');
+  if (!ribbon) return;
+  const shownCats = gallery.cats.filter((c) => c !== 'lab');
+  const labCount = registeredInCategory('lab').length;
+
+  const build = (): void => ribbon.setTabs([
+    { id: 'gallery', label: 'Gallery', groups: [
+      { id: 'category', label: 'Category', items: shownCats.map((c) => ({
+        id: `cat:${c}`, label: `${CATEGORY_LABELS[c] ?? c} (${registeredInCategory(c).length})`, icon: CATEGORY_ICONS[c],
+        toggle: true, toggleGroup: 'cat', pressed: c === gallery.current(), description: CATEGORY_ABOUT[c] })) },
+      { id: 'find', label: 'Find', items: [
+        { id: 'filter', label: 'Filter', field: { type: 'text', value: '', width: 16, caption: 'beside' },
+          description: 'Show only the cards whose name, tag or description contains this text. Enter applies it.' },
+        { id: 'filter-clear', label: 'Clear', icon: '✕', description: 'Show every card again.' },
+      ] },
+    ] },
+    { id: 'appearance', label: 'Appearance', groups: [
+      { id: 'theme', label: 'Theme', items: PG_THEMES.map((t) => ({
+        id: `theme:${t.value}`, label: t.label.replace(/^\S+\s/, ''), icon: t.label.split(' ')[0],
+        toggle: true, toggleGroup: 'theme', pressed: t.value === activeTheme(), description: THEME_ABOUT[t.value] })) },
+      { id: 'locale', label: 'Locale', items: LOCALES.map((l) => ({
+        id: `locale:${l.value}`, label: l.label, toggle: true, toggleGroup: 'locale', pressed: l.value === getI18n().locale,
+        description: 'Components re-render and format numbers and dates in this locale (b-qty-stepper shows 1,5 under CS and SK).' })) },
+      { id: 'design', label: 'Design', items: [
+        { id: 'tokens', label: 'Design tokens', icon: '🎨',
+          description: 'Edit the --b-* tokens; the whole gallery restyles as you type.' },
+        { id: 'export', label: 'Generate CSS', icon: '⤓',
+          description: 'A paste-ready theme file from whatever tokens you changed.' },
+      ] },
+    ] },
+    { id: 'lab', label: 'Lab', groups: [
+      { id: 'harnesses', label: 'Test harnesses', items: [
+        { id: 'cat:lab', label: `Harnesses (${labCount})`, icon: '⚗',
+          description: CATEGORY_ABOUT.lab },
+        { id: 'smoke', label: 'Run smoke suites', icon: '▶',
+          description: 'Opens the page with every in-page smoke suite running (what verify.mjs loads); results are in the console.' },
+      ] },
+    ] },
+    { id: 'help', label: 'Help', groups: [
+      { id: 'start', label: 'Start', items: [
+        { id: 'about', label: 'About', icon: 'ℹ', description: 'What this page is and how to use it.' },
+        { id: 'tour', label: 'Tour', icon: '🧭', description: 'A three-step tour of the playground.' },
+      ] },
+      { id: 'docs', label: 'Documentation', items: Object.entries(HELP_LINKS).map(([id, l]) => ({
+        id, label: l.label, icon: l.icon, description: l.about })) },
+    ] },
+  ]);
+  requestAnimationFrame(build);
+
+  ribbon.addEventListener('item-click', (e) => {
+    const id = (e as CustomEvent<{ itemId?: string }>).detail?.itemId ?? '';
+    if (id.startsWith('cat:')) {
+      gallery.show(id.slice(4));
+      if (id !== 'cat:lab') ribbon.setPressed(id, true, 'gallery');
+    } else if (id.startsWith('theme:')) setTheme(id.slice(6));
+    // No locale bundles beyond the partial cs / sk ones, so mostly number and date formatting changes.
+    else if (id.startsWith('locale:')) void getI18n().setLocale(id.slice(7));
+    else if (id === 'tokens') root.dispatchEvent(new CustomEvent('pg-open-tokens'));
+    else if (id === 'export') root.dispatchEvent(new CustomEvent('pg-open-export'));
+    else if (id === 'filter-clear') gallery.filter('');
+    else if (id === 'smoke') window.open('?smoke=1', '_blank', 'noopener');
+    else if (id === 'about') openAbout(root);
+    else if (id === 'tour') startPlaygroundTour();
+    else if (HELP_LINKS[id]) window.open(HELP_LINKS[id].url, '_blank', 'noopener');
+  });
+  ribbon.addEventListener('item-change', (e) => {
+    const d = (e as CustomEvent<{ itemId?: string; value?: string }>).detail;
+    if (d?.itemId === 'filter') gallery.filter(d.value ?? '');
+  });
+  // Opening the Lab tab shows the harnesses; going back to Gallery shows the category it left.
+  ribbon.addEventListener('tab-change', (e) => {
+    const tab = (e as CustomEvent<{ tab?: string | { id?: string } }>).detail?.tab;
+    const id = typeof tab === 'string' ? tab : tab?.id;
+    if (id === 'lab') gallery.show('lab');
+    else if (id === 'gallery') gallery.show(gallery.lastCategory());
+  });
+  onThemeChange((t) => ribbon.setPressed(`theme:${t}`, true, 'appearance'));
+}
+
+// ── About + first-visit hint ─────────────────────────────────────────────────
+// The introduction is the Help → About dialog. A first-time visitor gets one line under the ribbon pointing at it,
+// rendered `hidden` and revealed here rather than the reverse, so a browser with storage disabled (the read throws)
+// gets the line rather than a flash of it disappearing. The key keeps its old name, so a visitor who dismissed the old
+// intro panel is not shown the hint again.
+const HINT_KEY = 'pg-intro-dismissed';
+
+function openAbout(root: HTMLElement): void {
+  root.querySelector<HTMLElement & { open?: () => void }>('#pg-about')?.open?.();
+}
+
+function setupAbout(root: HTMLElement): void {
+  const hint = root.querySelector<HTMLElement>('#pg-hint');
+  const modal = root.querySelector<HTMLElement & { close?: () => void }>('#pg-about');
+  let dismissed = false;
+  try { dismissed = localStorage.getItem(HINT_KEY) === '1'; } catch { /* storage disabled */ }
+  if (hint && !dismissed) hint.hidden = false;
+  const dismiss = (): void => {
+    if (hint) hint.hidden = true;
+    try { localStorage.setItem(HINT_KEY, '1'); } catch { /* storage disabled: it comes back next load */ }
+  };
+  root.querySelector('#pg-hint-close')?.addEventListener('click', dismiss);
+  // Reading the About is what the hint asks for, so it also retires the hint.
+  root.querySelector('#pg-hint-about')?.addEventListener('click', () => { dismiss(); openAbout(root); });
+  root.querySelector('#pg-about-close')?.addEventListener('click', () => modal?.close?.());
+  root.querySelector('#pg-about-tour')?.addEventListener('click', () => { modal?.close?.(); startPlaygroundTour(); });
+}
+
+// The playground's own tour, from Help → Tour. Targets are light-DOM elements: a ribbon command lives in the
+// ribbon's shadow root, which a selector cannot reach.
+function startPlaygroundTour(): void {
+  // `once: false`: asked for from Help, so it replays every time rather than only on a first visit.
+  // The card targets are scoped to the shown section: the hidden ones come first in the DOM.
+  tour.start([
+    { target: '#pg-ribbon', title: 'The ribbon', body: 'Gallery picks a category, Appearance changes the theme and tokens, Lab holds the test harnesses, Help the docs.', placement: 'bottom' },
+    { target: '#pg-gallery .pg-grid[data-active] .pg-item', title: 'A live component', body: 'Each card is the real component. The line under its name says what it is; ⓘ lists its attributes, methods and events.', placement: 'bottom' },
+    { target: '#pg-gallery .pg-grid[data-active] .pg-controls', title: 'Try it', body: 'These selects flip the component\u2019s attributes live.', placement: 'top' },
+  ], { id: 'pg-playground-tour', once: false });
 }
 
 // ── Gallery ──────────────────────────────────────────────────────────────────
@@ -838,6 +1132,13 @@ function buildSection(sec: HTMLElement, cat: string): void {
   sec.dataset.populated = '1';
   const entries = registeredInCategory(cat);
   if (!entries.length) { sec.appendChild(el('div', 'pg-note', 'No registered components in this section.')); return; }
+  // The Lab says what it is before its first card: these exist to verify the library, not to be shipped.
+  if (cat === 'lab') {
+    sec.appendChild(el('div', 'pg-lab-banner',
+      '<strong>⚗ Lab — test harnesses, not components.</strong> These cards exist to verify Birko.Web: a benchmark, '
+      + 'device probes and wiring checks that the automated suites and the human test plans drive. Nothing here is '
+      + 'something you would put in an app.'));
+  }
   for (const def of entries) {
     try { sec.appendChild(renderItem(def)); }
     catch (e) { console.warn(`[playground] failed to render ${def.tag}:`, (e as Error).message); }
@@ -845,13 +1146,24 @@ function buildSection(sec: HTMLElement, cat: string): void {
   console.info(`[playground] section "${cat}" — ${entries.length} components`);
 }
 
-// b-segmented is the section switcher (emits change {value}); content lives in the body grids, not
-// in tabs/panels — b-tabs hard-couples its strip to its panels, so the strip can't sit in the header.
-function setupGallery(root: HTMLElement): void {
-  const nav = root.querySelector<HTMLElement & { setOptions?: (o: unknown[]) => void }>('#pg-nav');
-  const gallery = root.querySelector<HTMLElement>('#pg-gallery');
-  if (!nav || !gallery) return;
+/** The gallery as the ribbon drives it: which section shows, and the Find filter over its cards. */
+interface Gallery {
+  cats: string[];
+  show(cat: string): void;
+  filter(query: string): void;
+  current(): string;
+  /** The last component category shown — what the Gallery tab returns to after the Lab. */
+  lastCategory(): string;
+}
+
+// The sections live in the body grids, not in tabs/panels — b-tabs hard-couples its strip to its panels, so the
+// strip cannot sit in the header. The ribbon (setupRibbon) is the switcher.
+function setupGallery(root: HTMLElement): Gallery {
+  const gallery = root.querySelector<HTMLElement>('#pg-gallery')!;
   const cats = [...new Set(CATALOGUE.map((d) => d.category))].filter((c) => registeredInCategory(c).length > 0);
+  let current = cats.find((c) => c !== 'lab') ?? '';
+  let lastCategory = current;
+  let query = '';
 
   const sections = new Map<string, HTMLElement>();
   for (const c of cats) {
@@ -861,24 +1173,69 @@ function setupGallery(root: HTMLElement): void {
     sections.set(c, sec);
     gallery.appendChild(sec);
   }
+  const empty = el('div', 'pg-filter-empty');
+  empty.hidden = true;
+  gallery.appendChild(empty);
 
-  const show = (cat: string): void => {
-    for (const [c, sec] of sections) sec.style.display = c === cat ? '' : 'none';
-    buildSection(sections.get(cat)!, cat);
+  const applyFilter = (): void => {
+    const sec = sections.get(current);
+    if (!sec) return;
+    const q = query.trim().toLowerCase();
+    let shown = 0;
+    for (const card of sec.querySelectorAll<HTMLElement>(':scope > .pg-item')) {
+      const hit = !q || (card.dataset.search ?? '').includes(q);
+      card.hidden = !hit;
+      if (hit) shown++;
+    }
+    empty.hidden = !q || shown > 0;
+    empty.textContent = `Nothing in ${CATEGORY_LABELS[current] ?? current} matches “${query.trim()}”.`;
   };
 
-  if (cats[0]) nav.setAttribute('value', cats[0]);
-  requestAnimationFrame(() => nav.setOptions?.(cats.map((c) => ({ value: c, label: `${CATEGORY_LABELS[c] ?? c} (${registeredInCategory(c).length})` }))));
-  nav.addEventListener('change', (e: Event) => {
-    const cat = (e as CustomEvent<{ value?: string }>).detail?.value;
-    if (cat && sections.has(cat)) show(cat);
-  });
-  if (cats[0]) show(cats[0]);
+  const show = (cat: string): void => {
+    if (!sections.has(cat)) return;
+    current = cat;
+    if (cat !== 'lab') lastCategory = cat;
+    for (const [c, sec] of sections) {
+      const on = c === cat;
+      sec.style.display = on ? '' : 'none';
+      sec.toggleAttribute('data-active', on);
+    }
+    buildSection(sections.get(cat)!, cat);
+    applyFilter();
+  };
+
+  if (current) show(current);
+  return {
+    cats, show,
+    filter: (q) => { query = q; applyFilter(); },
+    current: () => current,
+    lastCategory: () => lastCategory,
+  };
 }
 
 function renderItem(def: ComponentDef): HTMLElement {
   const card = el('div', def.wide ? 'pg-item pg-item-wide' : 'pg-item');
-  card.appendChild(el('div', 'pg-item-label', `${def.label} <code>&lt;${def.tag}&gt;</code>`));
+  const about = aboutOf(def);
+  card.dataset.search = `${def.label} ${def.tag} ${about}`.toLowerCase();
+
+  // Title row: the name, the tag, and an ⓘ whose b-tooltip is the component's reference (README + API.md).
+  const head = el('div', 'pg-item-head');
+  head.appendChild(el('div', 'pg-item-label', `<span class="pg-item-name">${escapeHtml(def.label).replace(/`([^`]+)`/g, '<code>$1</code>')}</span> <code class="pg-item-tag">&lt;${def.tag}&gt;</code>`));
+  const info = infoFor(def);
+  const tip = document.createElement('b-tooltip');
+  tip.setAttribute('theme', 'light');
+  tip.setAttribute('position', 'left'); // the ⓘ sits at the card's right edge: opening leftward keeps it on screen
+  tip.setAttribute('text', info.html);
+  const infoBtn = document.createElement('button');
+  infoBtn.type = 'button';
+  infoBtn.className = 'pg-info';
+  infoBtn.textContent = 'ⓘ';
+  infoBtn.setAttribute('aria-label', `About ${def.label.replace(/`/g, '')}`);
+  infoBtn.setAttribute('aria-description', info.text);
+  tip.appendChild(infoBtn);
+  head.appendChild(tip);
+  card.appendChild(head);
+  if (about) card.appendChild(el('p', 'pg-item-about', escapeHtml(about)));
 
   const stage = el('div', 'pg-stage');
   const instance = document.createElement(def.tag);
@@ -943,6 +1300,9 @@ function applyControl(node: Element, attr: string, value: string): void {
 function reportMissing(): void {
   const missing = CATALOGUE.filter((d) => !customElements.get(d.tag)).map((d) => d.tag);
   if (missing.length) console.warn(`[playground] catalogue tags not registered: ${missing.join(', ')}`);
+  // A card without its description line is the "component dump" this page used to be.
+  const undescribed = CATALOGUE.filter((d) => !aboutOf(d)).map((d) => d.label);
+  if (undescribed.length) console.warn(`[playground] catalogue entries without an ABOUT line: ${undescribed.join(', ')}`);
 }
 
 // ── Token editor ─────────────────────────────────────────────────────────────
@@ -986,28 +1346,14 @@ async function initTokenEditor(root: HTMLElement): Promise<void> {
   mode?.addEventListener('change', (e) => { exportMode = (e as CustomEvent<{ value?: string }>).detail?.value ?? 'theme'; });
 
   // Tokens live in a drawer; build the accordion the first time it opens.
-  // The intro is shown unless this browser dismissed it before. Rendered `hidden` and revealed here
-  // rather than the reverse, so a browser with storage disabled — where the read throws — gets the
-  // banner rather than a flash of it disappearing, and a reader who has dismissed it never sees it
-  // appear at all.
-  const intro = root.querySelector<HTMLElement>('#pg-intro');
-  if (intro) {
-    let dismissed = false;
-    try { dismissed = localStorage.getItem('pg-intro-dismissed') === '1'; } catch { /* storage disabled */ }
-    if (!dismissed) intro.hidden = false;
-    root.querySelector('#pg-intro-close')?.addEventListener('click', () => {
-      intro.hidden = true;
-      try { localStorage.setItem('pg-intro-dismissed', '1'); } catch { /* storage disabled: it comes back next load */ }
-    });
-  }
-
-  root.querySelector('#open-tokens')?.addEventListener('click', () => {
+  // Opened from the ribbon's Appearance → Design commands (setupRibbon re-dispatches them on the root).
+  root.addEventListener('pg-open-tokens', () => {
     if (baseTokens.size && !tokensBuilt) buildTokenAccordion(listEl);
     drawer?.open?.();
   });
-  // Generate CSS lives in a modal; render the current export on open (from header or drawer footer).
+  // Generate CSS lives in a modal; render the current export on open (from the ribbon or the drawer footer).
   const openExport = (): void => { out.textContent = generateCss(exportMode); modal?.open?.(); };
-  root.querySelector('#open-export')?.addEventListener('click', openExport);
+  root.addEventListener('pg-open-export', openExport);
   root.querySelector('#open-export-2')?.addEventListener('click', openExport);
 
   root.querySelector('#token-filter')?.addEventListener('search', (e) => {
@@ -1180,28 +1526,33 @@ function injectStyles(): void {
   const s = document.createElement('style');
   s.id = 'pg-styles';
   s.textContent = `
-    .pg-intro { display:flex; gap:1rem; align-items:flex-start; margin:0 0 1rem; padding:1rem 1.1rem;
-      background:var(--b-bg,#fff); border:1px solid var(--b-border,#ddd); border-radius:var(--b-radius,8px); }
-    .pg-intro-title { margin:0 0 .45rem; font-size:1.05rem; }
-    .pg-intro-text { margin:0 0 .5rem; max-width:64ch; line-height:1.5; font-size:.88rem; }
-    .pg-intro-muted { color:var(--b-text-secondary,#888); }
-    .pg-intro code { background:var(--b-bg-secondary,#f3f3f3); padding:.05rem .3rem; border-radius:4px; font-size:.85em; }
-    .pg-intro-links { display:flex; flex-wrap:wrap; gap:.9rem; margin-top:.2rem; font-size:.85rem; }
-    .pg-intro-link { color:var(--b-primary,#3b82f6); text-decoration:none; }
-    .pg-intro-link:hover { text-decoration:underline; }
-    .pg-intro-close { flex:0 0 auto; background:none; border:0; font-size:1.4rem; line-height:1;
-      cursor:pointer; color:var(--b-text-secondary,#888); padding:0 .2rem; }
-    .pg-intro-close:hover { color:var(--b-text,#222); }
-    .pg-header { display:flex; align-items:center; gap:1rem; padding:.6rem 1rem; background:var(--b-bg,#fff); border-bottom:1px solid var(--b-border,#ddd); position:sticky; top:0; z-index:10; flex-wrap:wrap; }
-    .pg-brand { display:flex; flex-direction:column; line-height:1.2; }
-    .pg-sub { color:var(--b-text-secondary,#888); font-size:.78rem; }
-    .pg-nav { flex:1 1 auto; min-width:0; overflow-x:auto; }
-    /* May shrink and scroll sideways: under a coarse pointer the five 44px theme pills plus the label measured 419px,
-       wider than a 390px phone, and that one row made the whole page 433px wide. */
-    .pg-themes { display:flex; align-items:center; gap:.4rem; flex:0 1 auto; min-width:0; max-width:100%; overflow-x:auto; }
-    .pg-themes-label { font-size:.68rem; letter-spacing:.06em; text-transform:uppercase; color:var(--b-text-secondary,#888); }
-    .pg-actions { display:flex; gap:.4rem; margin-left:auto; }
-    .pg-main { padding:1.25rem; }
+    .pg-hint { display:flex; align-items:center; gap:.75rem; margin:0 0 1rem; padding:.5rem .85rem; font-size:.85rem;
+      background:var(--b-color-primary-light,#dbeafe); color:var(--b-text,#0f172a); border-radius:var(--b-radius,6px); }
+    .pg-hint[hidden] { display:none; }
+    .pg-hint code { font-size:.85em; }
+    .pg-hint-text { flex:1 1 auto; min-width:0; }
+    .pg-hint-link { flex:0 0 auto; background:none; border:0; padding:0; cursor:pointer; font:inherit; font-weight:600;
+      color:var(--b-color-primary,#2563eb); }
+    .pg-hint-link:hover { text-decoration:underline; }
+    .pg-hint-close { flex:0 0 auto; background:none; border:0; font-size:1.2rem; line-height:1; cursor:pointer;
+      color:var(--b-text-secondary,#64748b); padding:0 .2rem; }
+    .pg-about { font-size:.92rem; line-height:1.55; max-width:62ch; }
+    .pg-about p { margin:0 0 .75rem; }
+    .pg-about code { background:var(--b-bg-secondary,#f3f3f3); padding:.05rem .3rem; border-radius:4px; font-size:.85em; }
+    .pg-about-muted { color:var(--b-text-secondary,#64748b); }
+    .pg-about-links { display:flex; flex-wrap:wrap; gap:1rem; font-size:.88rem; }
+    .pg-about-links a { color:var(--b-color-primary,#2563eb); text-decoration:none; }
+    .pg-about-links a:hover { text-decoration:underline; }
+    /* The ribbon is the whole header; it owns its own height, scrolling and mobile menu. */
+    .pg-header { position:sticky; top:0; z-index:10; background:var(--b-bg,#fff); box-shadow:var(--b-shadow-sm,0 1px 2px rgba(0,0,0,.05)); }
+    .pg-header b-ribbon { display:block; }
+    .pg-brand { display:flex; align-items:center; gap:.5rem; padding:0 .75rem 0 .25rem; color:inherit; text-decoration:none; white-space:nowrap; }
+    .pg-logo { display:grid; place-items:center; width:1.6rem; height:1.6rem; border-radius:var(--b-radius,6px);
+      background:var(--b-color-primary,#2563eb); color:var(--b-text-inverse,#fff); font-weight:700; font-size:.9rem; }
+    .pg-brand-text { display:flex; flex-direction:column; line-height:1.1; }
+    .pg-brand-text strong { font-size:.9rem; }
+    .pg-sub { color:var(--b-text-secondary,#888); font-size:.7rem; }
+    .pg-main { padding:1.25rem; max-width:110rem; margin:0 auto; }
     .pg-gallery { min-width:0; }
     /* min(100%, 400px): a bare 400px minimum made every card 400px on a 390px phone, so the whole page overflowed
        sideways (433px) and anything sized in vw — the gallery zoom — no longer covered it (TASK-550 walkthrough). */
@@ -1212,8 +1563,25 @@ function injectStyles(): void {
        auto-fill, so the number of columns is not known here.
        (No backticks in this block -- these styles live in a template literal.) */
     .pg-item-wide { grid-column: 1 / -1; }
-    .pg-item { display:flex; flex-direction:column; background:var(--b-bg,#fff); border:1px solid var(--b-border,#ddd); border-radius:var(--b-radius,8px); padding:1rem; }
-    .pg-item-label { font-size:.8rem; color:var(--b-text-secondary,#888); margin-bottom:.6rem; }
+    .pg-item { display:flex; flex-direction:column; background:var(--b-bg,#fff); border:1px solid var(--b-border,#ddd);
+      border-radius:var(--b-radius-lg,10px); padding:1rem; box-shadow:var(--b-shadow-sm,none);
+      transition:border-color var(--b-transition,150ms), box-shadow var(--b-transition,150ms); }
+    .pg-item:hover { border-color:var(--b-border-hover,#cbd5e1); box-shadow:var(--b-shadow,0 1px 3px rgba(0,0,0,.1)); }
+    .pg-item[hidden] { display:none; }
+    .pg-item-head { display:flex; align-items:flex-start; justify-content:space-between; gap:.5rem; }
+    .pg-item-label { font-size:.8rem; color:var(--b-text-secondary,#888); min-width:0; }
+    .pg-item-name { font-size:.95rem; font-weight:600; color:var(--b-text,#0f172a); }
+    .pg-item-tag { font-size:.75rem; color:var(--b-color-primary,#2563eb); }
+    .pg-item-about { margin:.3rem 0 .75rem; font-size:.85rem; line-height:1.45; color:var(--b-text-secondary,#475569); }
+    .pg-info { flex:0 0 auto; width:1.6rem; height:1.6rem; border-radius:999px; border:1px solid var(--b-border,#ddd);
+      background:var(--b-bg,#fff); color:var(--b-text-secondary,#64748b); cursor:help; font-size:.9rem; line-height:1; }
+    .pg-info:hover, .pg-info:focus-visible { color:var(--b-color-primary,#2563eb); border-color:var(--b-color-primary,#2563eb); }
+    .pg-tip-k { font-weight:600; }
+    .pg-lab-banner { grid-column:1 / -1; padding:.85rem 1rem; border-radius:var(--b-radius-lg,10px); font-size:.88rem; line-height:1.5;
+      background:var(--b-color-warning-light,#fef3c7); color:var(--b-text,#0f172a);
+      border:1px dashed var(--b-color-warning,#d97706); }
+    .pg-grid[data-cat="lab"] .pg-item { border-style:dashed; }
+    .pg-filter-empty { padding:2rem; text-align:center; color:var(--b-text-secondary,#888); }
     .pg-stage { flex:1 1 auto; display:flex; flex-wrap:wrap; align-content:center; align-items:center; justify-content:center; gap:.75rem; min-height:200px; overflow:auto; padding:1.25rem; background:var(--b-bg-secondary,#fafafa); border-radius:var(--b-radius,6px); }
     .pg-stage > * { max-width:100%; }
     /* The ribbon's unpinned panel is an absolutely-positioned flyout that deliberately escapes the

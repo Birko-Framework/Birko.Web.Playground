@@ -32,12 +32,12 @@ await page.goto(`http://localhost:${port}/?smoke=1`, { waitUntil: 'networkidle0'
 await new Promise((r) => setTimeout(r, 600));
 
 const report = await page.evaluate(async () => {
-  const nav = document.querySelector('#pg-nav');
+  const nav = document.querySelector('#pg-ribbon'); // the header ribbon switches sections
   const gallery = document.querySelector('#pg-gallery');
   const sections = [...gallery.querySelectorAll(':scope > .pg-grid')];
-  // force every lazy section to populate (the app builds on the switcher's 'change')
+  // force every lazy section to populate (the app builds a section on the ribbon's category item-click)
   for (const sec of sections) {
-    nav.dispatchEvent(new CustomEvent('change', { detail: { value: sec.dataset.cat }, bubbles: true }));
+    nav.dispatchEvent(new CustomEvent('item-click', { detail: { itemId: `cat:${sec.dataset.cat}` } }));
   }
   await new Promise((r) => setTimeout(r, 400));
 
@@ -58,7 +58,8 @@ const report = await page.evaluate(async () => {
     }
   }
   // open the tokens drawer to build the accordion, then count groups
-  document.querySelector('#open-tokens')?.click();
+  // The Design tokens command lives in the ribbon's shadow root; its item-click is what the app listens to.
+  document.querySelector('#pg-ribbon')?.dispatchEvent(new CustomEvent('item-click', { detail: { tabId: 'appearance', groupId: 'design', itemId: 'tokens' } }));
   await new Promise((r) => setTimeout(r, 300));
   const groups = document.querySelectorAll('#token-list b-accordion > [slot]').length;
 

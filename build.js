@@ -10,6 +10,7 @@ import { existsSync, mkdirSync, copyFileSync, readdirSync, unlinkSync, writeFile
 import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { resolveBirkoWeb, birkoAliases } from './birko-src.mjs';
+import { componentDocsPlugin } from './component-docs.mjs';
 
 const BIRKO_SRC = resolveBirkoWeb();
 const WATCH = process.argv.includes('--watch');
@@ -46,6 +47,8 @@ const options = {
   alias: aliases,
   loader: { '.ts': 'ts', '.css': 'text' },
   logLevel: 'info',
+  // `pg:component-docs` — the cards' ⓘ reference, parsed from Birko.Web.Components' README.md and API.md.
+  plugins: [componentDocsPlugin(BIRKO_SRC)],
 };
 
 // PWA: a minimal manifest + icon so the playground is installable and its service worker (below,
@@ -93,7 +96,7 @@ copyFileSync('index.html', 'wwwroot/index.html'); // wwwroot is the self-contain
 copyFileSync('nojs.html', 'wwwroot/nojs.html'); // TASK-549/550 — server-rendered carousel / gallery markup for the no-JS check
 writePwaAssets();
 if (WATCH) {
-  options.plugins = [serviceWorkerPlugin(swOptions)]; // re-stamp the SW after every rebuild
+  options.plugins = [...options.plugins, serviceWorkerPlugin(swOptions)]; // re-stamp the SW after every rebuild
   const ctx = await esbuild.context(options);
   await ctx.watch();
   console.log(`watching src/ … (BIRKO_SRC=${BIRKO_SRC})`);

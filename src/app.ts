@@ -993,6 +993,23 @@ const THEME_ABOUT: Record<string, string> = {
 
 const LOCALES = [{ value: 'en', label: 'EN' }, { value: 'cs', label: 'CS' }, { value: 'sk', label: 'SK' }];
 
+// The pick survives a reload, as the theme does (`pg-theme`). Saved only by the ribbon's click, not through I18n's own
+// `storageKey`: the smoke suites switch the shared I18n's locale, and Lab → Run smoke suites in a visitor's browser
+// would otherwise change their language for good.
+const LOCALE_KEY = 'pg-locale';
+
+function savedLocale(): string | null {
+  try {
+    const v = localStorage.getItem(LOCALE_KEY);
+    return v && LOCALES.some((l) => l.value === v) ? v : null;
+  } catch { return null; /* storage disabled — English, as before */ }
+}
+
+function pickLocale(id: string): void {
+  try { localStorage.setItem(LOCALE_KEY, id); } catch { /* storage disabled — the switch still works */ }
+  void getI18n().setLocale(id);
+}
+
 const HELP_LINKS: Record<string, { label: string; url: string; icon: string; about: string }> = {
   'doc:source': { label: 'Birko.Web source', icon: '⌥', url: 'https://github.com/Birko-Framework/Birko.Web', about: 'The library on GitHub: Core, Components and Shell.' },
   'doc:api': { label: 'Component API', icon: '📘', url: API_URL, about: 'Every attribute, method and event of every b-* component.' },
@@ -1022,7 +1039,7 @@ function setupRibbon(root: HTMLElement, gallery: Gallery): void {
         id: `theme:${t.value}`, label: t.label.replace(/^\S+\s/, ''), icon: t.label.split(' ')[0],
         toggle: true, toggleGroup: 'theme', pressed: t.value === activeTheme(), description: THEME_ABOUT[t.value] })) },
       { id: 'locale', label: 'Locale', items: LOCALES.map((l) => ({
-        id: `locale:${l.value}`, label: l.label, toggle: true, toggleGroup: 'locale', pressed: l.value === getI18n().locale,
+        id: `locale:${l.value}`, label: l.label, toggle: true, toggleGroup: 'locale', pressed: l.value === (bootLocale ?? getI18n().locale),
         description: 'Components re-render and format numbers and dates in this locale (b-qty-stepper shows 1,5 under CS and SK).' })) },
       { id: 'design', label: 'Design', items: [
         { id: 'tokens', label: 'Design tokens', icon: '🎨',
@@ -1057,7 +1074,7 @@ function setupRibbon(root: HTMLElement, gallery: Gallery): void {
       if (id !== 'cat:lab') ribbon.setPressed(id, true, 'gallery');
     } else if (id.startsWith('theme:')) setTheme(id.slice(6));
     // No locale bundles beyond the partial cs / sk ones, so mostly number and date formatting changes.
-    else if (id.startsWith('locale:')) void getI18n().setLocale(id.slice(7));
+    else if (id.startsWith('locale:')) pickLocale(id.slice(7));
     else if (id === 'tokens') root.dispatchEvent(new CustomEvent('pg-open-tokens'));
     else if (id === 'export') root.dispatchEvent(new CustomEvent('pg-open-export'));
     else if (id === 'filter-clear') gallery.filter('');
@@ -1622,4 +1639,8 @@ function injectStyles(): void {
 
 // ── Boot ─────────────────────────────────────────────────────────────────────
 const app = document.getElementById('app');
+// The visitor's saved locale — not under ?smoke / ?kb, whose suites assert English labels and formatting.
+const bootParams = new URLSearchParams(location.search);
+const bootLocale = bootParams.has('smoke') || bootParams.has('kb') ? null : savedLocale();
+if (bootLocale && bootLocale !== getI18n().locale) void getI18n().setLocale(bootLocale);
 if (app) renderApp(app);

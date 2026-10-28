@@ -44,6 +44,9 @@ harness). Created in TASK-038 (EPIC-013 reference consumers).
   `.pg-grid`, so verify.mjs renders and counts it like any section.
 - **The introduction is Help → About** (`#pg-about`, a `b-modal`), not a panel above the gallery. A first visit gets
   one dismissible line (`#pg-hint`); its dismissal keeps the old `pg-intro-dismissed` key.
+- **The locale pick persists under `pg-locale`**, written only by the ribbon's Locale click (`pickLocale`) and
+  re-applied at boot — except under `?smoke` / `?kb`, whose suites assert English. Not via I18n's own `storageKey`:
+  the smoke suites switch the shared I18n's locale, so Lab → Run smoke suites would change a visitor's language.
 - The token editor parses `wwwroot/css/tokens.css` at runtime so the editable token list stays in sync with the framework automatically.
 - **One setter owns `data-theme`.** The ribbon's theme set, the description-card switcher and anything else
   added later bind via `bindThemeSwitcher()` / `onThemeChange()` in `app.ts` — never by reading or writing

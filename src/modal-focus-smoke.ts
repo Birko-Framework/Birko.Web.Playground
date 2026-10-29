@@ -133,6 +133,8 @@ void (async () => {
     check(`unexpected throw: ${(e as Error).message}`, false);
   }
   host.remove();
+  // toast-modal-smoke opens modals of its own and waits for this.
+  (window as unknown as Record<string, boolean>).__modalFocusSmokeDone = true;
 
   const passed = results.filter((r) => r.startsWith('PASS')).length;
   console.log(`[playground] modal-focus-smoke: ${passed}/${results.length} passed`);

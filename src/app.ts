@@ -84,6 +84,8 @@ if (new URLSearchParams(location.search).has('smoke')) {
   if (runs('diff-vectors-smoke')) void import('./diff-vectors-smoke.js');
   // Birko TASK-784 — the tree views keep a value's spaces (b-object-tree, b-xml-viewer, b-json-diff).
   if (runs('whitespace-smoke')) void import('./whitespace-smoke.js');
+  // Birko TASK-786 — a toast raised while a modal is open is on top of it and clickable, and back on <body> after.
+  if (runs('toast-modal-smoke')) void import('./toast-modal-smoke.js');
   // STORY-023 / TASK-035 — ElementInternals form association.
   if (runs('form-assoc-smoke')) void import('./form-assoc-smoke.js');
   // EPIC-001 — the `description` help-text row.
@@ -549,7 +551,11 @@ const CATALOGUE: ComponentDef[] = [
     render: () => '<b-button slot="trigger">Actions ▾</b-button>',
     setup: (el) => el.setItems([{ id: 'edit', label: 'Edit', icon: '✏️' }, { id: 'dup', label: 'Duplicate', icon: '📋' }, { id: 'sep', label: '', divider: true }, { id: 'del', label: 'Delete', icon: '🗑️', variant: 'danger' }]) },
   { tag: 'b-modal', label: 'Modal', category: 'layout', attrs: { title: 'Example modal' },
-    render: () => '<p>Modal body content goes here.</p><b-button slot="footer" variant="primary">OK</b-button>',
+    render: () => '<p>Modal body content goes here.</p><b-button slot="footer" class="pg-modal-toast">Show a toast</b-button><b-button slot="footer" variant="primary">OK</b-button>',
+    // Birko TASK-786's human test: a toast raised from inside the open modal is on top of it, and its action clicks.
+    setup: (el) => el.querySelector('.pg-modal-toast')?.addEventListener('click', () =>
+      BirkoWebComponents.toast.show('Raised from inside the modal', 'error', undefined,
+        { action: { label: 'Retry', onClick: () => BirkoWebComponents.toast.success('Retry clicked') } })),
     controls: [MODAL_SIZE],
     launch: { label: 'Open modal', run: (el) => el.open() } },
   { tag: 'b-drawer', label: 'Drawer', category: 'layout', attrs: { title: 'Example drawer' },

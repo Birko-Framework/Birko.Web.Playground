@@ -285,6 +285,8 @@ void (async () => {
   }
   host.remove();
   clearToasts();
+  // toast-modal-smoke opens a modal, which takes the toast container out of reach of the #b-toast-system query above.
+  (window as unknown as Record<string, boolean>).__undoDeleteSmokeDone = true;
 
   const passed = results.filter((r) => r.startsWith('PASS')).length;
   console.log(`[playground] undo-delete-smoke: ${passed}/${results.length} passed`);

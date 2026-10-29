@@ -291,6 +291,8 @@ void (async () => {
     check(`unexpected throw: ${(e as Error).message}`, false);
   }
   host.remove();
+  // bulk-bar-smoke moves focus and opens a confirm dialog; it waits for this suite.
+  (window as unknown as Record<string, boolean>).__sortableSmokeDone = true;
 
   const passed = results.filter((r) => r.startsWith('PASS')).length;
   console.log(`[playground] sortable-smoke: ${passed}/${results.length} passed`);

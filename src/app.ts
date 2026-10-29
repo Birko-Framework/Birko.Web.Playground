@@ -88,6 +88,8 @@ if (new URLSearchParams(location.search).has('smoke')) {
   if (runs('toast-modal-smoke')) void import('./toast-modal-smoke.js');
   // Birko TASK-787 — b-sortable-list / b-sortable-picker: keyboard moves per layout, remove, limit, the picker.
   if (runs('sortable-smoke')) void import('./sortable-smoke.js');
+  // Birko TASK-788 — b-data-table's bulk bar: placement, fit and More, confirm, clear, select all matching.
+  if (runs('bulk-bar-smoke')) void import('./bulk-bar-smoke.js');
   // STORY-023 / TASK-035 — ElementInternals form association.
   if (runs('form-assoc-smoke')) void import('./form-assoc-smoke.js');
   // EPIC-001 — the `description` help-text row.
@@ -618,9 +620,29 @@ const CATALOGUE: ComponentDef[] = [
   { tag: 'b-table', label: 'Table', category: 'data', wide: true, setup: (el) => { el.setColumns([{ key: 'name', label: 'Name' }, { key: 'role', label: 'Role' }, { key: 'city', label: 'City' }]); el.setData([{ name: 'Ada', role: 'Admin', city: 'London' }, { name: 'Linus', role: 'User', city: 'Helsinki' }, { name: 'Grace', role: 'User', city: 'New York' }]); } },
   { tag: 'b-data-table', label: 'Data table', category: 'data', wide: true, setup: (el) => {
     // b-data-table is endpoint-driven; a duck-typed in-memory apiClient feeds it static rows.
-    const rows = [{ name: 'Ada', role: 'Admin' }, { name: 'Linus', role: 'User' }, { name: 'Grace', role: 'User' }];
+    const rows = Array.from({ length: 24 }, (_, i) => {
+      const f = FABRICS[i % FABRICS.length];
+      return { id: `p${i + 1}`, name: i < FABRICS.length ? f.label : `${f.label} ${Math.floor(i / FABRICS.length) + 1}`, sku: `FF-${1040 + i * 7}`, status: i % 3 === 1 ? 'Draft' : 'Published' };
+    });
     const apiClient = { get: async () => ({ ok: true, status: 200, data: rows, headers: new Headers() }) };
-    el.setConfig({ endpoint: '/demo', apiClient, columns: [{ key: 'name', label: 'Name' }, { key: 'role', label: 'Role' }] });
+    // Birko TASK-788: the bulk bar. Tick a row; Delete asks first; past the bar's width actions go into More.
+    el.setConfig({
+      endpoint: '/demo', apiClient, idField: 'id', pageSize: 8, selectable: true, selectAllMatching: true,
+      columns: [{ key: 'name', label: 'Name' }, { key: 'sku', label: 'SKU' }, { key: 'status', label: 'Status' }],
+      bulkActions: [
+        { id: 'publish', label: 'Publish', variant: 'primary' },
+        { id: 'unpublish', label: 'Unpublish' },
+        { id: 'categories-add', label: 'Add to categories' },
+        { id: 'categories-remove', label: 'Remove from categories' },
+        { id: 'export', label: 'Export CSV' },
+        { id: 'duplicate', label: 'Duplicate' },
+        { id: 'delete', label: 'Delete', variant: 'danger', confirm: true, confirmMessage: 'Delete {count} products? This cannot be undone.' },
+      ],
+    });
+    el.addEventListener('bulk-action', (e: Event) => {
+      const d = (e as CustomEvent).detail;
+      BirkoWebComponents.toast.info(`${d.action}: ${d.allMatching ? `all ${d.count} matching` : `${d.count} selected`}`);
+    });
     el.load(); // setConfig configures but doesn't fetch; load() pulls the first page
   } },
   { tag: 'b-editable-table', label: 'Editable table', category: 'data', wide: true, setup: (el) => { el.setConfig({ columns: [{ key: 'name', label: 'Name', type: 'text' }, { key: 'qty', label: 'Qty', type: 'number' }] }); el.setData([{ name: 'Widget', qty: 3 }, { name: 'Gadget', qty: 7 }]); } },

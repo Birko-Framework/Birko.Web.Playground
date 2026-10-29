@@ -79,8 +79,19 @@ void (async () => {
   const results: string[] = [];
   const check = (name: string, pass: boolean) => results.push(`${pass ? 'PASS' : 'FAIL'} ${name}`);
 
-  // Toasts the base page shows are found through the real container, newest last.
-  const toasts = () => [...document.querySelectorAll<BToastItem>('#b-toast-system b-toast-item')]
+  // Toasts the base page shows are found through the real container, newest last. Since TASK-786 the container lives
+  // inside whichever modal is open, so it is looked for through open shadow roots too: another suite's modal open at
+  // the wrong moment (modal-title-smoke's) hid it from a document-level query, and this suite failed 3 checks.
+  const findContainer = (root: Document | ShadowRoot): Element | null => {
+    const direct = root.querySelector('#b-toast-system');
+    if (direct) return direct;
+    for (const el of root.querySelectorAll('*')) {
+      const inner = el.shadowRoot ? findContainer(el.shadowRoot) : null;
+      if (inner) return inner;
+    }
+    return null;
+  };
+  const toasts = () => [...(findContainer(document)?.querySelectorAll<BToastItem>('b-toast-item') ?? [])]
     .filter((t) => !t.classList.contains('fade-out'));
   const lastToast = () => toasts().at(-1) ?? null;
   const msgOf = (t: BToastItem | null) => t?.shadowRoot?.querySelector('.msg')?.textContent ?? '';

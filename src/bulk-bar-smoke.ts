@@ -283,6 +283,35 @@ void (async () => {
       check('any change to the ticks drops "all matching"', !dt.isAllMatching());
     }
 
+    // ── 9b. The user's report, walking the Playground: tick 2, ×, tick another — the ticks stayed on screen, and the
+    // table grew laggy. Every re-render added another set of change listeners to the checkboxes the morph kept, so a
+    // click ran its handler 2, 4, 8… times, each re-rendering again; and × never unticked a box the user had ticked
+    // (the morph drops the attribute, the property stays). Real clicks, several rounds.
+    {
+      dt = await mount();
+      let fired = 0;
+      dt.addEventListener('selection-change', () => fired++);
+      const boxes = () => [...tableSr(dt).querySelectorAll<HTMLInputElement>('.row-select')];
+      const click = async (i: number) => { const before = fired; boxes()[i].click(); await frames(); await sleep(20); return fired - before; };
+      const perClick: number[] = [];
+      const stale: number[] = [];
+      const counts: string[] = [];
+      for (let round = 0; round < 5; round++) {
+        perClick.push(await click(0), await click(2));
+        bar(dt)!.querySelector<HTMLButtonElement>('[data-clear]')!.click();
+        await frames();
+        await sleep(20);
+        stale.push(boxes().filter((b) => b.checked).length);
+        perClick.push(await click(4));
+        counts.push(`${bar(dt)?.querySelector('.bulk-count strong')?.textContent}/${boxes().filter((b) => b.checked).length}`);
+        bar(dt)!.querySelector<HTMLButtonElement>('[data-clear]')!.click();
+        await frames();
+      }
+      check(`× unticks every box on screen, every round (still ticked after ×: ${stale.join(',')})`, stale.every((n) => n === 0));
+      check(`after ×, ticking one shows 1 selected and one tick (count/ticks: ${counts.join(' ')})`, counts.every((c) => c === '1/1'));
+      check(`each click fires one selection-change, however many rounds (${perClick.join(',')})`, perClick.every((n) => n === 1));
+    }
+
     // ── 10. Without the opt-in, no "select all matching" ──
     {
       dt = await mount(false, 248, false);

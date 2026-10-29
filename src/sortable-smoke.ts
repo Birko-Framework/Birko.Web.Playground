@@ -5,7 +5,7 @@
 // rows on screen (the handles' names, in DOM order), so a list that reported one order and showed another fails.
 import 'birko-web-components/data';
 import 'birko-web-components/inputs';
-import type { BSortableList, BSortablePicker, SortableChangeDetail, SortableItemData } from 'birko-web-components';
+import type { BSortableList, BSortablePicker, SortableChangeDetail, SortableItemData, SortablePickerNoticeDetail } from 'birko-web-components';
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 const frames = () => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
@@ -250,6 +250,42 @@ void (async () => {
       await frames();
       check(`max lowered below the list: the line and the notice ("${notice()}")`,
         !!list.shadowRoot!.querySelector('.limit') && /Only the first 2 are used/.test(notice()) && picker.value === 'mink,fox,shaggy');
+
+      // ── Where a notice goes is the consumer's: the notice event, then notify="toast", else under the search ──
+      const notices: SortablePickerNoticeDetail[] = [];
+      picker.addEventListener('notice', (e) => notices.push((e as CustomEvent<SortablePickerNoticeDetail>).detail));
+      picker.setAttribute('max', '5');
+      await frames();
+      check(`back within max: an over-cleared notice and an empty box (${notices.map((n) => n.kind).join(',')})`,
+        notices.at(-1)?.kind === 'over-cleared' && notice() === '');
+      const take = (e: Event) => e.preventDefault();
+      picker.addEventListener('notice', take);
+      await type('fur');
+      key(input, 'Enter');
+      check(`a duplicate fires a notice with its text and item (${JSON.stringify(notices.at(-1))})`,
+        notices.at(-1)?.kind === 'duplicate' && notices.at(-1)?.text === 'Shaggy fur is already in the list, at position 3.' && notices.at(-1)?.item?.id === 'shaggy');
+      check('a notice the consumer takes (preventDefault) is not shown under the search', notice() === '');
+      check('the duplicate row is still pointed at', rows(list).find((r) => r.dataset.id === 'shaggy')!.classList.contains('flash'));
+      picker.setAttribute('max', '2');
+      await frames();
+      check(`the over notice taken too: the line stays, the box is empty (${notices.at(-1)?.kind})`,
+        notices.at(-1)?.kind === 'over' && !!list.shadowRoot!.querySelector('.limit') && notice() === '');
+      picker.removeEventListener('notice', take);
+      picker.setAttribute('max', '5');
+      picker.setAttribute('notify', 'toast');
+      await frames();
+      const toastsBefore = document.querySelectorAll('#b-toast-system b-toast-item').length;
+      await type('fur');
+      key(input, 'Enter');
+      await frames();
+      const toasts = [...document.querySelectorAll<HTMLElement>('#b-toast-system b-toast-item')];
+      const sent = toasts.slice(toastsBefore);
+      check(`notify="toast" sends the duplicate to the toast (${sent.map((t) => t.getAttribute('message')).join(' | ')})`,
+        sent.length === 1 && sent[0].getAttribute('message') === 'Shaggy fur is already in the list, at position 3.' && notice() === '');
+      sent.forEach((t) => t.remove());
+      picker.setAttribute('max', '2');
+      await frames();
+      check(`notify="toast" keeps the over notice under the search: it is a state, not an event ("${notice()}")`, /Only the first 2 are used/.test(notice()));
     }
   } catch (e) {
     check(`unexpected throw: ${(e as Error).message}`, false);

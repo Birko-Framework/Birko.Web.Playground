@@ -61,7 +61,7 @@ void (async () => {
   const host = document.createElement('div');
   document.body.append(host);
   host.innerHTML = `
-    <b-modal id="tm-modal" title="Toast over modal"><p>Body text.</p><button id="tm-save">Save</button></b-modal>
+    <b-modal id="tm-modal" title="Toast over modal"><p>Body text.</p><button id="tm-save">Save</button><button slot="footer" id="tm-create">Create</button></b-modal>
     <b-confirm-dialog id="tm-confirm" title="Sure?" message="Nested"></b-confirm-dialog>`;
   const modal = host.querySelector<Modal>('#tm-modal')!;
   const confirmDlg = host.querySelector<Confirm>('#tm-confirm')!;
@@ -72,6 +72,13 @@ void (async () => {
     return item;
   };
   const container = () => document.getElementById('b-toast-system');
+  /** Where the item sits: its box, and whether it is at the bottom right or the top centre of the viewport. */
+  const where = (item: BToastItem) => {
+    const r = item.getBoundingClientRect();
+    const bottomRight = r.bottom > innerHeight * 0.6 && innerWidth - r.right < 48;
+    const topCentre = r.top < innerHeight * 0.25 && Math.abs(r.left + r.width / 2 - innerWidth / 2) < 2;
+    return { r, bottomRight, topCentre, at: `${Math.round(r.left)},${Math.round(r.top)} ${Math.round(r.width)}x${Math.round(r.height)} in ${innerWidth}x${innerHeight}` };
+  };
 
   try {
     await waitFor(() => !!modal.shadowRoot?.querySelector('dialog') && !!confirmDlg.shadowRoot?.querySelector('dialog'));
@@ -85,6 +92,7 @@ void (async () => {
       check('with no modal open the container is not a popover', !c.hasAttribute('popover'));
       const { onTop, got } = hitAt(item);
       check(`with no modal open the toast is on top (hit ${got})`, onTop);
+      check(`with no modal open the toast is at the bottom right, as configured (${where(item).at})`, where(item).bottomRight);
       item.remove();
     }
 
@@ -97,6 +105,12 @@ void (async () => {
       await frames();
       const { onTop, got } = hitAt(item);
       check(`a toast raised in an open modal is on top of it (hit ${got})`, onTop);
+      // Symbio's TASK-731 re-walk: a bottom-right toast covered the modal footer's Create / Cancel until dismissed.
+      const footer = host.querySelector<HTMLElement>('#tm-create')!.getBoundingClientRect();
+      const t = where(item);
+      check(`in a modal a bottom toast moves to the top centre (${t.at})`, t.topCentre);
+      check(`…so it does not cover the modal footer's buttons (footer button at ${Math.round(footer.left)},${Math.round(footer.top)})`,
+        footer.height > 0 && (t.r.bottom <= footer.top || t.r.top >= footer.bottom || t.r.right <= footer.left || t.r.left >= footer.right));
       const btn = item.shadowRoot!.querySelector<HTMLButtonElement>('.action')!;
       btn.focus();
       check('its action button can take focus (it is not inert)', item.shadowRoot!.activeElement === btn);
@@ -134,6 +148,7 @@ void (async () => {
       check('after the modal closes the container is no longer a popover', !c.hasAttribute('popover'));
       const { onTop, got } = hitAt(item);
       check(`a toast raised in the modal is still shown after it closes (hit ${got})`, item.isConnected && onTop);
+      check(`…and back at the bottom right (${where(item).at})`, where(item).bottomRight);
     }
 
     // ── 5. A toast already showing when a modal opens is not left behind it ──

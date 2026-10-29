@@ -86,6 +86,8 @@ if (new URLSearchParams(location.search).has('smoke')) {
   if (runs('whitespace-smoke')) void import('./whitespace-smoke.js');
   // Birko TASK-786 — a toast raised while a modal is open is on top of it and clickable, and back on <body> after.
   if (runs('toast-modal-smoke')) void import('./toast-modal-smoke.js');
+  // Birko TASK-787 — b-sortable-list / b-sortable-picker: keyboard moves per layout, remove, limit, the picker.
+  if (runs('sortable-smoke')) void import('./sortable-smoke.js');
   // STORY-023 / TASK-035 — ElementInternals form association.
   if (runs('form-assoc-smoke')) void import('./form-assoc-smoke.js');
   // EPIC-001 — the `description` help-text row.
@@ -486,6 +488,25 @@ const TAG_COLOR: ControlDef = { label: 'color', attr: 'color', options: ['', '#2
 const REMOVABLE: ControlDef = { label: 'removable', attr: 'removable', options: ['', 'removable'] };
 const CLEARABLE: ControlDef = { label: 'clearable', attr: 'clearable', options: ['', 'clearable'] }; // TASK-484
 const RATING_MAX: ControlDef = { label: 'max', attr: 'max', options: ['5', '3', '7', '10'] }; // b-rating; 5 is its default
+// Birko TASK-787 — b-sortable-list / b-sortable-picker.
+const SORT_LAYOUT: ControlDef = { label: 'layout', attr: 'layout', options: ['list', 'grid', 'inline'] };
+const HANDLE_ONLY: ControlDef = { label: 'handle-only', attr: 'handle-only', options: ['', 'handle-only'] };
+/** A swatch as an image, so the grid layout has pictures without a network fetch. */
+const swatch = (a: string, b: string) => 'data:image/svg+xml,' + encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 4 3"><defs><linearGradient id="g" x2="1" y2="1"><stop stop-color="${a}"/><stop offset="1" stop-color="${b}"/></linearGradient></defs><rect width="4" height="3" fill="url(#g)"/></svg>`);
+const FABRICS = [
+  { id: 'shaggy', label: 'Shaggy fur', meta: 'Long pile · ivory', image: swatch('#f3e9d8', '#d9c3a0') },
+  { id: 'mink', label: 'Velvet mink', meta: 'Short pile · chocolate', image: swatch('#7b5236', '#4a2f1d') },
+  { id: 'fox', label: 'Arctic fox faux', meta: 'Long pile · silver', image: swatch('#e6ebf0', '#a9b5c2') },
+  { id: 'boucle', label: 'Teddy bouclé', meta: 'Curly · caramel', image: swatch('#d6a46a', '#a8743d') },
+  { id: 'lamb', label: 'Curly lamb', meta: 'Curly · cream', image: swatch('#f6f1e6', '#dccfb4') },
+  { id: 'plush', label: 'Short pile plush', meta: 'Short pile · sage', image: swatch('#a9bfa3', '#6f8a69') },
+  { id: 'wolf', label: 'Grey wolf faux', meta: 'Long pile · charcoal', image: swatch('#8b9098', '#4c5058') },
+  { id: 'rabbit', label: 'Rabbit soft', meta: 'Short pile · blush', image: swatch('#f2d4d0', '#d9a7a1') },
+  { id: 'sherpa', label: 'Sherpa fleece', meta: 'Curly · oat', image: swatch('#efe4cf', '#cbb894') },
+  { id: 'velvet', label: 'Crushed velvet', meta: 'Flat · teal', image: swatch('#3d8f8a', '#1f5753') },
+];
+/** The picker's search, as a consumer's server search would answer: async, a short delay. */
+const searchFabrics = (q: string) => new Promise<typeof FABRICS>((r) => setTimeout(() => r(FABRICS.filter((f) => `${f.label} ${f.meta}`.toLowerCase().includes(q.toLowerCase()))), 150));
 
 // Full catalogue (kept in sync with Birko.Web.Components). reportMissing() warns about any
 // tag here that didn't register; a registered component absent from this list is a gap to fill.
@@ -514,6 +535,8 @@ const CATALOGUE: ComponentDef[] = [
   { tag: 'b-file-upload', label: 'File upload', category: 'inputs', attrs: { label: 'Upload a file' }, controls: [BARE] },
   { tag: 'b-inline-edit', label: 'Inline edit', category: 'inputs', attrs: { value: 'Click to edit' } },
   { tag: 'b-markdown-editor', label: 'Markdown editor', category: 'inputs', attrs: { value: '# Hello\n\nMarkdown **here**.' } },
+  { tag: 'b-sortable-picker', label: 'Sortable picker', category: 'inputs', wide: true, attrs: { label: 'Products in this grid', max: '5' }, controls: [SORT_LAYOUT, SIZE, DISABLED],
+    setup: (el) => { el.setSearch(searchFabrics); el.setItems(FABRICS.slice(2, 4)); } },
   { tag: 'b-tag-input', label: 'Tag input', category: 'inputs', attrs: { label: 'Tags', placeholder: 'add tag…' }, controls: [BARE], setup: (el) => el.setTags(['design', 'birko', 'web', 'components']) },
   { tag: 'b-qty-stepper', label: 'Quantity stepper', category: 'inputs', attrs: { label: 'Fabric', name: 'qty', min: '0.5', step: '0.5', max: '10', value: '1.5', unit: 'm' },
     note: 'Decimal step anchored at min; typed text snaps on blur / Enter; arrow keys, PageUp/PageDown, Home/End (TASK-548).' },
@@ -604,6 +627,9 @@ const CATALOGUE: ComponentDef[] = [
   { tag: 'b-chart', label: 'Chart', category: 'data', attrs: { type: 'bar', height: '220' },
     controls: [{ label: 'type', attr: 'type', options: ['bar', 'line', 'area', 'pie', 'donut', 'gauge'] }],
     setup: (el) => el.setData({ labels: ['Jan', 'Feb', 'Mar', 'Apr'], series: [{ id: 'sales', label: 'Sales', data: [{ y: 65 }, { y: 40 }, { y: 80 }, { y: 55 }] }] }) },
+  { tag: 'b-sortable-list', label: 'Sortable list', category: 'data', wide: true, attrs: { label: 'Products', removable: '', numbered: '' }, controls: [SORT_LAYOUT, HANDLE_ONLY, SIZE],
+    setup: (el) => el.setItems(FABRICS.slice(0, 6)) },
+  { tag: 'b-sortable-item', label: 'Sortable item', category: 'data', attrs: { label: 'Shaggy fur', meta: 'Long pile · ivory' } },
   { tag: 'b-kanban', label: 'Kanban', category: 'data', wide: true, setup: (el) => el.setConfig({ columns: [{ id: 'todo', label: 'To do' }, { id: 'doing', label: 'In progress' }, { id: 'done', label: 'Done' }], cards: [{ id: '1', columnId: 'todo', title: 'Task A' }, { id: '2', columnId: 'doing', title: 'Task B' }, { id: '3', columnId: 'done', title: 'Task C' }] }) },
   { tag: 'b-object-tree', label: 'Object tree', category: 'data', setup: (el) => el.setData({ name: 'birko', version: 1, active: true, tags: ['a', 'b'], nested: { x: 1, y: [2, 3] } }) },
 
@@ -740,6 +766,7 @@ const ABOUT: Record<string, string> = {
   'Inline edit': 'Text that turns into a field when clicked and saves on Enter.',
   'Markdown editor': 'A split-view Markdown editor with a toolbar and live preview.',
   'Tag input': 'Type free-form tags; Enter adds one, duplicates are refused.',
+  'Sortable picker': 'Search, pick and order: picks go to the end, a duplicate is pointed at, max refuses more.',
   'Quantity stepper': 'A number with − / + steps that never drift (0.1 × 3 is exactly 0.3), with a unit.',
   'Rating': 'A star rating input; arrow keys move and pick.',
   'Rating — custom icon (heart)': 'The same rating with any icon in place of the star.',
@@ -776,6 +803,8 @@ const ABOUT: Record<string, string> = {
   'Editable table': 'A table where every cell is an input, for data entry.',
   'Chart': 'Line, bar, area, pie, donut and scatter charts, drawn as SVG or canvas.',
   'Kanban': 'A board of columns with drag-and-drop cards and nested sub-tasks.',
+  'Sortable list': 'Reorder by dragging a row, or Space on its handle then the arrow keys; as a list, a grid or chips.',
+  'Sortable item': 'A ready-made row for the sortable list: an image, a label and a meta line.',
   'Object tree': 'Any JavaScript value as an expandable property tree.',
   'Empty state': 'What to show when there is nothing to show, with an action.',
   'Progress': 'A determinate or indeterminate bar or ring.',

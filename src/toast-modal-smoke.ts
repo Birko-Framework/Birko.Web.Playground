@@ -151,6 +151,8 @@ void (async () => {
   }
   shown.forEach((t) => t.remove());
   host.remove();
+  // sortable-smoke moves focus and drives a popover; it waits for this suite's modals to be gone.
+  (window as unknown as Record<string, boolean>).__toastModalSmokeDone = true;
 
   const passed = results.filter((r) => r.startsWith('PASS')).length;
   console.log(`[playground] toast-modal-smoke: ${passed}/${results.length} passed`);

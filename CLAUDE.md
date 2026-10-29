@@ -81,6 +81,7 @@ node entry-points-check.mjs # each Birko.Web.Components file imported alone regi
 node keyboard-check.mjs     # trusted key presses: tab stops, native radio arrows (an in-page KeyboardEvent has no default action)
 node ribbon-a11y-check.mjs  # what a screen reader gets from b-ribbon, read from Chromium's accessibility tree
 node locale-keys-check.mjs  # every bwc.* / common.* key src/ reads is in en.json at that path, and every en.json key is read (no build needed)
+node sortable-drag-check.mjs # b-sortable-list dragged by a real mouse and touchscreen, per layout (in-page code cannot capture a pointer)
 ```
 
 **A flaky suite: run it alone before blaming it.** `verify.mjs` loads `/?smoke=1`, which runs every `*-smoke` suite

@@ -981,6 +981,7 @@ function renderApp(root: HTMLElement): void {
 type Ribbon = HTMLElement & {
   setTabs(tabs: unknown[]): void;
   setPressed(itemId: string, pressed: boolean, tabId?: string): void;
+  setFieldValue(itemId: string, value: string, tabId?: string): void;
 };
 
 const THEME_ABOUT: Record<string, string> = {
@@ -1029,8 +1030,8 @@ function setupRibbon(root: HTMLElement, gallery: Gallery): void {
         id: `cat:${c}`, label: `${CATEGORY_LABELS[c] ?? c} (${registeredInCategory(c).length})`, icon: CATEGORY_ICONS[c],
         toggle: true, toggleGroup: 'cat', pressed: c === gallery.current(), description: CATEGORY_ABOUT[c] })) },
       { id: 'find', label: 'Find', items: [
-        { id: 'filter', label: 'Filter', field: { type: 'text', value: '', width: 16, caption: 'beside' },
-          description: 'Show only the cards whose name, tag or description contains this text. Enter applies it.' },
+        { id: 'filter', label: 'Filter', field: { type: 'text', value: '', width: 16, caption: 'beside', placeholder: 'name, tag or text…' },
+          description: 'Show only the cards whose name, tag or description contains this text, as you type.' },
         { id: 'filter-clear', label: 'Clear', icon: '✕', description: 'Show every card again.' },
       ] },
     ] },
@@ -1077,11 +1078,19 @@ function setupRibbon(root: HTMLElement, gallery: Gallery): void {
     else if (id.startsWith('locale:')) pickLocale(id.slice(7));
     else if (id === 'tokens') root.dispatchEvent(new CustomEvent('pg-open-tokens'));
     else if (id === 'export') root.dispatchEvent(new CustomEvent('pg-open-export'));
-    else if (id === 'filter-clear') gallery.filter('');
+    else if (id === 'filter-clear') { ribbon.setFieldValue('filter', '', 'gallery'); gallery.filter(''); }
     else if (id === 'smoke') window.open('?smoke=1', '_blank', 'noopener');
     else if (id === 'about') openAbout(root);
     else if (id === 'tour') startPlaygroundTour();
     else if (HELP_LINKS[id]) window.open(HELP_LINKS[id].url, '_blank', 'noopener');
+  });
+  // Filter as you type. The ribbon reports a field only on commit (Enter, leaving it); the native `input` event is
+  // composed, so it reaches the ribbon host, and its path names the field box it came from.
+  ribbon.addEventListener('input', (e) => {
+    const path = e.composedPath();
+    const box = path.find((n) => n instanceof HTMLElement && n.dataset.item === 'filter');
+    const input = path[0];
+    if (box && input instanceof HTMLInputElement) gallery.filter(input.value);
   });
   ribbon.addEventListener('item-change', (e) => {
     const d = (e as CustomEvent<{ itemId?: string; value?: string }>).detail;
@@ -1641,6 +1650,9 @@ function injectStyles(): void {
 const app = document.getElementById('app');
 // The visitor's saved locale — not under ?smoke / ?kb, whose suites assert English labels and formatting.
 const bootParams = new URLSearchParams(location.search);
+// Relative, not I18n's default '/locales': published at /Birko.Web.Playground/, an absolute path asked the site root
+// (birko-framework.github.io/locales/cs.json, a 404), so a locale switch changed number formats but no text.
+getI18n().setBasePath('locales');
 const bootLocale = bootParams.has('smoke') || bootParams.has('kb') ? null : savedLocale();
 if (bootLocale && bootLocale !== getI18n().locale) void getI18n().setLocale(bootLocale);
 if (app) renderApp(app);

@@ -105,6 +105,21 @@ const cached = await page.evaluate(async () => {
   return { names, entries: (await cache.keys()).map((r) => new URL(r.url).pathname) };
 });
 
+// TASK-781: a locale switch fetches locales/{lang}.json. I18n's default base path is the absolute '/locales', which
+// one directory down asks the site root and 404s — on the published page the switch changed number formats and no
+// text. Switch through the ribbon, as a visitor does, and read a translated label back; the 404 itself also lands in
+// `served` above.
+const localeLabel = await page.evaluate(async () => {
+  document.querySelector('#pg-ribbon')?.dispatchEvent(new CustomEvent('item-click', { detail: { itemId: 'cat:inputs' } }));
+  document.querySelector('#pg-ribbon')?.dispatchEvent(new CustomEvent('item-click', { detail: { itemId: 'locale:sk' } }));
+  for (let i = 0; i < 40; i++) {
+    await new Promise((r) => setTimeout(r, 100));
+    const label = document.querySelector('b-qty-stepper')?.shadowRoot?.querySelector('button')?.getAttribute('aria-label') ?? '';
+    if (label.startsWith('Zníži')) return label;
+  }
+  return document.querySelector('b-qty-stepper')?.shadowRoot?.querySelector('button')?.getAttribute('aria-label') ?? 'NO STEPPER';
+});
+
 await browser.close();
 server.close();
 
@@ -114,12 +129,14 @@ if (notFound.length) problems.push(`${notFound.length} request(s) 404ed: ${notFo
 if (consoleErrors.length) problems.push(`${consoleErrors.length} console error(s): ${consoleErrors.join(' | ')}`);
 if (swMessage !== 'registered') problems.push(`service worker did not register (${swMessage})`);
 if (cached.entries.length === 0) problems.push('the service worker cached nothing — its precache list did not resolve');
+if (!localeLabel.startsWith('Zníži')) problems.push(`switching to SK did not translate the stepper (its button reads "${localeLabel}")`);
 for (const entry of cached.entries) {
   if (!entry.startsWith(PREFIX + '/')) problems.push(`cached outside the app: ${entry}`);
 }
 
 console.log(`\nrequests served: ${served.length} (${notFound.length} not found)`);
 console.log(`service worker:  ${swMessage}`);
+console.log(`locale switch:   SK -> "${localeLabel}"`);
 console.log(`precached:       ${cached.entries.length} entr(ies)`);
 for (const e of cached.entries) console.log(`                 ${e}`);
 

@@ -9,6 +9,8 @@ void Object.keys(BirkoWebComponents).length;
 // loads /?smoke=1) so the interactive gallery console stays clean; the regression gate is preserved.
 // TASK-545 — fixtures keyboard-check.mjs drives with trusted input (the toast manager, an undo-mode list page).
 if (new URLSearchParams(location.search).has('kb')) void import('./undo-delete-kb.js');
+// TASK-801 — a Shell list page with a getter entityLabel, for locale-switch-check.mjs.
+if (new URLSearchParams(location.search).has('crud')) void import('./crud-locale-fixture.js');
 
 if (new URLSearchParams(location.search).has('smoke')) {
   // `?smoke=1&only=a-smoke,b-smoke` runs just those suites, to tell a suite's own flake from one another suite causes

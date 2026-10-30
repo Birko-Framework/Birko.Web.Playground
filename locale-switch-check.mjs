@@ -308,6 +308,43 @@ for (const [tag, attr, modal] of [['b-modal', 'title', true], ['b-modal', 'size'
   check(`${tag}: it still closes afterwards`, r.closed);
 }
 
+// ── TASK-801 ─────────────────────────────────────────────────────────────────────────────────────────────────
+// A Shell list page whose entityLabel is a getter over t() (src/crud-locale-fixture.ts, on /?crud=1). The heading is
+// pageTitle → entityLabel; the create modal's title is 'bws.common.new' with {entity}, set when it opens and rendered
+// from state, so a locale switch relabels both and the morph does not blank the title of the open modal.
+await page.goto(`http://localhost:${port}/?crud=1`, { waitUntil: 'networkidle0' });
+await page.evaluate(async () => {
+  for (let i = 0; i < 40 && !customElements.get('crud-locale-page'); i++) await new Promise((r) => setTimeout(r, 50));
+  if (!document.querySelector('crud-locale-page')) document.body.appendChild(document.createElement('crud-locale-page'));
+  await new Promise((r) => setTimeout(r, 300));
+  document.querySelector('crud-locale-page').openCreate();
+  await new Promise((r) => setTimeout(r, 200));
+});
+const crud = () => page.evaluate(() => {
+  const p = document.querySelector('crud-locale-page');
+  const modal = p.shadowRoot.querySelector('#modal');
+  return {
+    h1: p.shadowRoot.querySelector('.page-title')?.textContent?.trim(),
+    title: modal?.getAttribute('title'),
+    open: !!modal?.shadowRoot?.querySelector('dialog')?.open,
+  };
+});
+const crudSwitch = async (locale, h1) => {
+  await page.evaluate((locale) => document.querySelector('#pg-ribbon')
+    .dispatchEvent(new CustomEvent('item-click', { detail: { itemId: `locale:${locale}` } })), locale);
+  for (let i = 0; i < 40 && (await crud()).h1 !== h1; i++) await new Promise((r) => setTimeout(r, 50));
+  await new Promise((r) => setTimeout(r, 50));
+};
+const c0 = await crud();
+check(`Shell page starts in English (${JSON.stringify(c0)})`, c0.h1 === 'Device' && c0.title === 'New Device' && c0.open);
+await crudSwitch('sk', 'Zariadenie');
+const c1 = await crud();
+check(`Shell page: a getter entityLabel relabels the heading (${c1.h1})`, c1.h1 === 'Zariadenie');
+check(`Shell page: the open create modal's title relabels and the modal stays open (${JSON.stringify(c1)})`, c1.title === 'Nový Zariadenie' && c1.open);
+await crudSwitch('en', 'Device');
+const c2 = await crud();
+check(`Shell page back in English (${JSON.stringify(c2)})`, c2.h1 === 'Device' && c2.title === 'New Device' && c2.open);
+
 await browser.close();
 server.close();
 if (pageErrors.length) { console.log(`page errors:\n  ${pageErrors.join('\n  ')}`); }

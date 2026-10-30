@@ -30,7 +30,6 @@ class KbApi {
 class UdKbPage extends BaseListPage<Row> {
   fake = new KbApi();
   protected endpoint = 'api/kb-items';
-  protected entityLabel = 'Item';
   protected deleteMode = 'undo' as const;
   protected get api() { return this.fake as unknown as ApiClient; }
   protected get columns(): TableColumn[] { return [{ key: 'name', label: 'Name' }]; }

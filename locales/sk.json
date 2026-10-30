@@ -28,6 +28,28 @@
       "zoom": "Zväčšiť obrázok",
       "zoomCount": "{index} / {count}",
       "status": "Obrázok {index} z {count}: {name}"
+    },
+    "treeMenu": {
+      "hint": "Stlačte medzerník, ak chcete položku zdvihnúť a presunúť.",
+      "roleDescription": "presúvateľná položka",
+      "grip": "{label}, pozícia {position} z {count}",
+      "inParent": "v {parent}",
+      "atTop": "na najvyššej úrovni",
+      "pickedUp": "{label} zdvihnuté, pozícia {position} z {count} {where}. Šípky ho presúvajú, vpravo a vľavo menia nadradenú položku, medzerník ho položí, Escape zruší.",
+      "position": "{label}, pozícia {position} z {count} {where}.",
+      "first": "{label} je už prvé {where}.",
+      "last": "{label} je už posledné {where}.",
+      "noneAbove": "Nad {label} nie je nič, do čoho by sa dalo presunúť.",
+      "atTopAlready": "{label} je už na najvyššej úrovni.",
+      "dropped": "{label} položené na pozíciu {position} z {count} {where}.",
+      "unchanged": "{label} položené, stále na pozícii {position} z {count} {where}.",
+      "cancelled": "Zrušené. {label} je späť na pozícii {position} z {count} {where}.",
+      "moved": "{label} presunuté na pozíciu {position} z {count} {where}.",
+      "movedInto": "{label} presunuté do {parent}.",
+      "dragCancelled": "Presun zrušený.",
+      "moveUp": "Posunúť vyššie",
+      "moveDown": "Posunúť nižšie",
+      "sortOrder": "Poradie {label}"
     }
   },
   "common": {

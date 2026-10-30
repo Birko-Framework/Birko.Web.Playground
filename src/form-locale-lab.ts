@@ -12,8 +12,9 @@ const codeSchema = (): FormSchema => ({
         placeholder: t('pg.form.namePh', {}, 'Enter a name'), description: t('pg.form.nameHelp', {}, 'Full name') },
       { name: 'nick', type: 'text', label: 'Nick (a literal string)',
         rules: [{ type: 'minLength', value: 5, message: t('pg.form.short', {}, 'Too short') }] },
-      { name: 'colour', type: 'select', label: t('pg.form.colour', {}, 'Colour'),
-        options: [{ value: 'r', label: t('pg.form.red', {}, 'Red') }] },
+      { name: 'colour', type: 'select', label: t('pg.form.colour', {}, 'Colour'), placeholder: 'Pick a colour',
+        options: [{ value: 'r', label: t('pg.form.red', {}, 'Red') }, { value: 'b', label: 'Blue' }] },
+      { name: 'agree', type: 'checkbox', label: t('pg.form.name', {}, 'Name') + ' ✓' },
     ],
   }],
 });

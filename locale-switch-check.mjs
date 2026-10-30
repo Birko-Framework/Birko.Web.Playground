@@ -222,6 +222,53 @@ check(`b-form back in English (${JSON.stringify([f2.label, f2.required, f2.keyLa
   f2.label === 'Name' && f2.required === 'Name is required' && f2.keyLabel === 'Name' && f2.growExtra === null && f2.growName === 'kept' && f2.changes === 0);
 await page.evaluate(() => { for (const id of ['fm-fac', 'fm-keys', 'fm-grow']) document.getElementById(id).remove(); });
 
+// ── TASK-802 ─────────────────────────────────────────────────────────────────────────────────────────────────
+// Values set with setValues() survive the switch on every field type, in a factory form and a plain one. Symbio
+// found a select losing its value: b-select keeps the choice in its `value` attribute (checkbox and switch in
+// `checked`), b-form's markup does not carry it, so the switch's morph removed it.
+const valueForm = (factory) => page.evaluate(async (factory) => {
+  const outer = document.querySelector('ln-outer');
+  const tt = (key, fallback) => outer.label('x-none', key, fallback);
+  const opts = () => [{ value: 'r', label: tt('pg.form.red', 'Red') }, { value: 'b', label: 'Blue' }];
+  const schema = () => ({
+    name: 'root', children: [
+      { name: 'name', type: 'text', label: tt('pg.form.name', 'Name') },
+      { name: 'mode', type: 'select', label: tt('pg.form.colour', 'Colour'), rules: [{ type: 'required' }], options: opts() },
+      { name: 'ph', type: 'select', label: 'With placeholder', placeholder: tt('pg.form.namePh', 'Pick'), options: opts() },
+      { name: 'many', type: 'multi-select', label: tt('pg.form.colour', 'Colour'), options: opts() },
+      { name: 'group', type: 'option-group', label: tt('pg.form.colour', 'Colour'), options: opts() },
+      { name: 'agree', type: 'checkbox', label: tt('pg.form.name', 'Name') },
+      { name: 'on', type: 'switch', label: tt('pg.form.name', 'Name') },
+      { name: 'count', type: 'number', label: tt('pg.form.name', 'Name') },
+      { name: 'notes', type: 'textarea', label: tt('pg.form.name', 'Name') },
+      { name: 'tags', type: 'tags', label: tt('pg.form.name', 'Name') },
+      { name: 'day', type: 'date', label: tt('pg.form.name', 'Name') },
+      { name: 'at', type: 'time', label: tt('pg.form.name', 'Name') },
+    ],
+  });
+  const f = document.createElement('b-form');
+  f.id = 'fm-values';
+  document.body.appendChild(f);
+  await new Promise((r) => setTimeout(r, 50));
+  f.setSchema(factory ? schema : schema());
+  f.setValues({ name: 'G', mode: 'b', ph: 'b', many: ['b'], group: 'b', agree: true, on: true, count: 7,
+    notes: 'n', tags: ['x'], day: '2026-10-30', at: '10:30' });
+  await new Promise((r) => setTimeout(r, 50));
+  return JSON.stringify(f.getValues());
+}, factory);
+const readValues = () => page.evaluate(() => JSON.stringify(document.getElementById('fm-values').getValues()));
+for (const factory of [true, false]) {
+  const kind = factory ? 'a factory schema' : 'a plain schema';
+  const before = await valueForm(factory);
+  await switchTo('sk', 'Zavrieť');
+  const sk = await readValues();
+  check(`b-form, ${kind}: every field keeps its value through a locale switch (${sk === before ? before : `${before} -> ${sk}`})`, sk === before);
+  await switchTo('en', 'Close');
+  const en = await readValues();
+  check(`b-form, ${kind}: and back to English (${en === before ? 'same' : en})`, en === before);
+  await page.evaluate(() => document.getElementById('fm-values').remove());
+}
+
 // ── TASK-791 ─────────────────────────────────────────────────────────────────────────────────────────────────
 const overlay = (tag, attr, modal) => page.evaluate(async (tag, attr, modal) => {
   const settle = () => new Promise((r) => setTimeout(r, 120));

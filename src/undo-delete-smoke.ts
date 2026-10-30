@@ -57,7 +57,6 @@ const COLUMNS: TableColumn[] = [{ key: 'name', label: 'Name' }];
 abstract class UdPage extends BaseListPage<Row> {
   fake = new FakeApi();
   protected endpoint = 'api/ud-items';
-  protected entityLabel = 'Item';
   protected get api() { return this.fake as unknown as ApiClient; }
   protected get columns() { return COLUMNS; }
   protected get formSchema(): FormSchema { return { name: 'ud', children: [] }; }

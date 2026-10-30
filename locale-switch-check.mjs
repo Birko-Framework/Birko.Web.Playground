@@ -315,7 +315,7 @@ for (const [tag, attr, modal] of [['b-modal', 'title', true], ['b-modal', 'size'
 await page.goto(`http://localhost:${port}/?crud=1`, { waitUntil: 'networkidle0' });
 await page.evaluate(async () => {
   for (let i = 0; i < 40 && !customElements.get('crud-locale-page'); i++) await new Promise((r) => setTimeout(r, 50));
-  document.body.appendChild(document.createElement('crud-locale-page'));
+  if (!document.querySelector('crud-locale-page')) document.body.appendChild(document.createElement('crud-locale-page'));
   await new Promise((r) => setTimeout(r, 300));
   document.querySelector('crud-locale-page').openCreate();
   await new Promise((r) => setTimeout(r, 200));

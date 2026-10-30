@@ -20,3 +20,5 @@ class CrudLocalePage extends BaseListPage<Row> {
   openCreate() { this._openCreate(); }
 }
 customElements.define('crud-locale-page', CrudLocalePage);
+// Shown above the gallery, for the human test (TASK-801 test plan step 1).
+document.body.prepend(document.createElement('crud-locale-page'));

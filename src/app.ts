@@ -92,6 +92,8 @@ if (new URLSearchParams(location.search).has('smoke')) {
   if (runs('sortable-smoke')) void import('./sortable-smoke.js');
   // Birko TASK-788 — b-data-table's bulk bar: placement, fit and More, confirm, clear, select all matching.
   if (runs('bulk-bar-smoke')) void import('./bulk-bar-smoke.js');
+  // Birko TASK-789 — b-tree-menu sortable: grip, keyboard pick-up / move / reparent / drop, reorder, sortControls.
+  if (runs('tree-sort-smoke')) void import('./tree-sort-smoke.js');
   // STORY-023 / TASK-035 — ElementInternals form association.
   if (runs('form-assoc-smoke')) void import('./form-assoc-smoke.js');
   // EPIC-001 — the `description` help-text row.
@@ -498,6 +500,21 @@ const RATING_MAX: ControlDef = { label: 'max', attr: 'max', options: ['5', '3', 
 // Birko TASK-787 — b-sortable-list / b-sortable-picker.
 const SORT_LAYOUT: ControlDef = { label: 'layout', attr: 'layout', options: ['list', 'grid', 'inline'] };
 const HANDLE_ONLY: ControlDef = { label: 'handle-only', attr: 'handle-only', options: ['', 'handle-only'] };
+const SORT_CONTROLS: ControlDef = { label: 'sort-controls', attr: 'sort-controls', options: ['', 'sort-controls'] };
+/** Birko TASK-789 — a page tree to reorder; the card's handle-only / sort-controls selectors feed its config. */
+const PAGE_TREE = () => [
+  { id: 'home', label: 'Home' },
+  { id: 'about', label: 'About us', expanded: true, children: [{ id: 'team', label: 'Team' }, { id: 'history', label: 'History' }] },
+  { id: 'products', label: 'Products', children: [{ id: 'flowers', label: 'Flowers' }, { id: 'bouquets', label: 'Bouquets' }, { id: 'plants', label: 'Plants' }] },
+  { id: 'events', label: 'Events' },
+  { id: 'contact', label: 'Contact' },
+];
+const setupSortableTree: ComponentDef['setup'] = (el) => {
+  const apply = () => el.setConfig({ items: PAGE_TREE(), sortable: true, handleOnly: el.hasAttribute('handle-only'), sortControls: el.hasAttribute('sort-controls') });
+  apply();
+  new MutationObserver(apply).observe(el, { attributes: true, attributeFilter: ['handle-only', 'sort-controls'] });
+  el.addEventListener('reorder', (e: CustomEvent) => console.log('[playground] reorder', JSON.stringify({ sourceId: e.detail.sourceId, targetId: e.detail.targetId, position: e.detail.position })));
+};
 /** A swatch as an image, so the grid layout has pictures without a network fetch. */
 const swatch = (a: string, b: string) => 'data:image/svg+xml,' + encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 4 3"><defs><linearGradient id="g" x2="1" y2="1"><stop stop-color="${a}"/><stop offset="1" stop-color="${b}"/></linearGradient></defs><rect width="4" height="3" fill="url(#g)"/></svg>`);
 const FABRICS = [
@@ -680,6 +697,8 @@ const CATALOGUE: ComponentDef[] = [
   // ── nav ──
   { tag: 'b-breadcrumb', label: 'Breadcrumb', category: 'nav', setup: (el) => el.setItems([{ label: 'Home', href: '#' }, { label: 'Section', href: '#' }, { label: 'Page' }]) },
   { tag: 'b-tree-menu', label: 'Tree menu', category: 'nav', setup: (el) => el.setItems([{ id: 'r', label: 'Reports', children: [{ id: 'r1', label: 'Sales' }, { id: 'r2', label: 'Inventory' }] }, { id: 's', label: 'Settings' }]) },
+  { tag: 'b-tree-menu', label: 'Tree menu, sortable', category: 'nav', controls: [HANDLE_ONLY, SORT_CONTROLS], setup: setupSortableTree,
+    note: 'TASK-789: drag a row or its grip before, after or into another page; or Tab to a grip, Space, arrows (→ / ← change the parent), Space. Escape cancels.' },
   { tag: 'b-sidebar', label: 'Sidebar', category: 'nav', setup: (el) => el.setItems([{ id: 'home', label: 'Home', icon: '🏠' }, { id: 'data', label: 'Data', icon: '📊', children: [{ id: 'd1', label: 'Tables' }] }, { id: 'settings', label: 'Settings', icon: '⚙️' }]) },
   { tag: 'pg-mobile-shell', label: 'Mobile app shell', category: 'nav',
     note: 'BMobileAppShell — fixed top-bar + safe-area bottom-nav driven by a Surface[] nav-model. Tap a bottom-nav item to switch surfaces; the active item highlights (updates window.location.hash).',

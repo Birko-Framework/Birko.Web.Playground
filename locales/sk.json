@@ -1,6 +1,8 @@
 {
   "bwc": {
-    "common": { "close": "Zavrieť" },
+    "common": {
+      "close": "Zavrieť"
+    },
     "qtyStepper": {
       "decrement": "Znížiť",
       "increment": "Zvýšiť",
@@ -26,6 +28,21 @@
       "zoom": "Zväčšiť obrázok",
       "zoomCount": "{index} / {count}",
       "status": "Obrázok {index} z {count}: {name}"
+    }
+  },
+  "common": {
+    "required": "{label} je povinné"
+  },
+  "pg": {
+    "form": {
+      "group": "Osobné",
+      "name": "Meno",
+      "namePh": "Zadajte meno",
+      "nameHelp": "Celé meno",
+      "colour": "Farba",
+      "red": "Červená",
+      "short": "Príliš krátke",
+      "extra": "Navyše"
     }
   }
 }

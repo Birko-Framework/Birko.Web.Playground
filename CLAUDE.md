@@ -82,7 +82,7 @@ node keyboard-check.mjs     # trusted key presses: tab stops, native radio arrow
 node ribbon-a11y-check.mjs  # what a screen reader gets from b-ribbon, read from Chromium's accessibility tree
 node locale-keys-check.mjs  # every bwc.* / common.* key src/ reads is in en.json at that path, and every en.json key is read (no build needed)
 node sortable-drag-check.mjs # b-sortable-list dragged by a real mouse and touchscreen, per layout (in-page code cannot capture a pointer)
-node locale-switch-check.mjs # a locale switch re-localizes components at every shadow depth, innermost first; an open dialog survives a re-render
+node locale-switch-check.mjs # a locale switch re-localizes components at every shadow depth, innermost first; an open dialog survives a re-render; b-form relabels (factory and i18n keys), keeping values, focus and errors
 node rerender-leak-check.mjs # re-renders every gallery component and fails on any that gains event listeners per render
 ```
 

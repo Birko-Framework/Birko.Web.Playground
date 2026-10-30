@@ -367,6 +367,9 @@ class PgDescription extends HTMLElement {
   }
 }
 if (!customElements.get('pg-description')) customElements.define('pg-description', PgDescription);
+
+// TASK-797 — a b-form relabels on a locale switch (Lab card).
+import './form-locale-lab.js';
 // ── Grid benchmark card (STORY-002 / TASK-002) ───────────────────────────────
 // Runs the raw-vs-bare 500-row comparison on demand — it allocates thousands of nodes, so it is
 // button-driven rather than built with the gallery.
@@ -528,6 +531,8 @@ const CATALOGUE: ComponentDef[] = [
     controls: [{ label: 'orientation', attr: 'orientation', options: ['horizontal', 'vertical'] }] },
   { tag: 'pg-description', label: 'Help text — the `description` row', category: 'lab',
     note: 'STORY-029/TASK-091: persistent help text under a control, wired into aria-describedby (a page-rendered sibling cannot be, since the control is in shadow DOM). Each numbered row answers one human-test question — SR announcement, error+description together, wrapping in a narrow column, help-row contrast per theme (with a live theme switcher — the shipped themes were never linked in index.html before, so the gallery could only be seen in light), hint+description coexisting, and bare dropping the row.' },
+  { tag: 'pg-form-locale', label: 'Form relabels on a locale switch', category: 'lab', wide: true,
+    note: 'TASK-797: switch Locale to SK from the ribbon. Left, a schema built with t() and passed as a factory; right, a schema kept as data with i18n keys. Type something, press Validate to show errors, focus a field, then switch: labels, placeholder, help text, the option and the errors change language; what you typed, focus and the server error stay.' },
   { tag: 'pg-equalizer', label: 'Range — vertical (equalizer)', category: 'inputs',
     note: 'A row of vertical b-range sliders (orientation="vertical", display="slider") — the equalizer/mixer layout (TASK-053).' },
   { tag: 'b-date-picker', label: 'Date picker', category: 'inputs', attrs: { label: 'Date' }, controls: [BARE] },

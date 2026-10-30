@@ -127,6 +127,101 @@ const clicks = await page.evaluate(() => {
 });
 check(`a nested listener fires once after two switches (${clicks})`, clicks === 1);
 
+// ── TASK-797 ─────────────────────────────────────────────────────────────────────────────────────────────────
+// b-form's schema text. `fac` is built by a factory with t() (through a component's label(), as the page has no
+// t of its own); `keys` is a plain object whose text is i18n keys, beside one literal string; `grow` is a
+// factory whose field set changes with the locale, which takes the clean re-render path.
+await page.evaluate(async () => {
+  const outer = document.querySelector('ln-outer');
+  const tt = (key, fallback) => outer.label('x-none', key, fallback);
+  const w = window;
+  w.__fm = { changes: 0 };
+  const mk = (id) => {
+    const f = document.createElement('b-form');
+    f.id = id;
+    f.addEventListener('change', () => { w.__fm.changes++; });
+    document.body.appendChild(f);
+    return f;
+  };
+  const fac = mk('fm-fac');
+  const keys = mk('fm-keys');
+  const grow = mk('fm-grow');
+  await new Promise((r) => setTimeout(r, 50));
+  fac.setSchema(() => ({
+    name: 'root', children: [{
+      name: 'person', label: tt('pg.form.group', 'Personal'), children: [
+        { name: 'name', type: 'text', required: true, label: tt('pg.form.name', 'Name'), placeholder: tt('pg.form.namePh', 'Enter a name'), description: tt('pg.form.nameHelp', 'Full name') },
+        { name: 'nick', type: 'text', label: 'Nick', rules: [{ type: 'minLength', value: 5, message: tt('pg.form.short', 'Too short') }] },
+        { name: 'colour', type: 'select', label: tt('pg.form.colour', 'Colour'), options: [{ value: 'r', label: tt('pg.form.red', 'Red') }] },
+      ],
+    }],
+  }));
+  keys.setSchema({
+    name: 'root', children: [
+      { name: 'name', type: 'text', label: { key: 'pg.form.name', fallback: 'Name' } },
+      { name: 'colour', type: 'select', label: 'Plain', options: [{ value: 'r', label: { key: 'pg.form.red', fallback: 'Red' } }] },
+    ],
+  });
+  grow.setSchema(() => ({
+    name: 'root', children: [
+      { name: 'name', type: 'text', label: tt('pg.form.name', 'Name') },
+      ...(tt('pg.form.name', 'Name') === 'Meno' ? [{ name: 'extra', type: 'text', label: tt('pg.form.extra', 'Extra') }] : []),
+    ],
+  }));
+  await new Promise((r) => setTimeout(r, 50));
+  const field = (f, path) => f.shadowRoot.querySelector(`[data-path="${path}"]`);
+  field(fac, 'person.nick').inputValue = 'ab';
+  field(grow, 'name').inputValue = 'kept';
+  fac.validate();
+  fac.setFieldError('person.colour', 'Server says no');
+  await new Promise((r) => setTimeout(r, 50));
+  const nick = field(fac, 'person.nick');
+  (nick.shadowRoot?.querySelector('input') ?? nick).focus();
+  w.__fm.changes = 0;
+});
+
+const forms = () => page.evaluate(() => {
+  const field = (id, path) => document.getElementById(id).shadowRoot.querySelector(`[data-path="${path}"]`);
+  const fac = document.getElementById('fm-fac');
+  return {
+    legend: fac.shadowRoot.querySelector('.b-form-legend')?.textContent?.trim(),
+    label: field('fm-fac', 'person.name').getAttribute('label'),
+    placeholder: field('fm-fac', 'person.name').getAttribute('placeholder'),
+    description: field('fm-fac', 'person.name').getAttribute('description'),
+    option: field('fm-fac', 'person.colour')._options?.[0]?.label,
+    required: field('fm-fac', 'person.name').getAttribute('error'),
+    rule: field('fm-fac', 'person.nick').getAttribute('error'),
+    custom: field('fm-fac', 'person.colour').getAttribute('error'),
+    nick: field('fm-fac', 'person.nick').inputValue,
+    focus: fac.shadowRoot.activeElement?.getAttribute('data-path') ?? null,
+    keyLabel: field('fm-keys', 'name').getAttribute('label'),
+    plainLabel: field('fm-keys', 'colour').getAttribute('label'),
+    keyOption: field('fm-keys', 'colour')._options?.[0]?.label,
+    growName: field('fm-grow', 'name')?.inputValue,
+    growExtra: field('fm-grow', 'extra')?.getAttribute('label') ?? null,
+    changes: window.__fm.changes,
+  };
+});
+
+const f0 = await forms();
+check(`b-form starts in English (${JSON.stringify(f0)})`, f0.label === 'Name' && f0.required === 'Name is required' && f0.rule === 'Too short' && f0.focus === 'person.nick');
+await switchTo('sk', 'Zavrieť');
+const f1 = await forms();
+check(`b-form factory: group, label, placeholder, help and option text switch to Slovak (${JSON.stringify([f1.legend, f1.label, f1.placeholder, f1.description, f1.option])})`,
+  f1.legend === 'Osobné' && f1.label === 'Meno' && f1.placeholder === 'Zadajte meno' && f1.description === 'Celé meno' && f1.option === 'Červená');
+check(`b-form: shown errors are worded again ("${f1.required}" / "${f1.rule}")`, f1.required === 'Meno je povinné' && f1.rule === 'Príliš krátke');
+check(`b-form: an error set with setFieldError stays as given ("${f1.custom}")`, f1.custom === 'Server says no');
+check(`b-form: the typed value and focus are kept (${f1.nick}, ${f1.focus})`, f1.nick === 'ab' && f1.focus === 'person.nick');
+check(`b-form: i18n keys in a plain schema follow the locale, a literal string does not (${f1.keyLabel}, ${f1.keyOption}, ${f1.plainLabel})`,
+  f1.keyLabel === 'Meno' && f1.keyOption === 'Červená' && f1.plainLabel === 'Plain');
+check(`b-form: a factory whose field set changes renders the new field and keeps the value (${f1.growExtra}, ${f1.growName})`, f1.growExtra === 'Navyše' && f1.growName === 'kept');
+check(`b-form: the switch fires no change event (${f1.changes})`, f1.changes === 0);
+await switchTo('en', 'Close');
+const f2 = await forms();
+check(`b-form back in English (${JSON.stringify([f2.label, f2.required, f2.keyLabel, f2.growExtra, f2.growName])})`,
+  f2.label === 'Name' && f2.required === 'Name is required' && f2.keyLabel === 'Name' && f2.growExtra === null && f2.growName === 'kept' && f2.changes === 0);
+await page.evaluate(() => { for (const id of ['fm-fac', 'fm-keys', 'fm-grow']) document.getElementById(id).remove(); });
+
 // ── TASK-791 ─────────────────────────────────────────────────────────────────────────────────────────────────
 const overlay = (tag, attr, modal) => page.evaluate(async (tag, attr, modal) => {
   const settle = () => new Promise((r) => setTimeout(r, 120));

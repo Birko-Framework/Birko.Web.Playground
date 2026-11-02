@@ -108,6 +108,8 @@ if (new URLSearchParams(location.search).has('smoke')) {
   if (runs('ribbon-layout-smoke')) void import('./ribbon-layout-smoke.js');
   // TASK-732 — b-ribbon split and menu buttons: parts, ARIA, events with parentId, text labels, large, folded, mobile.
   if (runs('ribbon-menu-smoke')) void import('./ribbon-menu-smoke.js');
+  // Birko TASK-803 — buildCategoryRibbon: module split buttons listing their pages; split main part and choices as links.
+  if (runs('category-ribbon-smoke')) void import('./category-ribbon-smoke.js');
   // TASK-738 — b-tooltip light theme and structured text; b-ribbon commands described, no native title.
   if (runs('tooltip-theme-smoke')) void import('./tooltip-theme-smoke.js');
   // TASK-744 — the base pages' empty-filter state is renderEmptyFilter(): default markup unchanged, overridable.
@@ -131,6 +133,7 @@ if (new URLSearchParams(location.search).has('smoke')) {
 // supplies a tiny concrete subclass — a consumer, not framework code — registered as
 // <pg-mobile-shell> and shown phone-framed in the Navigation section.
 import { BMobileAppShell, BasePage, type Surface } from 'birko-web-shell';
+import { mountCategoryRibbon } from './category-ribbon-demo.js';
 import { tour, type TourStep } from 'birko-web-components/layout';
 import { createWakeLockManager, createAudioCue, registerServiceWorker, getI18n } from 'birko-web-core';
 // Imperative dialog helpers (TASK-063) — the lean subpath, not the layout/inputs barrels.
@@ -699,6 +702,8 @@ const CATALOGUE: ComponentDef[] = [
   { tag: 'b-tree-menu', label: 'Tree menu', category: 'nav', setup: (el) => el.setItems([{ id: 'r', label: 'Reports', children: [{ id: 'r1', label: 'Sales' }, { id: 'r2', label: 'Inventory' }] }, { id: 's', label: 'Settings' }]) },
   { tag: 'b-tree-menu', label: 'Tree menu, sortable', category: 'nav', controls: [HANDLE_ONLY, SORT_CONTROLS], setup: setupSortableTree,
     note: 'TASK-789: drag a row or its grip before, after or into another page; or Tab to a grip, Space, arrows (→ / ← change the parent), Space. Escape cancels.' },
+  { tag: 'b-ribbon', label: 'Category ribbon (Shell)', category: 'nav', wide: true, attrs: { expanded: '', pinned: '' }, setup: (el) => { mountCategoryRibbon(el); },
+    note: 'TASK-803: the Shell\'s buildCategoryRibbon. A module with two or more pages is a split button: click its name for the first page, or open ▾ and pick any page (Alt+↓ opens it from the keyboard). The active module\'s pages stay as the second group. Export orders is an action: it only logs item-click.' },
   { tag: 'b-sidebar', label: 'Sidebar', category: 'nav', setup: (el) => el.setItems([{ id: 'home', label: 'Home', icon: '🏠' }, { id: 'data', label: 'Data', icon: '📊', children: [{ id: 'd1', label: 'Tables' }] }, { id: 'settings', label: 'Settings', icon: '⚙️' }]) },
   { tag: 'pg-mobile-shell', label: 'Mobile app shell', category: 'nav',
     note: 'BMobileAppShell — fixed top-bar + safe-area bottom-nav driven by a Surface[] nav-model. Tap a bottom-nav item to switch surfaces; the active item highlights (updates window.location.hash).',
@@ -867,6 +872,7 @@ const ABOUT: Record<string, string> = {
   'Sidebar': 'Side navigation that collapses to a narrow rail.',
   'Mobile app shell': 'A phone layout: top bar, content and bottom navigation, from birko-web-shell.',
   'Ribbon': 'An Office-style ribbon: tabs, groups, menus, toggles and a Quick Access Toolbar. The header above is one.',
+  'Category ribbon (Shell)': 'The ribbon an app shell builds from its modules: one tab per category, every page one pick away.',
   'Command palette': 'Ctrl+K search over commands from pluggable providers.',
   // ── lab ──
   'Help text — the `description` row': 'Checks the help-text row under inputs: announced, beside an error, wrapping, legible.',

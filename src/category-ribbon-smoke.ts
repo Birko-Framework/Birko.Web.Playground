@@ -64,6 +64,18 @@ void (async () => {
       const action = sr.querySelector<HTMLElement>('.ribbon-menu-item[data-menu-item="sales:export"]');
       check('an action choice is a button', action instanceof HTMLButtonElement);
       check('the module tooltip is its accessible description', main?.getAttribute('aria-description') === 'Orders, invoices and quotes.');
+      // TASK-808: the active module is tinted as a whole tile. Stacked, the ▾ part holds the label, and only the icon was lit.
+      const bg = (sel: string) => getComputedStyle(sr.querySelector<HTMLElement>(sel)!).backgroundColor;
+      const clear = (c: string) => c === 'rgba(0, 0, 0, 0)' || c === 'transparent';
+      const activeMain = bg('.ribbon-split-main[data-item="sales"]'), activeArrow = bg('.ribbon-split-arrow[data-arrow="sales"]');
+      const stacked = sr.querySelector('.ribbon-split-arrow[data-arrow="sales"]')!.getBoundingClientRect().top
+        >= sr.querySelector('.ribbon-split-main[data-item="sales"]')!.getBoundingClientRect().bottom - 1;
+      check(`the active split button is tinted as a whole, label and ▾ too (${activeMain} / ${activeArrow}, stacked ${stacked})`,
+        !clear(activeMain) && activeArrow === activeMain);
+      check(`and its caret takes the tint's text colour (${getComputedStyle(sr.querySelector('.ribbon-split-arrow[data-arrow="sales"] .ribbon-caret')!).color})`,
+        getComputedStyle(sr.querySelector('.ribbon-split-arrow[data-arrow="sales"] .ribbon-caret')!).color === getComputedStyle(sr.querySelector('.ribbon-split-arrow[data-arrow="sales"]')!).color);
+      check(`an inactive split button is not tinted (${bg('.ribbon-split-main[data-item="catalogue"]')} / ${bg('.ribbon-split-arrow[data-arrow="catalogue"]')})`,
+        clear(bg('.ribbon-split-main[data-item="catalogue"]')) && clear(bg('.ribbon-split-arrow[data-arrow="catalogue"]')));
       const noLink = demoTabs();
       noLink[0].groups[0].items = [{ ...noLink[0].groups[0].items[0], href: undefined }];
       el.setTabs(noLink);

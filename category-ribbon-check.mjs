@@ -96,6 +96,30 @@ try {
   let st = await waitFor((s) => s.hash === '#/demo/sales/orders' && s.activeModule === 'sales');
   check(`clicking Sales goes to its first page and makes it active (${st.hash}, ${st.activeModule})`, st.hash === '#/demo/sales/orders' && st.activeModule === 'sales');
 
+  // TASK-808: an active split button is tinted as a whole tile, also under the pointer. Stacked, the label is on the
+  // ▾ part, so a tint on the main part alone lit only the icon (Symbio's E-Shop, 2026-11-03).
+  const tint = () => page.evaluate(() => {
+    const sr = document.querySelector('#cr-host b-ribbon').shadowRoot;
+    const m = sr.querySelector('.ribbon-split-main[data-item="sales"]'), a = sr.querySelector('.ribbon-split-arrow[data-arrow="sales"]');
+    return { main: getComputedStyle(m).backgroundColor, arrow: getComputedStyle(a).backgroundColor,
+      stacked: a.getBoundingClientRect().top >= m.getBoundingClientRect().bottom - 1 };
+  });
+  const tinted = (t) => t.main !== 'rgba(0, 0, 0, 0)' && t.arrow === t.main;
+  // Large groups, as Symbio's shell sets them: there the parts stack and the label sits on the ▾ part.
+  await page.evaluate(() => document.querySelector('#cr-host b-ribbon').setAttribute('preferred-group-size', 'large'));
+  await page.waitForFunction(() => !!document.querySelector('#cr-host b-ribbon').shadowRoot.querySelector('.ribbon-group.size-large .ribbon-split-arrow[data-arrow="sales"]'), { timeout: 3000 }).catch(() => {});
+  let t = await tint();
+  check(`the active module's tile is tinted whole, its label part too (${JSON.stringify(t)})`, t.stacked && tinted(t));
+  const lbl = await page.evaluate(() => { const r = document.querySelector('#cr-host b-ribbon').shadowRoot.querySelector('.ribbon-split-arrow[data-arrow="sales"]').getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2 }; });
+  await page.mouse.move(lbl.x, lbl.y);
+  await sleep(200);
+  const activeTint = t.main;
+  t = await tint();
+  check(`and keeps that tint under the pointer, not the hover grey (${JSON.stringify(t)})`, t.main === activeTint && t.arrow === activeTint);
+  await page.mouse.move(5, 400);
+  await page.evaluate(() => document.querySelector('#cr-host b-ribbon').removeAttribute('preferred-group-size'));
+  await page.waitForFunction(() => !document.querySelector('#cr-host b-ribbon').shadowRoot.querySelector('.ribbon-group.size-large'), { timeout: 3000 }).catch(() => {});
+
   // ── 2. ▾ and a pick: another module's third page, in one go ──
   await clickIn('.ribbon-split-arrow[data-arrow="sales"]');
   st = await waitFor((s) => s.open.length === 1);

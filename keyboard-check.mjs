@@ -10,7 +10,7 @@
 import http from 'node:http';
 import { readFile } from 'node:fs/promises';
 import { extname, join, normalize } from 'node:path';
-import puppeteer from 'puppeteer';
+import { launchBrowser } from './launch-browser.mjs';
 
 const ROOT = 'wwwroot';
 const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.map': 'application/json', '.json': 'application/json' };
@@ -29,7 +29,7 @@ const url = `http://localhost:${server.address().port}/`;
 const results = [];
 const check = (name, ok) => { results.push({ name, ok }); console.log(`${ok ? 'PASS' : 'FAIL'} ${name}`); };
 
-const browser = await puppeteer.launch({ headless: 'new', args: ['--no-sandbox', '--disable-setuid-sandbox'] });
+const browser = await launchBrowser({ headless: 'new', args: ['--no-sandbox', '--disable-setuid-sandbox'] });
 try {
   const page = await browser.newPage();
   // ?kb=1 loads the fixtures only this script needs (TASK-545's toast manager on window and an undo-mode page).

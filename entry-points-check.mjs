@@ -13,7 +13,7 @@
 import { readFileSync, readdirSync, existsSync } from 'node:fs';
 import { dirname, join, normalize } from 'node:path';
 import * as esbuild from 'esbuild';
-import puppeteer from 'puppeteer';
+import { launchBrowser } from './launch-browser.mjs';
 import { resolveBirkoWeb } from './birko-src.mjs';
 
 const WEB = resolveBirkoWeb();
@@ -127,7 +127,7 @@ const FIXTURE_HOLDS = {
   'b-command-palette': `window.__fixtureState === true`,
 };
 
-const browser = await puppeteer.launch({ args: ['--no-sandbox'] });
+const browser = await launchBrowser({ args: ['--no-sandbox'] });
 try {
   for (const c of components) {
     const body = FIXTURES[c.tag] ?? `document.body.innerHTML = '<${c.tag}></${c.tag}>';`;

@@ -16,7 +16,7 @@
 import http from 'node:http';
 import { readFile } from 'node:fs/promises';
 import { extname, join, normalize } from 'node:path';
-import puppeteer from 'puppeteer';
+import { launchBrowser } from './launch-browser.mjs';
 
 const ROOT = 'wwwroot';
 // Not '/playground/': the real deploy path has dots in it, which is the shape most likely to trip a
@@ -61,7 +61,7 @@ await new Promise((r) => server.listen(0, '127.0.0.1', r));
 const base = `http://127.0.0.1:${server.address().port}${PREFIX}/`;
 console.log(`serving wwwroot/ at ${base}`);
 
-const browser = await puppeteer.launch({ args: ['--no-sandbox'] });
+const browser = await launchBrowser({ args: ['--no-sandbox'] });
 const page = await browser.newPage();
 
 const consoleErrors = [];

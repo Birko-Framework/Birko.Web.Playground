@@ -27,7 +27,7 @@ import { mkdtempSync, writeFileSync, readFileSync, rmSync, mkdirSync, copyFileSy
 import { tmpdir } from 'node:os';
 import { extname, join, normalize, resolve } from 'node:path';
 import * as esbuild from 'esbuild';
-import puppeteer from 'puppeteer';
+import { launchBrowser } from './launch-browser.mjs';
 import { resolveBirkoWeb, birkoAliases } from './birko-src.mjs';
 
 const BIRKO_SRC = resolveBirkoWeb();
@@ -109,7 +109,7 @@ async function serve(root) {
   return { base: `http://127.0.0.1:${server.address().port}/`, close: () => server.close() };
 }
 
-const browser = await puppeteer.launch({ args: ['--no-sandbox'] });
+const browser = await launchBrowser({ args: ['--no-sandbox'] });
 
 // ── 1. Edit tokens in the playground and read the previewed look ────────────────────────────────
 const pg = await serve('wwwroot');

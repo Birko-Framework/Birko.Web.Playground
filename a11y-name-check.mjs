@@ -13,7 +13,7 @@
 import http from 'node:http';
 import { readFile } from 'node:fs/promises';
 import { extname, join, normalize } from 'node:path';
-import puppeteer from 'puppeteer';
+import { launchBrowser } from './launch-browser.mjs';
 
 const ROOT = 'wwwroot';
 const MIME = {
@@ -61,7 +61,7 @@ const NOT_A_CONTROL = new Set(['StaticText', 'LabelText', 'InlineTextBox', 'gene
 const checks = [];
 const check = (name, ok, detail = '') => checks.push({ name, ok, detail });
 
-const browser = await puppeteer.launch({ args: ['--no-sandbox'] });
+const browser = await launchBrowser({ args: ['--no-sandbox'] });
 const page = await browser.newPage();
 await page.goto(base, { waitUntil: 'networkidle0', timeout: 90_000 });
 

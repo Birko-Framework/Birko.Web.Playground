@@ -9,7 +9,7 @@
 import http from 'node:http';
 import { readFile } from 'node:fs/promises';
 import { extname, join, normalize } from 'node:path';
-import puppeteer from 'puppeteer';
+import { launchBrowser } from './launch-browser.mjs';
 
 const ROOT = 'wwwroot';
 const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.map': 'application/json', '.json': 'application/json' };
@@ -73,7 +73,7 @@ const stateIn = (page) => page.evaluate(() => {
   return { shown: level(tree.shadowRoot.querySelector('.tree')), reorders: window.__tr.reorders, selects: window.__tr.selects, consumer: window.__tr.items.map((i) => i.id).join(',') };
 });
 
-const browser = await puppeteer.launch({ headless: 'new', args: ['--no-sandbox', '--disable-setuid-sandbox'] });
+const browser = await launchBrowser({ headless: 'new', args: ['--no-sandbox', '--disable-setuid-sandbox'] });
 try {
   const page = await browser.newPage();
   const pageErrors = [];

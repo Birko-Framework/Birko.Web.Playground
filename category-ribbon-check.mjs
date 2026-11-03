@@ -9,7 +9,7 @@
 import http from 'node:http';
 import { readFile } from 'node:fs/promises';
 import { extname, join, normalize } from 'node:path';
-import puppeteer from 'puppeteer';
+import { launchBrowser } from './launch-browser.mjs';
 
 const ROOT = 'wwwroot';
 const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.map': 'application/json', '.json': 'application/json' };
@@ -29,7 +29,7 @@ const results = [];
 const check = (name, ok) => { results.push({ name, ok }); console.log(`${ok ? 'PASS' : 'FAIL'} ${name}`); };
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
-const browser = await puppeteer.launch({ headless: true });
+const browser = await launchBrowser({ headless: true });
 const page = await browser.newPage();
 await page.setViewport({ width: 1280, height: 800 });
 const errors = [];
@@ -67,8 +67,21 @@ const state = () => page.evaluate(() => {
   };
 });
 const waitFor = async (pred, ms = 1500) => { for (let t = 0; t < ms; t += 50) { const s = await state(); if (pred(s)) return s; await sleep(50); } return state(); };
-/** Clicks the element under `sel` (in the ribbon's shadow root) where it is now: the ribbon re-renders on navigation. */
+/**
+ * Clicks the element under `sel` (in the ribbon's shadow root) where it is now: the ribbon re-renders on navigation,
+ * sometimes twice (setTabs, then a layout pass), so it first waits for the shadow root to stay unchanged for 150 ms. A
+ * click landing mid-render hit the old DOM: measured 2026-11-03, the ▾ after a navigation opened no menu, 2 runs of 6
+ * on a busy machine.
+ */
 const clickIn = async (sel, opts = {}) => {
+  await page.evaluate(() => new Promise((resolve) => {
+    const sr = document.querySelector('#cr-host b-ribbon').shadowRoot;
+    let quiet = setTimeout(done, 150);
+    const mo = new MutationObserver(() => { clearTimeout(quiet); quiet = setTimeout(done, 150); });
+    const give = setTimeout(done, 2000);
+    function done() { mo.disconnect(); clearTimeout(quiet); clearTimeout(give); resolve(); }
+    mo.observe(sr, { childList: true, subtree: true, attributes: true });
+  }));
   const box = await page.evaluate((sel) => {
     const r = document.querySelector('#cr-host b-ribbon').shadowRoot.querySelector(sel)?.getBoundingClientRect();
     return r ? { x: r.left + r.width / 2, y: r.top + r.height / 2 } : null;

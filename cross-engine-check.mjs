@@ -18,7 +18,7 @@
 import http from 'node:http';
 import { readFile } from 'node:fs/promises';
 import { extname, join, normalize } from 'node:path';
-import puppeteer from 'puppeteer';
+import { launchBrowser } from './launch-browser.mjs';
 
 const ROOT = 'wwwroot';
 
@@ -73,7 +73,7 @@ const base = `http://127.0.0.1:${server.address().port}/?smoke=1`;
 
 /** Runs the suite in one engine and returns what it reported. */
 async function run(browserName) {
-  const browser = await puppeteer.launch({ browser: browserName, args: ['--no-sandbox'] });
+  const browser = await launchBrowser({ browser: browserName, args: ['--no-sandbox'] });
   const page = await browser.newPage();
 
   const lines = [];

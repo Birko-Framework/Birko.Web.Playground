@@ -73,6 +73,13 @@ npm run watch                  # rebuild on save
 `Birko.Web.*` has no unit-test runner, so this playground is the verification vehicle. Build first —
 both scripts read `wwwroot/`, so an unbuilt edit silently verifies the previous bundle.
 
+**Every check launches its browser through `launch-browser.mjs`** (`launchBrowser(options)`, never `puppeteer.launch`):
+it turns on Chrome's focus emulation for every page and turns off `CalculateNativeWinOcclusion`, so a check does not
+depend on which window the desktop has focused or whether the screen is locked. Without it, 26 focus checks in
+verify.mjs, keyboard-check's key tips and sortable-drag-check's auto-scroll failed on unchanged code one evening
+(2026-11-02) and passed the next morning. A check that clicks a component which re-renders after the click waits for
+it to settle first (category-ribbon-check's `clickIn`).
+
 ```bash
 node build.js
 node verify.mjs             # every section renders, no EMPTY component, no page error, all *-smoke suites

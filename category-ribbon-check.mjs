@@ -116,6 +116,43 @@ try {
   const activeTint = t.main;
   t = await tint();
   check(`and keeps that tint under the pointer, not the hover grey (${JSON.stringify(t)})`, t.main === activeTint && t.arrow === activeTint);
+  // TASK-806: no tooltip over an open menu. Symbio's E-Shop description covered its own open menu after its shell
+  // re-rendered the ribbon under a still pointer; the same happens when the pointer moves over another command.
+  const tipShown = () => page.evaluate(() => {
+    const t = document.querySelector('#cr-host b-ribbon').shadowRoot.querySelector('.ribbon-tooltip')?.shadowRoot?.querySelector('.tip');
+    return t?.matches(':popover-open') ? t.textContent.trim().slice(0, 40) : '';
+  });
+  const at = (sel) => page.evaluate((sel) => { const r = document.querySelector('#cr-host b-ribbon').shadowRoot.querySelector(sel).getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2 }; }, sel);
+  await page.mouse.move(5, 400);
+  await sleep(400);
+  await clickIn('.ribbon-split-arrow[data-arrow="catalogue"]');
+  await waitFor((s) => s.open.length === 1);
+  const over = await at('.ribbon-split-main[data-item="sales"]');
+  await page.mouse.move(over.x, over.y, { steps: 4 });
+  await sleep(1200);
+  st = await state();
+  let shown = await tipShown();
+  check(`with a menu open, hovering another command shows no tooltip over it (${st.open}; tip "${shown}")`, JSON.stringify(st.open) === '["Catalogue"]' && shown === '');
+  // A click on an empty part of the panel closes it, as a person does (▾ again reopens it; Escape needs focus in it).
+  const empty = await page.evaluate(() => { const r = document.querySelector('#cr-host b-ribbon').shadowRoot.querySelector('.ribbon-panel').getBoundingClientRect(); return { x: r.right - 8, y: r.top + r.height / 2 }; });
+  await page.mouse.click(empty.x, empty.y);
+  const closed = (await waitFor((s) => s.open.length === 0)).open.length === 0;
+  await page.mouse.move(5, 400);
+  await sleep(400);
+  await page.mouse.move(over.x, over.y, { steps: 4 });
+  await sleep(1200);
+  shown = await tipShown();
+  check(`once it closes, the hover tooltip is back (closed ${closed}; ${shown})`, closed && shown.startsWith('Sales'));
+  // Opened from the keyboard on a focused ▾ (its tooltip showing), the menu still gets no tooltip over it.
+  await page.mouse.move(5, 400);
+  await page.evaluate(() => document.querySelector('#cr-host b-ribbon').shadowRoot.querySelector('.ribbon-split-arrow[data-arrow="catalogue"]').focus());
+  await page.keyboard.press('Enter');
+  st = await waitFor((s) => s.open.length === 1);
+  await sleep(300);
+  shown = await tipShown();
+  check(`opened by Enter, the menu has no tooltip over it (${st.open}; tip "${shown}")`, JSON.stringify(st.open) === '["Catalogue"]' && shown === '');
+  await page.keyboard.press('Escape');
+  await waitFor((s) => s.open.length === 0);
   await page.mouse.move(5, 400);
   await page.evaluate(() => document.querySelector('#cr-host b-ribbon').removeAttribute('preferred-group-size'));
   await page.waitForFunction(() => !document.querySelector('#cr-host b-ribbon').shadowRoot.querySelector('.ribbon-group.size-large'), { timeout: 3000 }).catch(() => {});

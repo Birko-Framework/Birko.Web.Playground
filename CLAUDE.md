@@ -91,6 +91,7 @@ node locale-keys-check.mjs  # every bwc.* / common.* key src/ reads is in en.jso
 node sortable-drag-check.mjs # b-sortable-list dragged by a real mouse and touchscreen, per layout (in-page code cannot capture a pointer)
 node tree-drag-check.mjs     # b-tree-menu (sortable) dragged by a real mouse and touchscreen: before / after / inside, own subtree refused
 node category-ribbon-check.mjs # the Shell's category ribbon by real mouse and keyboard: module split part, ▾ pick, Alt+↓ / Enter / Space, middle-click
+node contextual-ribbon-check.mjs # a Shell page's contextual ribbon tab by real mouse: raised on a row click, commands, kept, gone on close
 node testing-smoke-check.mjs # birko-web-testing's runSmoke with a real Playwright: mustSee / expectSelector take the first VISIBLE match
 node locale-switch-check.mjs # a locale switch re-localizes components at every shadow depth, innermost first; an open dialog survives a re-render; b-form relabels (factory and i18n keys), keeping values, focus and errors
 node rerender-leak-check.mjs # re-renders every gallery component and fails on any that gains event listeners per render

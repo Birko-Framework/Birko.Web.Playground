@@ -110,6 +110,8 @@ if (new URLSearchParams(location.search).has('smoke')) {
   if (runs('ribbon-menu-smoke')) void import('./ribbon-menu-smoke.js');
   // Birko TASK-803 — buildCategoryRibbon: module split buttons listing their pages; split main part and choices as links.
   if (runs('category-ribbon-smoke')) void import('./category-ribbon-smoke.js');
+  // TASK-804 — a Shell page raises a contextual ribbon tab for its record.
+  if (runs('contextual-ribbon-smoke')) void import('./contextual-ribbon-smoke.js');
   // TASK-738 — b-tooltip light theme and structured text; b-ribbon commands described, no native title.
   if (runs('tooltip-theme-smoke')) void import('./tooltip-theme-smoke.js');
   // TASK-744 — the base pages' empty-filter state is renderEmptyFilter(): default markup unchanged, overridable.
@@ -134,6 +136,7 @@ if (new URLSearchParams(location.search).has('smoke')) {
 // <pg-mobile-shell> and shown phone-framed in the Navigation section.
 import { BMobileAppShell, BasePage, type Surface } from 'birko-web-shell';
 import { mountCategoryRibbon } from './category-ribbon-demo.js';
+import { CONTEXTUAL_DEMO_PAGE } from './contextual-ribbon-demo.js';
 import { tour, type TourStep } from 'birko-web-components/layout';
 import { createWakeLockManager, createAudioCue, registerServiceWorker, getI18n } from 'birko-web-core';
 // Imperative dialog helpers (TASK-063) — the lean subpath, not the layout/inputs barrels.
@@ -704,6 +707,10 @@ const CATALOGUE: ComponentDef[] = [
     note: 'TASK-789: drag a row or its grip before, after or into another page; or Tab to a grip, Space, arrows (→ / ← change the parent), Space. Escape cancels.' },
   { tag: 'b-ribbon', label: 'Category ribbon (Shell)', category: 'nav', wide: true, attrs: { expanded: '', pinned: '' }, setup: (el) => { mountCategoryRibbon(el); },
     note: 'TASK-803: the Shell\'s buildCategoryRibbon. A module with two or more pages is a split button: click its name for the first page, or open ▾ and pick any page (Alt+↓ opens it from the keyboard). The active module\'s pages stay as the second group. Export orders is an action: it only logs item-click.' },
+  { tag: 'pg-ctx-shell', label: 'Contextual tab (Shell)', category: 'nav', wide: true,
+    attrs: { style: 'display:block;height:520px;border:1px solid var(--b-border);border-radius:var(--b-radius)' },
+    render: () => CONTEXTUAL_DEMO_PAGE,
+    note: 'TASK-804: a BaseSplitPage raises a contextual ribbon tab for the selected order (getContextualRibbon). Select a row: the Order tab appears in its band and opens. Confirm / Ship / Cancel go to the page (onContextualAction) and what is enabled follows the status. Switch to Sales or Stock and back: it stays. Close the detail (✕): it goes, back to the tab you were on.' },
   { tag: 'b-sidebar', label: 'Sidebar', category: 'nav', setup: (el) => el.setItems([{ id: 'home', label: 'Home', icon: '🏠' }, { id: 'data', label: 'Data', icon: '📊', children: [{ id: 'd1', label: 'Tables' }] }, { id: 'settings', label: 'Settings', icon: '⚙️' }]) },
   { tag: 'pg-mobile-shell', label: 'Mobile app shell', category: 'nav',
     note: 'BMobileAppShell — fixed top-bar + safe-area bottom-nav driven by a Surface[] nav-model. Tap a bottom-nav item to switch surfaces; the active item highlights (updates window.location.hash).',
@@ -872,6 +879,7 @@ const ABOUT: Record<string, string> = {
   'Sidebar': 'Side navigation that collapses to a narrow rail.',
   'Mobile app shell': 'A phone layout: top bar, content and bottom navigation, from birko-web-shell.',
   'Ribbon': 'An Office-style ribbon: tabs, groups, menus, toggles and a Quick Access Toolbar. The header above is one.',
+  'Contextual tab (Shell)': 'A page raises a ribbon tab for the record it shows, with that record\'s commands, while it is selected.',
   'Category ribbon (Shell)': 'The ribbon an app shell builds from its modules: one tab per category, every page one pick away.',
   'Command palette': 'Ctrl+K search over commands from pluggable providers.',
   // ── lab ──

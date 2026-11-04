@@ -967,6 +967,21 @@ try {
     const layer = document.getElementById('kb-ribbon').shadowRoot.querySelector('.ribbon-keytips');
     return layer.matches(':popover-open') ? [...layer.querySelectorAll('.ribbon-keytip')].map((t) => t.textContent).sort().join('') : '';
   });
+  /** Whether each badge is what the browser hits at its own centre: `all N`, or the letters covered by something else. */
+  const tipsOnTop = () => page.evaluate(() => {
+    const sr = document.getElementById('kb-ribbon').shadowRoot;
+    const all = [...sr.querySelectorAll('.ribbon-keytips:popover-open .ribbon-keytip')];
+    // The layer is pointer-events: none, which hit testing skips; lifted for the measurement only.
+    const layer = sr.querySelector('.ribbon-keytips');
+    layer.style.pointerEvents = 'auto';
+    const covered = all.filter((t) => {
+      const b = t.getBoundingClientRect();
+      const hit = sr.elementFromPoint(b.left + b.width / 2, b.top + b.height / 2);
+      return hit !== t && !t.contains(hit);
+    }).map((t) => t.textContent);
+    layer.style.pointerEvents = '';
+    return covered.length ? `covered ${covered.join('')} of ${all.length}` : `all ${all.length}`;
+  });
   const combo = async (mods = ['Alt', 'Meta']) => {
     for (const m of mods) await page.keyboard.down(m);
     for (const m of [...mods].reverse()) await page.keyboard.up(m);
@@ -1011,6 +1026,8 @@ try {
   const arrowTip = letters['arrow:paste'];
   await key(arrowTip);
   check(`the ▾ part's letter (${arrowTip}) opens its menu with tips on its choices (${await tips()})`, (await tips()) === 'AP' || (await tips()).length === 2);
+  // TASK-813: the menu opened after the badge layer, so the top layer stacked it OVER the badges (Symbio, Hotel ▾).
+  check(`the menu's tips are painted over the menu (${await tipsOnTop()})`, (await tipsOnTop()) === 'all 2');
   await key('I'); // "Picture": P belongs to "Paste as text", so its first free letter is I
   check(`a choice's letter runs it (${await last()})`, JSON.parse(await last())?.itemId === 'pp' && JSON.parse(await last())?.parentId === 'paste');
 
@@ -1042,6 +1059,7 @@ try {
   await key('C'); // Clipboard, folded
   const flyoutTips = await tips();
   check(`a folded group's letter opens its flyout with its own tips (${commandTips} → ${flyoutTips})`, flyoutTips.includes('V') && flyoutTips.length >= 3);
+  check(`the flyout's tips are painted over the flyout (${await tipsOnTop()})`, (await tipsOnTop()).startsWith('all'));
   await key('V');
   check(`and a letter there runs the command (${await last()})`, JSON.parse(await last())?.itemId === 'paste');
 
@@ -1280,6 +1298,7 @@ try {
   await pauseG(120);
   const gridTips = await page.evaluate(() => [...document.getElementById('kb-ribbon').shadowRoot.querySelectorAll('.ribbon-keytip')].length);
   check(`▾ has a key tip (${expandTip}) that opens the grid with a letter per tile (${gridTips})`, !!expandTip && (await gState()).grid && gridTips === 8);
+  check(`the grid's tips are painted over the grid (${await tipsOnTop()})`, (await tipsOnTop()) === 'all 8');
   await page.keyboard.press('T'); // Title
   await pauseG(100);
   check(`a tile's letter in the grid picks it (${JSON.stringify((await gState()).clicks.at(-1))})`, (await gState()).clicks.at(-1)?.itemId === 's4');

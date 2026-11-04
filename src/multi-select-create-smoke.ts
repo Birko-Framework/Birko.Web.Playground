@@ -113,6 +113,23 @@ void (async () => {
       check('...and the popup is that dialog', dropdown.getAttribute('role') === 'dialog');
       el.parentElement!.remove();
     }
+
+    // ── 5. Closing resets the search box with the filter (TASK-814) ──
+    // Closing cleared the filter but not the box, so the list reopened unfiltered under the old query.
+    {
+      const el = await mount();
+      await typeNew(el, 'Bl');
+      const listed = () => el.shadowRoot!.querySelectorAll('.option:not(.option-create)').length;
+      check(`typing filters the list (${listed()} option)`, listed() === 1);
+      document.body.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, composed: true }));
+      await settle();
+      (el.shadowRoot!.querySelector('.container') as HTMLElement).click();
+      await settle();
+      const search = el.shadowRoot!.querySelector('.dd-search') as HTMLInputElement;
+      check(`reopened, the search box is empty ("${search.value}")`, search.value === '');
+      check(`...and every option is listed (${listed()})`, listed() === OPTIONS.length);
+      el.parentElement!.remove();
+    }
   } catch (e) {
     check(`unexpected throw: ${(e as Error).message}`, false);
   }

@@ -3,7 +3,8 @@
 // Nothing here opens a popover (see ribbon-menu-smoke): opening, picking and navigating are in category-ribbon-check.mjs.
 import 'birko-web-components/nav';
 import type { RibbonItem, RibbonMenuItem, RibbonTab } from 'birko-web-components';
-import { demoTabs } from './category-ribbon-demo.js';
+import { buildCategoryRibbon, type ModuleManifest } from 'birko-web-shell';
+import { demoTabs, demoResolve, DEMO_MODULES, DEMO_CATEGORIES } from './category-ribbon-demo.js';
 
 type Ribbon = HTMLElement & { setTabs(t: RibbonTab[]): void };
 const settle = (ms = 80) => new Promise<void>((r) => setTimeout(() => requestAnimationFrame(() => r()), ms));
@@ -111,6 +112,41 @@ void (async () => {
       check(`on the phone list a page choice is a link (${sub?.tagName})`, sub instanceof HTMLAnchorElement && sub.getAttribute('href') === '#/demo/sales/invoices');
       check('and an action choice a button', act instanceof HTMLButtonElement);
       el.remove();
+    }
+
+    // ── 4. A category holding ONE module (Birko TASK-816, found in Symbio's Administrácia) ──
+    // b-ribbon drops the panel of a tab whose only command is a plain link: clicking the tab already goes there. A
+    // module with pages is a split button, and its ▾ menu is only in the panel, so its tab must keep one: hovering
+    // it previews the panel, as every other tab does. A one-page module is still a plain link, and its tab still
+    // has no panel.
+    {
+      const withPages = DEMO_MODULES().map((m) => m.id !== 'users' ? m : { ...m, options: [
+        ...m.options, { id: 'roles', label: 'Roles', icon: '🔑', route: '/demo/users/roles' },
+      ] });
+      const panelOnHover = async (modules: ModuleManifest[]) => {
+        const el = document.createElement('b-ribbon') as Ribbon;
+        el.setAttribute('expanded', '');
+        el.setAttribute('pinned', '');
+        el.setAttribute('active', 'business');
+        host.appendChild(el);
+        await settle(20);
+        el.setTabs(buildCategoryRibbon(modules, DEMO_CATEGORIES, demoResolve));
+        await settle(160);
+        const sr = el.shadowRoot!;
+        sr.querySelector<HTMLElement>('.ribbon-tab[data-tab="admin"]')?.dispatchEvent(new MouseEvent('mouseenter'));
+        await settle(60);
+        const shown = [...sr.querySelectorAll<HTMLElement>('.ribbon-panel [data-item]')].map((b) => b.dataset.item ?? '');
+        const arrow = !!sr.querySelector('.ribbon-panel .ribbon-split-arrow[data-arrow="users"]');
+        el.remove();
+        return { shown, arrow };
+      };
+      const one = await panelOnHover(withPages);
+      check(`hovering a tab whose one module has pages shows its panel (${one.shown.join(',')})`,
+        one.shown.includes('users') && !one.shown.includes('sales'));
+      check('and that panel holds the module\'s ▾ menu', one.arrow);
+      const plain = await panelOnHover(DEMO_MODULES());
+      check(`a tab whose one module has one page still has no panel to preview (${plain.shown.join(',')})`,
+        !plain.shown.includes('users'));
     }
   } catch (e) {
     check(`unexpected throw: ${(e as Error).message}`, false);

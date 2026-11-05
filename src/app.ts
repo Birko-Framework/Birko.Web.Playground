@@ -110,6 +110,7 @@ if (new URLSearchParams(location.search).has('smoke')) {
   if (runs('ribbon-menu-smoke')) void import('./ribbon-menu-smoke.js');
   // Birko TASK-803 — buildCategoryRibbon: module split buttons listing their pages; split main part and choices as links.
   if (runs('category-ribbon-smoke')) void import('./category-ribbon-smoke.js');
+  if (runs('country-select-smoke')) void import('./country-select-smoke.js');
   // TASK-804 — a Shell page raises a contextual ribbon tab for its record.
   if (runs('contextual-ribbon-smoke')) void import('./contextual-ribbon-smoke.js');
   // TASK-738 — b-tooltip light theme and structured text; b-ribbon commands described, no native title.
@@ -551,6 +552,8 @@ const CATALOGUE: ComponentDef[] = [
   { tag: 'b-search-input', label: 'Search input', category: 'inputs', attrs: { placeholder: 'Search…' }, controls: [SIZE] },
   { tag: 'b-select', label: 'Select', category: 'inputs', attrs: { label: 'Pick one', placeholder: 'Choose…' }, render: () => '<option value="1">One</option><option value="2">Two</option><option value="3">Three</option>', controls: [SIZE, BARE] },
   { tag: 'b-multi-select', label: 'Multi-select', category: 'inputs', attrs: { label: 'Pick many' }, controls: [BARE], setup: (el) => el.setOptions([{ value: '1', label: 'One' }, { value: '2', label: 'Two' }, { value: '3', label: 'Three' }]) },
+  { tag: 'b-country-select', label: 'Country select', category: 'inputs', attrs: { label: 'Country', value: 'SK', preferred: 'SK,CZ' },
+    controls: [{ label: 'multiple', attr: 'multiple', options: ['', 'multiple'] }, BARE] },
   { tag: 'b-color-picker', label: 'Color picker', category: 'inputs', attrs: { value: '#25ba7acc', label: 'Brand color', alpha: '' } },
   { tag: 'b-range', label: 'Range', category: 'inputs', attrs: { min: '0', max: '100', value: '60' },
     controls: [{ label: 'orientation', attr: 'orientation', options: ['horizontal', 'vertical'] }] },
@@ -815,6 +818,7 @@ const ABOUT: Record<string, string> = {
   'Search input': 'A search box that reports the query after a short pause in typing.',
   'Select': 'A dropdown with optional search and creatable values.',
   'Multi-select': 'Pick several values from a list, shown as removable chips.',
+  'Country select': 'One country or several, found by name or code; the value is ISO codes, with an EU shortcut.',
   'Color picker': 'Pick a colour, with optional alpha, as hex.',
   'Range': 'A slider for one value or a from–to range.',
   'Range — vertical (equalizer)': 'The same b-range turned vertical: a bank of sliders like an equalizer.',
@@ -1719,7 +1723,7 @@ function injectStyles(): void {
     .pg-stage:has(> b-ribbon) { overflow:visible; }
     /* form inputs + wide display/nav components fill the available card width; small inline
        components (button, badge, tag, switch, spinner, …) keep their intrinsic size, centered. */
-    .pg-stage > :is(b-input,b-textarea,b-select,b-search-input,b-multi-select,b-tag-input,b-color-picker,
+    .pg-stage > :is(b-input,b-textarea,b-select,b-search-input,b-multi-select,b-country-select,b-tag-input,b-color-picker,
       b-date-picker,b-datetime-picker,b-date-range-picker,b-time,b-range,b-file-upload,b-markdown-editor,
       b-inline-edit,b-segmented,b-option-group,b-form,b-progress,b-table,b-data-table,b-editable-table,
       b-chart,b-json-viewer,b-json-diff,b-xml-viewer,b-object-tree,b-definition-list,b-code-block,b-pre,b-stat,b-card,

@@ -1723,7 +1723,7 @@ function injectStyles(): void {
     .pg-stage:has(> b-ribbon) { overflow:visible; }
     /* form inputs + wide display/nav components fill the available card width; small inline
        components (button, badge, tag, switch, spinner, …) keep their intrinsic size, centered. */
-    .pg-stage > :is(b-input,b-textarea,b-select,b-search-input,b-multi-select,b-tag-input,b-color-picker,
+    .pg-stage > :is(b-input,b-textarea,b-select,b-search-input,b-multi-select,b-country-select,b-tag-input,b-color-picker,
       b-date-picker,b-datetime-picker,b-date-range-picker,b-time,b-range,b-file-upload,b-markdown-editor,
       b-inline-edit,b-segmented,b-option-group,b-form,b-progress,b-table,b-data-table,b-editable-table,
       b-chart,b-json-viewer,b-json-diff,b-xml-viewer,b-object-tree,b-definition-list,b-code-block,b-pre,b-stat,b-card,

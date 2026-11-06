@@ -121,6 +121,61 @@ for (const c of cases) {
   check(`${c.name}: the modal stays open`, await modalOpen());
 }
 
+// What a person does (Symbio's human test, 2026-11-06): click things with the mouse, then press Escape wherever focus
+// happens to be. A pick rebuilds the option list, so the clicked checkbox (and a quick-pick button) leaves the DOM with
+// focus on it; an Escape aimed at an element, as above, cannot see that.
+const mouseCases = [
+  {
+    name: 'b-select: open by click, Escape where focus is',
+    open: () => page.locator('#single .combo').click(),
+    act: async () => {},
+    isOpen: async () => (await expanded('#single .combo-input')) === 'true',
+  },
+  {
+    name: 'b-multi-select: click an option, Escape where focus is',
+    open: () => page.locator('#multi .container').click(),
+    act: () => page.locator('#multi label.option', { hasText: 'Gamma' }).click(),
+    isOpen: async () => (await expanded('#multi .container')) === 'true',
+  },
+  {
+    name: 'b-multi-select: click two options, Escape where focus is',
+    open: () => page.locator('#multi .container').click(),
+    act: async () => {
+      await page.locator('#multi label.option', { hasText: 'Alpha' }).click();
+      await page.locator('#multi label.option', { hasText: 'Beta' }).click();
+    },
+    isOpen: async () => (await expanded('#multi .container')) === 'true',
+  },
+  {
+    name: 'b-country-select multiple: click the EU shortcut, Escape where focus is',
+    open: () => page.locator('#country .country-control .container').click(),
+    act: () => page.locator('#country .country-control .quick-pick, #country .country-control [data-quick-pick]').first().click(),
+    isOpen: async () => (await expanded('#country .country-control .container')) === 'true',
+  },
+];
+for (const c of mouseCases) {
+  await page.goto(base);
+  await page.waitForFunction(() => window.ready === true);
+  await openModal();
+  await c.open();
+  try { await c.act(); } catch (e) { check(`${c.name}: the click`, false, String(e.message).split('\n')[0]); continue; }
+  const wasOpen = await c.isOpen();
+  if (c.name.startsWith('b-multi-select')) {
+    // The rebuilt option keeps focus, so a keyboard user keeps their place (and Tab / Space go on from there).
+    check(`${c.name}: focus stays on the picked option`, await page.evaluate(() => {
+      const a = document.querySelector('#multi').shadowRoot.activeElement;
+      return !!a && a.matches('label.option input[type="checkbox"]') && a.isConnected;
+    }));
+  }
+  await page.keyboard.press('Escape');
+  await settle();
+  check(`${c.name}: the list closes`, wasOpen && !(await c.isOpen()), `opened=${wasOpen}`);
+  check(`${c.name}: the modal stays open`, await modalOpen());
+  await page.keyboard.press('Escape');
+  await settle();
+  check(`${c.name}: a second Escape closes the modal`, !(await modalOpen()));
+}
+
 // A closed list lets Escape through: the modal's own Escape still works.
 await openModal();
 await page.locator('#single .combo-input').focus();

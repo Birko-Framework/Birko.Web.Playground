@@ -1,7 +1,7 @@
 // Birko TASK-804 (for Symbio TASK-1028) — a Shell page raises a contextual ribbon tab for the record it shows. A real
 // BAppShell with a BaseSplitPage and a BaseDetailPage in it: the tab appears (and opens) on selection, keeps through a
 // ribbon refresh, sends its commands to the page, follows the record, and goes on deselect and when the page is left,
-// without navigating and without collapsing the ribbon.
+// without navigating and without collapsing the ribbon. TASK-921: a re-raise for the same record can open it.
 import 'birko-web-components';
 import { BAppShell, BaseSplitPage, BaseDetailPage, type ContextualRibbon } from 'birko-web-shell';
 import type { ApiClient, ApiResponse } from 'birko-web-core/http';
@@ -62,6 +62,7 @@ class CtxSplit extends BaseSplitPage<Order> {
   protected onContextualAction(itemId: string, o: Order) { log.actions.push(`${itemId}:${o.id}`); }
   select(id: string) { return this.selectEntity(id); }
   deselect() { this.deselectEntity(); }
+  refresh(options?: { open?: boolean }) { this.refreshContextualRibbon(options); }
 }
 class CtxDetail extends BaseDetailPage<Order> {
   protected endpoint = 'api/orders';
@@ -69,6 +70,7 @@ class CtxDetail extends BaseDetailPage<Order> {
   protected get formSchema(): FormSchema { return { name: 'root', children: [{ name: 'name', type: 'text', label: 'Name' }] }; }
   protected getContextualRibbon(o: Order) { return orderRibbon(o); }
   protected onContextualAction(itemId: string, o: Order) { log.actions.push(`detail:${itemId}:${o.id}`); }
+  refresh(options?: { open?: boolean }) { this.refreshContextualRibbon(options); }
 }
 customElements.define('ctx-shell', CtxShell);
 customElements.define('ctx-split', CtxSplit);
@@ -163,6 +165,48 @@ void (async () => {
     await settle();
     openOnRaise = true;
 
+    // ── TASK-921 (Symbio TASK-1051): re-raise for the SAME record, and open it ──
+    type Pinnable = { pin(): void; collapse(): void };
+    const reopen = async (pg: { refresh(o?: { open?: boolean }): void }, what: string) => {
+      (ribbon() as unknown as Pinnable).collapse(); // as the pointer leaving an unpinned panel does
+      await settle();
+      const tabsBefore = log.tabChanges.length;
+      check(`${what}: unpinned and collapsed, the tab still active (${ribbon().hasAttribute('pinned')}, ${ribbon().hasAttribute('expanded')}, ${active()})`,
+        !ribbon().hasAttribute('pinned') && !ribbon().hasAttribute('expanded') && active() === 'order-tools');
+      pg.refresh();
+      await settle();
+      check(`${what}: refreshContextualRibbon() keeps it collapsed, as a status refresh should (${ribbon().hasAttribute('expanded')}, ${active()})`,
+        !ribbon().hasAttribute('expanded') && active() === 'order-tools' && shown());
+      pg.refresh({ open: true });
+      await settle();
+      check(`${what}: refreshContextualRibbon({ open: true }) opens the panel on the tab, without navigating (${expanded()}, ${active()}, ${log.tabChanges.length - tabsBefore})`,
+        expanded() && active() === 'order-tools' && log.tabChanges.length === tabsBefore);
+
+      (ribbon() as unknown as Pinnable).pin();
+      await settle();
+      const seen: string[] = [];
+      // A flicker is `expanded`/`pinned` re-added (it was removed in between: oldValue null) or `active` coming back
+      // from another tab. The shell's refreshRibbon() re-sets `active` to the value it has, which is none.
+      const mo = new MutationObserver((rs) => {
+        for (const r of rs) if (r.attributeName === 'active' ? r.oldValue !== 'order-tools' : r.oldValue === null) seen.push(`${r.attributeName}:${r.oldValue}`);
+      });
+      mo.observe(ribbon(), { attributes: true, attributeOldValue: true, attributeFilter: ['expanded', 'pinned', 'active'] });
+      pg.refresh({ open: true });
+      await settle();
+      mo.disconnect();
+      const flicker = seen;
+      check(`${what}: pinned, { open: true } on the tab already open is harmless: no collapse, no tab change (${JSON.stringify(flicker)}, ${active()}, ${log.tabChanges.length - tabsBefore})`,
+        flicker.length === 0 && active() === 'order-tools' && ribbon().hasAttribute('pinned') && expanded() && log.tabChanges.length === tabsBefore);
+    };
+    const again = document.createElement('ctx-split') as CtxSplit;
+    shell.appendChild(again);
+    await settle();
+    await again.select('o1');
+    await settle();
+    await reopen(again, 'split page');
+    again.remove();
+    await settle();
+
     // ── A detail page ──
     history.replaceState(null, '', '#/orders/o1');
     const detail = document.createElement('ctx-detail') as CtxDetail;
@@ -172,6 +216,7 @@ void (async () => {
     cmd('confirm')!.click();
     await settle(40);
     check(`and gets its commands (${log.actions.at(-1)})`, log.actions.at(-1) === 'detail:confirm:o1');
+    await reopen(detail, 'detail page');
     detail.remove();
     await settle();
     check(`leaving the detail page hides it (${shown()}, ${active()})`, !shown() && active() === 'stock');

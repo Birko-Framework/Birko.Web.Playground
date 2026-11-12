@@ -1,6 +1,9 @@
 // Birko TASK-804 — the Playground's "Contextual tab (Shell)" card driven by a REAL mouse: a row click raises the
 // page's contextual tab and opens it, a command reaches the page and what is enabled follows the record, a normal
 // tab and back keeps it, closing the detail removes it and returns to the tab you were on. No page errors.
+// TASK-921 (Symbio TASK-1051): on an UNPINNED ribbon the pointer leaving the panel to click in the page collapses it;
+// refreshContextualRibbon({ open: true }) for the same record opens it again, also when it lands inside the 300 ms the
+// collapse waits, while refreshContextualRibbon() leaves it collapsed.
 //
 //   node build.js && node contextual-ribbon-check.mjs        (exit 1 on any FAIL)
 import http from 'node:http';
@@ -69,6 +72,51 @@ const closed = await page.evaluate(() => { const b = document.querySelector('pg-
 if (closed) { await page.mouse.click(closed.x, closed.y); await new Promise((r) => setTimeout(r, 600)); }
 s = await st();
 check(`closing the detail removes it, back on the tab you were on (${JSON.stringify(s)})`, !!closed && s.active === 'stock' && !s.tabs.includes('order-tools'));
+
+// ── TASK-921: unpinned ──
+const ribbonBox = (sel) => page.evaluate((sel) => { const el = document.querySelector('pg-ctx-shell').shadowRoot.querySelector('#ribbon').shadowRoot.querySelector(sel); if (!el) return null; const r = el.getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2, h: r.height }; }, sel);
+const ribbonState = () => page.evaluate(() => { const rb = document.querySelector('pg-ctx-shell').shadowRoot.querySelector('#ribbon'); const p = rb.shadowRoot.querySelector('.ribbon-panel'); return { pinned: rb.hasAttribute('pinned'), expanded: rb.hasAttribute('expanded'), active: rb.getAttribute('active'), panelH: p ? Math.round(p.getBoundingClientRect().height) : 0 }; });
+const detailBox = () => page.evaluate(() => { const deep = (root, out = []) => { for (const el of root.querySelectorAll('*')) { out.push(el); if (el.shadowRoot) deep(el.shadowRoot, out); } return out; }; const p = deep(document.querySelector('pg-ctx-orders').shadowRoot).find((el) => el.tagName === 'P' && el.textContent.includes('Order 1001')); if (!p) return null; const r = p.getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2 }; });
+const refresh = (open) => page.evaluate((open) => document.querySelector('pg-ctx-orders').refreshContextualRibbon(open ? { open: true } : undefined), open);
+const leavePanel = async () => {
+  const p = await ribbonBox('.ribbon-panel');
+  const d = await detailBox();
+  if (!p || !d) return false;
+  await page.mouse.move(p.x, p.y, { steps: 4 });
+  await page.mouse.move(d.x, d.y, { steps: 4 });
+  return true;
+};
+await clickRibbon('#ribbon-toggle'); // pinned → collapsed (unpinned), as Ctrl+F1
+await new Promise((r) => setTimeout(r, 400));
+let rs = await ribbonState();
+check(`the ribbon is unpinned and collapsed (${JSON.stringify(rs)})`, !rs.pinned && !rs.expanded);
+const row = await page.evaluate(() => {
+  const deep = (root, out = []) => { for (const el of root.querySelectorAll('*')) { out.push(el); if (el.shadowRoot) deep(el.shadowRoot, out); } return out; };
+  const cell = deep(document.querySelector('pg-ctx-orders').shadowRoot).find((el) => el.tagName === 'TD' && el.textContent.trim() === 'Order 1001');
+  const r = cell.getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2 };
+});
+await page.mouse.click(row.x, row.y);
+await new Promise((r) => setTimeout(r, 800));
+rs = await ribbonState();
+check(`unpinned, a row click raises the tab and opens its panel over the page (${JSON.stringify(rs)})`, rs.active === 'order-tools' && rs.expanded && rs.panelH > 20);
+const left = await leavePanel();
+await new Promise((r) => setTimeout(r, 800));
+rs = await ribbonState();
+check(`the pointer leaving the panel for the detail collapses it, the tab still active (${left}, ${JSON.stringify(rs)})`, left && !rs.expanded && rs.panelH <= 1 && rs.active === 'order-tools');
+await refresh(false);
+await new Promise((r) => setTimeout(r, 600));
+rs = await ribbonState();
+check(`refreshContextualRibbon() for the same record leaves it collapsed (${JSON.stringify(rs)})`, !rs.expanded && rs.active === 'order-tools');
+await refresh(true);
+await new Promise((r) => setTimeout(r, 600));
+rs = await ribbonState();
+check(`refreshContextualRibbon({ open: true }) opens the panel on the tab (${JSON.stringify(rs)})`, rs.expanded && rs.panelH > 20 && rs.active === 'order-tools');
+// The click that selects a sub-row is the one that left the panel: the re-raise lands while the collapse waits.
+await leavePanel();
+await refresh(true);
+await new Promise((r) => setTimeout(r, 800));
+rs = await ribbonState();
+check(`and when it lands inside the collapse delay, the queued collapse does not undo it (${JSON.stringify(rs)})`, rs.expanded && rs.panelH > 20 && rs.active === 'order-tools');
 check(`no page errors (${JSON.stringify(errors)})`, errors.length === 0);
 await browser.close(); server.close();
 console.log(`

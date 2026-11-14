@@ -158,6 +158,41 @@ void (async () => {
       check('a non-searchable select is still a native <select>', !!el.shadowRoot!.querySelector('select') && !listbox(el));
       el.parentElement!.remove();
     }
+
+    // ── Birko TASK-924: a native select the user picked from still follows the `value` attribute ──
+    {
+      const ALL = [{ value: '', label: 'All' }, { value: 'a', label: 'A' }, { value: 'b', label: 'B' }];
+      const el = await mount('', ALL);
+      const sel = () => el.shadowRoot!.querySelector('select') as HTMLSelectElement;
+      sel().value = 'b';                       // a user's pick makes the select's selectedness dirty
+      sel().dispatchEvent(new Event('change'));
+      await settle();
+      el.setAttribute('value', 'a');
+      await settle();
+      check(`native, after a pick: a value attribute change shows (${sel().value})`, sel().value === 'a' && el.value === 'a');
+      sel().value = '';
+      el.setOptions(ALL);                      // a re-render with the attribute unchanged
+      await settle();
+      check(`native, after a pick: a re-render restores the attribute's option (${sel().value})`, sel().value === 'a');
+      el.removeAttribute('value');
+      await settle();
+      el.setAttribute('value', 'b');
+      await settle();
+      check(`native: cleared then re-set (Symbio's page re-render) shows the new value (${sel().value})`, sel().value === 'b');
+      el.removeAttribute('value');
+      await settle();
+      check(`native: no value attribute falls back to the first option, as an untouched select does (${sel().value})`, sel().value === '');
+      el.parentElement!.remove();
+      const ph = await mount('placeholder="Pick one"', OPTIONS);
+      const phSel = () => ph.shadowRoot!.querySelector('select') as HTMLSelectElement;
+      phSel().value = 'footer';
+      phSel().dispatchEvent(new Event('change'));
+      await settle();
+      ph.removeAttribute('value');
+      await settle();
+      check(`native with a placeholder: clearing the value shows the placeholder (${phSel().selectedIndex})`, phSel().selectedIndex === 0 && phSel().value === '');
+      ph.parentElement!.remove();
+    }
   } catch (e) {
     check(`unexpected throw: ${(e as Error).message}`, false);
   }

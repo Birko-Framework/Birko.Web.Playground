@@ -207,6 +207,41 @@ void (async () => {
       check(`after four re-renders, one move is still one reorder and one drop announcement (${t.reorders.length}, ${t.said.filter((s) => s.includes('dropped at')).length})`,
         t.reorders.length === 1 && t.said.filter((s) => s.includes('dropped at')).length === 1);
     }
+
+    // ── 10. muted (Birko TASK-923): context-only rows look muted but select like any row ──
+    {
+      host.innerHTML = '<b-tree-menu></b-tree-menu>';
+      const tree = host.querySelector('b-tree-menu') as BTreeMenu;
+      await waitFor(() => !!tree.shadowRoot);
+      tree.setConfig({ items: [
+        { id: 'p', label: 'Parent', muted: true, expanded: true, children: [{ id: 'm', label: 'Match' }] },
+        { id: 'x', label: 'Off', disabled: true },
+      ] });
+      await frames();
+      const row = (id: string) => tree.shadowRoot!.querySelector<HTMLElement>(`[data-item="${id}"]`)!;
+      const selected: string[] = [];
+      tree.addEventListener('select', (e) => selected.push((e as CustomEvent<{ id: string }>).detail.id));
+      const muted = row('p');
+      const probe = document.createElement('span');
+      probe.style.color = 'var(--b-text-muted)';
+      host.append(probe);
+      const mutedColour = getComputedStyle(probe).color;
+      probe.remove();
+      check('muted: the row has the muted class, the plain child does not',
+        muted.classList.contains('muted') && !row('m').classList.contains('muted'));
+      check(`muted: text in --b-text-muted (${getComputedStyle(muted).color} vs ${mutedColour})`, getComputedStyle(muted).color === mutedColour);
+      check('muted: no aria-disabled, not the disabled class, focusable',
+        !muted.hasAttribute('aria-disabled') && !muted.classList.contains('disabled') && muted.tabIndex === 0 && getComputedStyle(muted).pointerEvents !== 'none');
+      check('muted: its children render and it stays expanded', muted.closest('li')!.getAttribute('aria-expanded') === 'true' && !!row('m'));
+      muted.click();
+      row('x').click();
+      check(`muted: a click selects it, a disabled row still does not (${selected.join(',')})`, selected.join(',') === 'p');
+      muted.focus();
+      key(muted, 'Enter');
+      check(`muted: Enter selects it (${selected.join(',')})`, selected.join(',') === 'p,p');
+      key(muted, 'ArrowDown');
+      check('muted: arrow keys move through it like any row', deepActive() === row('m'));
+    }
   } catch (e) {
     check(`unexpected throw: ${(e as Error).message}`, false);
   }

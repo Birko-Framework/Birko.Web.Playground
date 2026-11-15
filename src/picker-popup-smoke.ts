@@ -155,6 +155,55 @@ void (async () => {
   } catch (e) {
     check(`multi-select + b-time: unexpected throw: ${(e as Error).message}`, false);
   }
+
+  // ── Birko TASK-927: a b-time arrow click keeps the panel where it is ──
+  // An arrow sets the value attribute, which re-renders the component; the render dropped the panel's inline top/left,
+  // so the fixed panel jumped far down the page and the next click landed outside it and closed it.
+  try {
+    host.innerHTML = '<b-time label="When"></b-time>';
+    await settle();
+    const sr = host.querySelector('b-time')!.shadowRoot!;
+    const trigger = sr.querySelector<HTMLInputElement>('.tp-input')!;
+    const panel = () => sr.querySelector<HTMLElement>('.tp-panel')!;
+    trigger.click();
+    await settle();
+    const before = panel().getBoundingClientRect();
+    const hourBefore = sr.querySelector<HTMLInputElement>('[data-time="hour"]')!.value;
+    sr.querySelector<HTMLElement>('[data-spin="hour-up"]')!.click();
+    await settle();
+    const after = panel().getBoundingClientRect();
+    const hourAfter = sr.querySelector<HTMLInputElement>('[data-time="hour"]')!.value;
+    check(`b-time: an arrow click changes the hour (${hourBefore} → ${hourAfter})`, hourAfter !== hourBefore);
+    check(`b-time: ...and the panel stays open and in place (top ${Math.round(before.top)} → ${Math.round(after.top)}, left ${Math.round(before.left)} → ${Math.round(after.left)})`,
+      panel().classList.contains('open') && trigger.getAttribute('aria-expanded') === 'true'
+        && Math.abs(after.top - before.top) < 1 && Math.abs(after.left - before.left) < 1);
+    sr.querySelector<HTMLElement>('[data-spin="minute-up"]')!.click();
+    await settle();
+    const again = panel().getBoundingClientRect();
+    check(`b-time: a second arrow click too (top ${Math.round(again.top)})`,
+      panel().classList.contains('open') && Math.abs(again.top - before.top) < 1);
+  } catch (e) {
+    check(`b-time arrows: unexpected throw: ${(e as Error).message}`, false);
+  }
+
+  // ── Birko TASK-927: b-datetime-picker, same defect: picking a date keeps the panel open for the time, re-renders ──
+  try {
+    host.innerHTML = '<b-datetime-picker label="When"></b-datetime-picker>';
+    await settle();
+    const sr = host.querySelector('b-datetime-picker')!.shadowRoot!;
+    const trigger = sr.querySelector<HTMLInputElement>('.dp-input')!;
+    const panel = () => sr.querySelector<HTMLElement>('.dp-panel')!;
+    trigger.click();
+    await settle();
+    const before = panel().getBoundingClientRect();
+    sr.querySelector<HTMLElement>('.dp-panel [data-date]:not(.disabled)')!.click();
+    await settle();
+    const after = panel().getBoundingClientRect();
+    check(`b-datetime-picker: picking a date leaves the panel open and in place (top ${Math.round(before.top)} → ${Math.round(after.top)})`,
+      panel().classList.contains('open') && Math.abs(after.top - before.top) < 1 && Math.abs(after.left - before.left) < 1);
+  } catch (e) {
+    check(`b-datetime-picker date pick: unexpected throw: ${(e as Error).message}`, false);
+  }
   host.remove();
 
   const passed = results.filter((r) => r.startsWith('PASS')).length;

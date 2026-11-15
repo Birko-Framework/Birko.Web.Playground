@@ -696,7 +696,7 @@ const CATALOGUE: ComponentDef[] = [
   { tag: 'b-spinner', label: 'Spinner', category: 'feedback', controls: [SIZE] },
   { tag: 'b-skeleton', label: 'Skeleton', category: 'feedback', attrs: { width: '180px', height: '1rem' } },
   { tag: 'b-stale-banner', label: 'Stale banner', category: 'feedback', render: () => 'Data may be out of date.', note: 'Typically shown when cached data is stale.' },
-  { tag: 'b-toast-item', label: 'Toast item', category: 'feedback', attrs: { variant: 'success' }, render: () => 'Saved successfully', note: 'Normally emitted through the toast service.' },
+  { tag: 'b-toast-item', label: 'Toast item', category: 'feedback', attrs: { variant: 'success', message: 'Saved successfully' }, note: 'Normally emitted through the toast service.' },
   { tag: 'b-sync-status', label: 'Sync status', category: 'feedback',
     note: 'Offline / syncing / synced chip bound to an outbox SyncSource (EPIC-002 backport). Shown with 2 pending writes (syncing); it hides when online + idle and shows "offline" when disconnected.',
     setup: (el) => el.bind({ get pendingCount() { return 2; }, onChange() { return () => {}; } }) },

@@ -14,6 +14,7 @@ type Form = HTMLElement & {
   getValues(): Record<string, unknown>;
   reset(): void;
   validate(): { valid: boolean; data: Record<string, unknown>; errors: Record<string, string> };
+  validateGroup(name: string): { valid: boolean; data: Record<string, unknown>; errors: Record<string, string> };
 };
 
 const SCHEMA = (): FormSchema => ({
@@ -119,17 +120,44 @@ void (async () => {
     await frames();
     check(`function form: shown while it returns true (${noteShown}, then ${shown('note')})`, noteShown && !shown('note'));
 
-    // A condition on a field in a nested group. (Through validate(): validateGroup() on a nested group reports its
-    // errors under the root's name, `root.adv.extra` — Birko TASK-926, older than this.)
+    // A condition on a field in a nested group.
     form.setValues({ label: 'Nav', linkKind: 'page', pageGuid: 'p1' });
     let v = form.validate();
     check(`nested: adv.extra hidden while adv.kind is empty, and not validated (${Object.keys(v.errors).join(',')})`,
       !shown('adv.extra') && v.valid && !('extra' in ((v.data.adv as Record<string, unknown>) ?? {})));
+    let g = form.validateGroup('adv');
+    check(`nested, validateGroup: the hidden adv.extra is skipped (${JSON.stringify(g.errors)})`, g.valid);
     form.setValues({ adv: { kind: 'x' } });
     await frames();
     v = form.validate();
     check(`nested: adv.kind = x shows adv.extra and its required rule applies (${Object.keys(v.errors).join(',')})`,
       shown('adv.extra') && 'adv.extra' in v.errors);
+    g = form.validateGroup('adv');
+    check(`nested, validateGroup: once shown, adv.extra is reported under its own path (${Object.keys(g.errors).join(',')})`,
+      Object.keys(g.errors).join(',') === 'adv.extra');
+
+    // Birko TASK-926: validateGroup() on a nested group reads that group's values and reports its own paths.
+    form.setSchema(SCHEMA);
+    form.reset();
+    form.setValues({ adv: { kind: 'x', extra: 'filled' } });
+    await frames();
+    g = form.validateGroup('adv');
+    check(`validateGroup: a filled required field in the group passes (${JSON.stringify(g.errors)})`, g.valid);
+    form.setValues({ adv: { kind: 'x', extra: '' } });
+    g = form.validateGroup('adv');
+    check(`validateGroup: an empty one is reported as adv.extra, not under the root's name (${Object.keys(g.errors).join(',')})`,
+      Object.keys(g.errors).join(',') === 'adv.extra');
+    const extraInput = wrapper('adv.extra').querySelector('b-input');
+    check('validateGroup: the error is shown on the field', !!extraInput?.getAttribute('error'));
+    check(`validateGroup: errors outside the group are not reported (label and pageGuid are empty) (${Object.keys(g.errors).join(',')})`,
+      !('label' in g.errors) && !('pageGuid' in g.errors));
+    form.setValues({ adv: { kind: 'x', extra: 'ok' } });
+    g = form.validateGroup('adv');
+    check(`validateGroup: fixing it clears the field's error (${JSON.stringify(g.errors)}, ${extraInput?.getAttribute('error') ?? ''})`,
+      g.valid && !extraInput?.getAttribute('error'));
+    g = form.validateGroup('root');
+    check(`validateGroup on the root group is validate()'s field set (${Object.keys(g.errors).sort().join(',')})`,
+      Object.keys(g.errors).sort().join(',') === 'label,pageGuid');
   } catch (e) {
     check(`unexpected throw: ${(e as Error).message}`, false);
   }

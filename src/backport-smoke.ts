@@ -2004,19 +2004,110 @@ void (async () => {
           res.data['rate'] === '');
       }
 
-      // `valueMissing` is the one exclusion that is NOT just "required already covers it". Required
-      // returns before the control is consulted, so adopting the flag would be a no-op almost
-      // everywhere — except here, where the two genuinely disagree: b-form's emptiness test counts
-      // `false` as a filled value, so an unchecked required checkbox passes its rule and never reaches
-      // the control, while the control reports valueMissing. Pinned as-is: a real, pre-existing gap
-      // that this change deliberately does not close, because closing it starts blocking forms that
-      // have always submitted.
+      // Birko TASK-132: `required` on a checkbox / switch. b-form's emptiness test counted `false` as a filled value, so
+      // an unchecked required toggle passed validate() while the control itself reported valueMissing (this block
+      // pinned that gap until the fix). Emptiness is now decided per field type: a toggle is empty until it is true.
       {
-        const f = await mkForm([{ name: 'agree', type: 'checkbox', label: 'Agree', required: true }]);
+        const f = await mkForm([
+          { name: 'agree', type: 'checkbox', label: 'Agree', required: true },
+          { name: 'on', type: 'switch', label: 'On', rules: [{ type: 'required', message: 'Switch it on' }] },
+          { name: 'opt', type: 'checkbox', label: 'Optional' },
+        ]);
         check('premise: an unchecked required checkbox reports ITSELF invalid',
           field(f, 'agree')?.checkValidity() === false);
-        check('...and validate() still passes it — a known b-form gap, left alone here on purpose',
-          f.validate().valid === true);
+        let res = f.validate();
+        check(`TASK-132: an unchecked required checkbox fails validate() (${JSON.stringify(res.errors)})`,
+          res.valid === false && res.errors['agree'] === 'Agree is required');
+        check('TASK-132: an unchecked required switch fails with its rule\'s own message',
+          res.errors['on'] === 'Switch it on');
+        check('TASK-132: the error lands on the field (error attribute)',
+          field(f, 'agree')?.getAttribute('error') === 'Agree is required');
+        await settle();
+        const line = field(f, 'agree')?.shadowRoot?.querySelector('.toggle-error');
+        const box = field(f, 'agree')?.shadowRoot?.querySelector('input');
+        check(`TASK-932: the checkbox shows the message under it ("${line?.textContent ?? ''}"), linked to its input`,
+          line?.textContent === 'Agree is required' && box?.getAttribute('aria-invalid') === 'true'
+            && box?.getAttribute('aria-describedby') === line?.id);
+        check("TASK-932: the switch shows its rule's message too",
+          field(f, 'on')?.shadowRoot?.querySelector('.toggle-error')?.textContent === 'Switch it on');
+        check(`TASK-132: an unchecked optional toggle is not an error and still collects false (${JSON.stringify(res.data['opt'])})`,
+          !('opt' in res.errors) && res.data['opt'] === false);
+        f.setValues({ agree: true, on: true });
+        await settle();
+        res = f.validate();
+        check(`TASK-132: checked, both pass (${JSON.stringify(res.errors)})`, res.valid === true);
+        check('TASK-132: ...and the error attribute is gone', !field(f, 'agree')?.hasAttribute('error'));
+        check('TASK-932: ...and so is the message', !field(f, 'agree')?.shadowRoot?.querySelector('.toggle-error'));
+      }
+
+      // Birko TASK-133: a `radio` field. Its members carried no data-path, so the field was missing from getValues()
+      // and validate().data, a required group could never pass, and nothing could address it. Now the members sit in
+      // one group element that carries the path (role=radiogroup), and the helpers read and write the checked member.
+      {
+        type RForm = Form & {
+          reset(): void; getValues(): Record<string, unknown>; setFieldError(p: string, e: string): void;
+          focusField(p: string): void; onFieldChange(p: string, cb: (v: unknown) => void): () => void;
+        };
+        const opts = [{ value: 'a', label: 'Alpha' }, { value: 'b', label: 'Bravo' }];
+        const f = await mkForm([
+          { name: 'pick', type: 'radio', label: 'Pick', required: true, options: opts },
+          { name: 'sub', label: 'Sub', children: [{ name: 'size', type: 'radio', label: 'Size', options: opts, value: 'b', default: 'b' }] },
+        ]) as RForm;
+        const groupEl = (n: string) => f.shadowRoot?.querySelector<HTMLElement>(`[data-path="${n}"]`) ?? null;
+        const members = (n: string) => [...(groupEl(n)?.querySelectorAll<HTMLElement>('b-radio') ?? [])];
+        const clickMember = async (n: string, value: string) => {
+          const m = members(n).find((x) => x.getAttribute('value') === value);
+          m?.shadowRoot?.querySelector<HTMLInputElement>('input')?.click();
+          await settle();
+        };
+        check('TASK-133: one element carries the radio field\'s path, holding its members',
+          f.shadowRoot?.querySelectorAll('[data-path="pick"]').length === 1 && members('pick').length === 2);
+        check(`TASK-133: that element is a named radiogroup (${groupEl('pick')?.getAttribute('role')}, ${groupEl('pick')?.getAttribute('aria-label')})`,
+          groupEl('pick')?.getAttribute('role') === 'radiogroup' && groupEl('pick')?.getAttribute('aria-label') === 'Pick');
+        let res = f.validate();
+        check(`TASK-133: nothing picked, a required group fails with ONE message (${JSON.stringify(res.errors)})`,
+          res.errors['pick'] === 'Pick is required' && Object.keys(res.errors).filter((k) => k.startsWith('pick')).length === 1);
+        const shownError = groupEl('pick')?.querySelector('.b-form-radio-error');
+        check(`TASK-133: the error is shown on the group ("${shownError?.textContent ?? ''}")`,
+          shownError?.textContent === 'Pick is required' && !(shownError as HTMLElement | null)?.hidden);
+        const changes: unknown[] = [];
+        f.addEventListener('change', (e) => { const d = (e as CustomEvent).detail; if (d?.path === 'pick') changes.push(d.value); });
+        const cb: unknown[] = [];
+        f.onFieldChange('pick', (v) => cb.push(v));
+        await clickMember('pick', 'a');
+        await settle();
+        res = f.validate();
+        check(`TASK-133: a click picks it: valid, the value in data (${JSON.stringify(res.data)})`,
+          res.valid === true && res.data['pick'] === 'a');
+        check('TASK-133: ...and the error is cleared', !groupEl('pick')?.querySelector('.b-form-radio-error:not([hidden])'));
+        check(`TASK-133: the click emits change with the path and value, and the callback runs (${JSON.stringify(changes)}, ${JSON.stringify(cb)})`,
+          changes.at(-1) === 'a' && cb.at(-1) === 'a');
+        await clickMember('pick', 'b');
+        check(`TASK-133: picking the other member moves the value (${JSON.stringify(f.getValues()['pick'])}); one checked`,
+          f.getValues()['pick'] === 'b' && members('pick').filter((m) => m.hasAttribute('checked')).length === 1);
+        check(`TASK-133: a nested radio collects under its group, its declared value rendered checked (${JSON.stringify(f.getValues()['sub'])})`,
+          (f.getValues()['sub'] as Record<string, unknown>)?.['size'] === 'b');
+        f.setValues({ pick: 'a', sub: { size: 'a' } });
+        await settle();
+        check(`TASK-133: setValues selects the right members (${JSON.stringify(f.getValues())})`,
+          f.getValues()['pick'] === 'a' && (f.getValues()['sub'] as Record<string, unknown>)['size'] === 'a'
+            && members('pick').find((m) => m.getAttribute('value') === 'a')?.hasAttribute('checked') === true);
+        f.reset();
+        await settle();
+        check(`TASK-133: reset clears a group with no default and restores one with a default (${JSON.stringify(f.getValues())})`,
+          f.getValues()['pick'] === '' && (f.getValues()['sub'] as Record<string, unknown>)['size'] === 'b'
+            && members('pick').every((m) => !m.hasAttribute('checked')));
+        f.setFieldError('pick', 'Server says no');
+        check('TASK-133: setFieldError shows on the group',
+          groupEl('pick')?.querySelector('.b-form-radio-error')?.textContent === 'Server says no');
+        f.setFieldDisabled('pick', true);
+        await settle();
+        check('TASK-133: setFieldDisabled disables every member', members('pick').every((m) => m.hasAttribute('disabled')));
+        f.setFieldDisabled('pick', false);
+        await settle();
+        f.focusField('pick');
+        const active = members('pick').find((m) => m.shadowRoot?.activeElement);
+        check(`TASK-133: focusField puts focus on a member (${active?.getAttribute('value') ?? 'none'})`, !!active);
       }
 
       // Found while building the above, and fixed alongside it: a field emptied by the user must STAY

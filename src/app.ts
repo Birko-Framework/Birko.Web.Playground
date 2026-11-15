@@ -609,7 +609,7 @@ const CATALOGUE: ComponentDef[] = [
   { tag: 'b-tabs', label: 'Tabs', category: 'layout', setup: (el) => el.setTabs([{ id: 't1', label: 'Overview' }, { id: 't2', label: 'Details' }, { id: 't3', label: 'Activity' }], 't1') },
   { tag: 'b-dropdown-menu', label: 'Dropdown menu', category: 'layout',
     render: () => '<b-button slot="trigger">Actions ▾</b-button>',
-    setup: (el) => el.setItems([{ id: 'edit', label: 'Edit', icon: '✏️' }, { id: 'dup', label: 'Duplicate', icon: '📋' }, { id: 'sep', label: '', divider: true }, { id: 'del', label: 'Delete', icon: '🗑️', variant: 'danger' }]) },
+    setup: (el) => el.setItems([{ id: 'edit', label: 'Edit', icon: '✏️' }, { id: 'dup', label: 'Duplicate', icon: '📋' }, { id: 'en', label: 'English', divider: true, heading: 'Language' }, { id: 'sk', label: 'Slovenčina' }, { id: 'del', label: 'Delete', icon: '🗑️', variant: 'danger', divider: true }]) },
   { tag: 'b-modal', label: 'Modal', category: 'layout', attrs: { title: 'Example modal' },
     render: () => '<p>Modal body content goes here.</p><b-button slot="footer" class="pg-modal-toast">Show a toast</b-button><b-button slot="footer" variant="primary">OK</b-button>',
     // Birko TASK-786's human test: a toast raised from inside the open modal is on top of it, and its action clicks.

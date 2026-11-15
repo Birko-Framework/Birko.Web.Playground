@@ -2574,6 +2574,63 @@ void (async () => {
         minHeights.findIndex((v) => v.includes('vh') && !v.includes('dvh')) === 0
         && minHeights.findIndex((v) => v.includes('dvh')) > 0);
     }
+
+    // Birko TASK-934 (Symbio TASK-1071): a b-dropdown-menu item's `heading` renders a non-clickable label before it
+    // (after its divider) and opens a role=group named by the label, running to the next divider or heading. The label
+    // is never focused, arrow keys skip it, and items without a heading render as before.
+    {
+      type Menu = HTMLElement & { setItems(i: unknown[]): void; show(): void; hide(): void };
+      const dd = document.createElement('b-dropdown-menu') as Menu;
+      dd.id = 'smoke-heading-menu';
+      dd.innerHTML = '<button slot="trigger">Menu</button>';
+      document.body.appendChild(dd);
+      await new Promise((r) => setTimeout(r, 0));
+      dd.setItems([
+        { id: 'profile', label: 'Profile' },
+        { id: 'en', label: 'English', divider: true, heading: 'Language' },
+        { id: 'sk', label: 'Slovenčina' },
+        { id: 'out', label: 'Sign out', divider: true },
+      ]);
+      await new Promise((r) => setTimeout(r, 0));
+      const root = dd.shadowRoot!;
+      const menu = root.querySelector<HTMLElement>('.menu')!;
+      const kids = [...menu.children].map((c) => c.classList.contains('group')
+        ? `group[${[...c.children].map((g) => g.className.trim().split(' ')[0]).join(',')}]`
+        : c.className.trim().split(' ')[0]);
+      check(`TASK-934: divider, then a group holding the heading and its items, closed at the next divider (${kids.join(' ')})`,
+        kids.join(' ') === 'item divider group[heading,item,item] divider item');
+      const group = menu.querySelector<HTMLElement>('.group');
+      const heading = menu.querySelector<HTMLElement>('.heading');
+      check('TASK-934: the group is a role=group named by the heading',
+        group?.getAttribute('role') === 'group' && !!heading && group?.getAttribute('aria-labelledby') === heading.id
+        && heading.textContent === 'Language');
+      check('TASK-934: the heading is not a menu item and cannot take focus',
+        heading?.getAttribute('role') !== 'menuitem' && heading?.tabIndex === -1 && heading?.getAttribute('aria-hidden') === 'true');
+      check('TASK-934: the items stay ordinary menu items',
+        [...menu.querySelectorAll('.item')].every((b) => b.getAttribute('role') === 'menuitem')
+        && menu.querySelectorAll('.item').length === 4);
+      const selected: string[] = [];
+      dd.addEventListener('select', (e) => selected.push((e as CustomEvent<{ id: string }>).detail.id));
+      dd.show();
+      await new Promise((r) => setTimeout(r, 0));
+      heading?.click();
+      check(`TASK-934: clicking the heading selects nothing and keeps the menu open (${selected.join(',') || 'none'})`,
+        selected.length === 0 && menu.matches(':popover-open'));
+      const focusedId = () => (root.activeElement as HTMLElement | null)?.dataset.id ?? 'none';
+      const press = (key: string) => menu.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true }));
+      const walk = [focusedId()];
+      for (let i = 0; i < 4; i++) { press('ArrowDown'); walk.push(focusedId()); }
+      check(`TASK-934: arrow keys walk the items and skip the heading (${walk.join(' > ')})`,
+        walk.join(' > ') === 'profile > en > sk > out > profile');
+      press('ArrowUp');
+      check(`TASK-934: ...in both directions (${focusedId()})`, focusedId() === 'out');
+      dd.setItems([{ id: 'a', label: 'A' }, { id: 'b', label: 'B', divider: true }]);
+      await new Promise((r) => setTimeout(r, 0));
+      check('TASK-934: items without a heading render no group or heading',
+        !root.querySelector('.group') && !root.querySelector('.heading') && root.querySelectorAll('.menu > .item').length === 2);
+      dd.hide();
+      dd.remove();
+    }
   } catch (e) {
     check(`unexpected throw: ${(e as Error).message}`, false);
   }

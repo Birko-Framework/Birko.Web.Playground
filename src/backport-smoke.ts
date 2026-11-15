@@ -2631,6 +2631,42 @@ void (async () => {
       dd.hide();
       dd.remove();
     }
+
+    // Birko TASK-935 (Symbio TASK-1071): b-dropdown-menu inherited the shared panel's 12.5rem cap, so an ordinary action
+    // menu (Symbio's user menu: 6 rows, 2 dividers and a heading, ~240 px) scrolled on a desktop screen. The menu is now
+    // capped only by the room on the side it opens: a menu that fits shows every row; a taller one stays on screen
+    // and scrolls.
+    {
+      type Menu = HTMLElement & { setItems(i: unknown[]): void; show(): void; hide(): void };
+      const mk = async (n: number) => {
+        const dd = document.createElement('b-dropdown-menu') as Menu;
+        dd.id = `smoke-cap-menu-${n}`;
+        dd.style.cssText = 'position: fixed; top: 8px; left: 8px;';
+        dd.innerHTML = '<button slot="trigger">Menu</button>';
+        document.body.appendChild(dd);
+        await new Promise((r) => setTimeout(r, 0));
+        dd.setItems(Array.from({ length: n }, (_, i) => ({
+          id: `r${i}`, label: `Row ${i}`, divider: i === 3 || i === 7, heading: i === 3 ? 'Group' : undefined,
+        })));
+        await new Promise((r) => setTimeout(r, 0));
+        dd.show();
+        await new Promise((r) => setTimeout(r, 0));
+        return { dd, menu: dd.shadowRoot!.querySelector<HTMLElement>('.menu')! };
+      };
+      {
+        const { dd, menu } = await mk(10);
+        check(`TASK-935: a 10-row menu taller than 12.5rem shows every row, no scroll (${menu.clientHeight}/${menu.scrollHeight}px)`,
+          menu.scrollHeight > 200 && menu.scrollHeight <= menu.clientHeight);
+        dd.hide(); dd.remove();
+      }
+      {
+        const { dd, menu } = await mk(40);
+        const r = menu.getBoundingClientRect();
+        check(`TASK-935: a menu taller than the room below stays on screen and scrolls (bottom ${Math.round(r.bottom)} of ${window.innerHeight}, ${menu.clientHeight}/${menu.scrollHeight}px)`,
+          r.bottom <= window.innerHeight && menu.scrollHeight > menu.clientHeight);
+        dd.hide(); dd.remove();
+      }
+    }
   } catch (e) {
     check(`unexpected throw: ${(e as Error).message}`, false);
   }

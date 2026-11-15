@@ -54,6 +54,8 @@ if (new URLSearchParams(location.search).has('smoke')) {
   if (runs('page-tour-smoke')) void import('./page-tour-smoke.js');
   // TASK-579 — b-rating: names, form association, read-only, Home/End, contrast in every theme.
   if (runs('rating-smoke')) void import('./rating-smoke.js');
+  // Birko TASK-925 — b-form visibleWhen: conditional fields, not validated or submitted while hidden.
+  if (runs('form-conditional-smoke')) void import('./form-conditional-smoke.js');
   // TASK-545 — b-toast action (Undo) and base-crud-page's deleteMode 'undo' with its required restore.
   if (runs('undo-delete-smoke')) void import('./undo-delete-smoke.js');
   // TASK-597 — a toast's message and icon are text: markup in them is shown, never parsed or run.

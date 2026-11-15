@@ -173,6 +173,48 @@ try {
     check(`auto-scroll: the row drops where the list scrolled to (position ${at + 1} of 24)`, at > 6 && s.event === s.api && s.shown === s.api);
   }
 
+  // ── wheel: a list with nothing to scroll lets the page scroll under the pointer; a list that scrolls keeps it ──
+  // Found by the TASK-787 human test (2026-11-15): the scroller always had overscroll-behavior: contain, so a wheel over
+  // any row of an uncapped list scrolled nothing at all.
+  {
+    const pageY = () => page.evaluate(() => window.scrollY);
+    const listTop = () => page.evaluate(() => document.querySelector('#sl-host b-sortable-list').shadowRoot.querySelector('.scroll').scrollTop);
+    const overflows = () => page.evaluate(() => document.querySelector('#sl-host b-sortable-list').shadowRoot.querySelector('.scroll').classList.contains('overflows'));
+    const wheelAt = async (x, y, dy) => { await page.mouse.move(x, y); await page.mouse.wheel({ deltaY: dy }); await sleep(250); };
+
+    await page.evaluate(() => window.scrollTo(0, 0));
+    await mount('list');
+    let b = await boxes();
+    let y0 = await pageY();
+    await wheelAt(b.c.cx, b.c.cy, 300);
+    let y1 = await pageY();
+    check(`wheel: over an uncapped list the page scrolls (${y0} -> ${y1})`, y1 > y0);
+    check('wheel: an uncapped list is not marked overflowing', !(await overflows()));
+
+    await page.evaluate(() => window.scrollTo(0, 0));
+    await mount('list', 'max-height="600px"', 3);
+    b = await boxes();
+    y0 = await pageY();
+    await wheelAt(b.b.cx, b.b.cy, 300);
+    y1 = await pageY();
+    check(`wheel: over a capped list shorter than its cap the page scrolls (${y0} -> ${y1})`, y1 > y0 && !(await overflows()));
+
+    await page.evaluate(() => window.scrollTo(0, 0));
+    await mount('list', 'max-height="180px"', 24);
+    b = await boxes();
+    check('wheel: a capped list taller than its cap is marked overflowing', await overflows());
+    y0 = await pageY();
+    await wheelAt(b.a.cx, b.a.cy, 300);
+    check(`wheel: over a capped list that scrolls, the list scrolls and the page does not (list ${await listTop()}, page ${y0} -> ${await pageY()})`,
+      (await listTop()) > 0 && (await pageY()) === y0);
+    await page.evaluate(() => { const s = document.querySelector('#sl-host b-sortable-list').shadowRoot.querySelector('.scroll'); s.scrollTop = s.scrollHeight; });
+    await sleep(100);
+    y0 = await pageY();
+    await wheelAt(b.a.cx, b.a.cy, 300);
+    check(`wheel: at the end of a scrolling list the wheel does not carry on to the page (page ${y0} -> ${await pageY()})`, (await pageY()) === y0);
+    await page.evaluate(() => window.scrollTo(0, 0));
+  }
+
   // ── touch: a held press drags the row; a swipe does not ──
   const touchPage = await browser.newPage();
   await touchPage.emulate({ viewport: { width: 400, height: 700, hasTouch: true, isMobile: true }, userAgent: '' });

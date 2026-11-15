@@ -204,6 +204,64 @@ void (async () => {
   } catch (e) {
     check(`b-datetime-picker date pick: unexpected throw: ${(e as Error).message}`, false);
   }
+
+  // ── Birko TASK-928: b-time and b-datetime-picker share one time row, − | 14 | + per number ──
+  try {
+    host.innerHTML = '<b-time label="T" step="15" value="10:35"></b-time><b-datetime-picker label="D" value="2026-04-22T09:00"></b-datetime-picker>';
+    await settle();
+    const time = host.querySelector('b-time')!.shadowRoot!;
+    const dt = host.querySelector('b-datetime-picker')!.shadowRoot!;
+    time.querySelector<HTMLElement>('.tp-input')!.click();
+    dt.querySelector<HTMLElement>('.dp-input')!.click();
+    await settle();
+    const shape = (sr: ShadowRoot) => [...(sr.querySelector('.ts-row')?.children ?? [])]
+      .map((c) => c.className + (c.children.length ? `(${[...c.children].map((x) => x.className).join(' ')})` : '')).join(' ');
+    check(`both pickers draw the same time row (${shape(time)})`,
+      shape(time) === shape(dt) && shape(time) === 'ts-field(ts-btn ts-num ts-btn) ts-sep ts-field(ts-btn ts-num ts-btn)');
+    const unnamed = (sr: ShadowRoot) => [...sr.querySelectorAll('.ts-btn, .ts-num')].filter((e) => !e.getAttribute('aria-label')).length;
+    check(`every − / + button and number box is named, in both (unnamed: ${unnamed(time)}, ${unnamed(dt)})`,
+      unnamed(time) === 0 && unnamed(dt) === 0 && dt.querySelectorAll('.ts-btn, .ts-num').length === 6);
+    check('the old datetime boxes are gone', !dt.querySelector('.dp-time-input'));
+
+    const val = (sr: ShadowRoot, unit: string) => sr.querySelector<HTMLInputElement>(`[data-time="${unit}"]`)!.value;
+    // b-time: + on minutes uses step="15"; − on hours. Keyboard-like: focus then click, focus must stay on the button.
+    activate(time, '[data-spin="minute-up"]');
+    const focusKept = (time.activeElement as HTMLElement | null)?.dataset.spin;
+    await settle();
+    check(`b-time: minute + adds the step (10:35 → ${val(time, 'hour')}:${val(time, 'minute')})`, val(time, 'minute') === '50');
+    check(`b-time: focus stays on the pressed button after the panel rebuilds (${focusKept})`, focusKept === 'minute-up');
+    activate(time, '[data-spin="hour-down"]');
+    await settle();
+    check(`b-time: hour − (${val(time, 'hour')})`, val(time, 'hour') === '09');
+    activate(time, '[data-spin="minute-up"]');
+    await settle();
+    check(`b-time: minutes wrap past 59 (${val(time, 'minute')})`, val(time, 'minute') === '05');
+
+    // b-datetime-picker: default step 5, the `step` attribute, the value follows.
+    activate(dt, '[data-spin="minute-up"]');
+    await settle();
+    check(`b-datetime-picker: minute + adds 5 by default (09:00 → ${val(dt, 'hour')}:${val(dt, 'minute')})`, val(dt, 'minute') === '05');
+    activate(dt, '[data-spin="hour-up"]');
+    await settle();
+    check(`b-datetime-picker: hour + (${val(dt, 'hour')}), and the field shows it (${dt.querySelector<HTMLInputElement>('.dp-input')!.value})`,
+      val(dt, 'hour') === '10' && dt.querySelector<HTMLInputElement>('.dp-input')!.value.endsWith('10:05'));
+    check('b-datetime-picker: the panel stays open while you set the time', dt.querySelector('.dp-panel')!.classList.contains('open'));
+    host.querySelector('b-datetime-picker')!.setAttribute('step', '15');
+    await settle();
+    if (!dt.querySelector('.dp-panel')!.classList.contains('open')) dt.querySelector<HTMLElement>('.dp-input')!.click();
+    await settle();
+    activate(dt, '[data-spin="minute-up"]');
+    await settle();
+    check(`b-datetime-picker: step="15" (05 → ${val(dt, 'minute')})`, val(dt, 'minute') === '20');
+    // A typed number is clamped and taken.
+    const hourBox = dt.querySelector<HTMLInputElement>('[data-time="hour"]')!;
+    hourBox.value = '27';
+    hourBox.dispatchEvent(new Event('change'));
+    await settle();
+    check(`b-datetime-picker: a typed 27 becomes 23 (${val(dt, 'hour')})`, val(dt, 'hour') === '23');
+  } catch (e) {
+    check(`time row: unexpected throw: ${(e as Error).message}`, false);
+  }
   host.remove();
 
   const passed = results.filter((r) => r.startsWith('PASS')).length;

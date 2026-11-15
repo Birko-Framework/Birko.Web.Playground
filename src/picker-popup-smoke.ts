@@ -122,6 +122,39 @@ void (async () => {
       check(`${p.tag}: unexpected throw: ${(e as Error).message}`, false);
     }
   }
+
+  // ── Birko TASK-922: an open b-multi-select list elsewhere on the page does not take a picker's Escape ──
+  // TASK-819 has an open list take Escape on the document in the capture phase. It took every Escape on the page, so
+  // a b-time opened while another suite (or, for a user, a field tabbed away from) had a list open stayed open.
+  try {
+    host.innerHTML = '<b-multi-select label="Tags"></b-multi-select><b-time label="When"></b-time>';
+    await settle();
+    const ms = host.querySelector('b-multi-select') as HTMLElement & { setOptions(o: { value: string; label: string }[]): void };
+    ms.setOptions([{ value: 'a', label: 'A' }, { value: 'b', label: 'B' }]);
+    await settle();
+    const box = ms.shadowRoot!.querySelector<HTMLElement>('.container')!;
+    const listOpen = () => box.getAttribute('aria-expanded') === 'true';
+    const sr = host.querySelector('b-time')!.shadowRoot!;
+    const trigger = sr.querySelector<HTMLInputElement>('.tp-input')!;
+    const panelId = trigger.getAttribute('aria-controls') ?? '';
+    check('with a multi-select list open: precondition, the time trigger can take focus', await focusable(sr, trigger));
+    box.click();                                   // synchronous from here: nothing else can open or close a list
+    const opened = listOpen();
+    trigger.focus();
+    press(trigger, 'Enter');
+    const inPanel = !!sr.getElementById(panelId)?.contains(sr.activeElement);
+    press(sr.activeElement, 'Escape');
+    check(`with a multi-select list open (${opened}), Escape in the b-time panel (${inPanel}) collapses the b-time`,
+      opened && inPanel && trigger.getAttribute('aria-expanded') === 'false');
+    check('...and returns focus to the time trigger', sr.activeElement === trigger);
+    check('...and leaves the other field\'s list alone', listOpen());
+    // The other half of TASK-819 still holds: an Escape that starts in the open list closes the list.
+    press(box, 'Escape');
+    check('an Escape from the multi-select itself still closes its list', !listOpen());
+    await settle();
+  } catch (e) {
+    check(`multi-select + b-time: unexpected throw: ${(e as Error).message}`, false);
+  }
   host.remove();
 
   const passed = results.filter((r) => r.startsWith('PASS')).length;

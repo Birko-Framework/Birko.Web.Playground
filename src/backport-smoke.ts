@@ -340,6 +340,22 @@ void (async () => {
     check('mobile shell renders one nav item per surface', navItems.length === surfaces.length);
     const active = shell.shadowRoot?.querySelector('.mobile-navitem.active');
     check('mobile shell active item reflects hash /log', active?.getAttribute('data-surface') === 'log');
+    // Birko TASK-930 — the top bar adds the top safe-area inset to its height AND pads by it, which only works as
+    // border-box; reset.css's `*` rule does not reach the shadow DOM, so it was content-box and counted the inset twice
+    // (iPhone, iOS 27.2, viewport-fit=cover: 42 + 50 + 50 = 143). env() cannot be emulated, so substitute a 50px inset.
+    {
+      const topbar = shell.shadowRoot?.querySelector<HTMLElement>('.mobile-topbar');
+      const before = topbar?.getBoundingClientRect().height ?? 0;
+      const probe = document.createElement('style');
+      probe.textContent = '.mobile-topbar{height:calc(var(--b-header-height,3rem) + 50px)!important;padding-top:50px!important}';
+      shell.shadowRoot?.append(probe);
+      const after = topbar?.getBoundingClientRect().height ?? 0;
+      probe.remove();
+      check(`mobile shell top bar is border-box (${topbar ? getComputedStyle(topbar).boxSizing : 'missing'})`,
+        !!topbar && getComputedStyle(topbar).boxSizing === 'border-box');
+      check(`mobile shell top bar grows by the inset once, not twice (+${Math.round(after - before)}px for a 50px inset)`,
+        Math.round(after - before) === 50);
+    }
     shell.remove();
     window.location.hash = prevHash;
 

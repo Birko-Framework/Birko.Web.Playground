@@ -2667,6 +2667,45 @@ void (async () => {
         dd.hide(); dd.remove();
       }
     }
+
+    // Birko TASK-936 (Symbio): a non-searchable b-select renders a native <select> whose placeholder option was always
+    // disabled, and `clearable` (which BaseCrudPage puts on filter selects) was ignored, so a filter set to a value
+    // could never go back to "any". With `clearable` the empty option is pickable and clears the value.
+    {
+      type Sel = HTMLElement & { setOptions(o: { value: string; label: string }[]): void };
+      const mk = async (attrs: string) => {
+        const host = document.createElement('div');
+        host.innerHTML = `<b-select name="pub" placeholder="Any state" ${attrs}></b-select>`;
+        document.body.appendChild(host);
+        const el = host.querySelector('b-select') as Sel;
+        await new Promise((r) => setTimeout(r, 0));
+        el.setOptions([{ value: 'true', label: 'Shown' }, { value: 'false', label: 'Hidden' }]);
+        await new Promise((r) => setTimeout(r, 0));
+        return { host, el, sel: () => el.shadowRoot!.querySelector('select')! };
+      };
+      const pick = (s: HTMLSelectElement, v: string) => { s.value = v; s.dispatchEvent(new Event('change', { bubbles: true })); };
+      {
+        const { host, el, sel } = await mk('clearable');
+        const seen: string[] = [];
+        el.addEventListener('change', (e) => seen.push((e as CustomEvent).detail.value));
+        pick(sel(), 'true');
+        await new Promise((r) => setTimeout(r, 0));
+        const empty = sel().querySelector<HTMLOptionElement>('option[value=""]');
+        check(`TASK-936: a clearable select keeps its placeholder option pickable (${empty ? (empty.disabled ? 'disabled' : 'enabled') : 'missing'})`,
+          !!empty && !empty.disabled && empty.textContent === 'Any state');
+        pick(sel(), '');
+        await new Promise((r) => setTimeout(r, 0));
+        check(`TASK-936: picking it clears the value (events ${JSON.stringify(seen)}, value attr ${el.getAttribute('value')})`,
+          seen.join(',') === 'true,' && !el.hasAttribute('value') && sel().value === '');
+        host.remove();
+      }
+      {
+        const { host, sel } = await mk('');
+        const empty = sel().querySelector<HTMLOptionElement>('option[value=""]');
+        check('TASK-936: without clearable the placeholder stays a disabled prompt', !!empty && empty.disabled);
+        host.remove();
+      }
+    }
   } catch (e) {
     check(`unexpected throw: ${(e as Error).message}`, false);
   }

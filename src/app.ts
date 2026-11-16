@@ -552,7 +552,7 @@ const CATALOGUE: ComponentDef[] = [
   { tag: 'b-input', label: 'Input', category: 'inputs', attrs: { label: 'Name', placeholder: 'Type here…', description: 'Shown as-is under the control (the `description` attribute)' }, controls: [SIZE, DISABLED, BARE, CLEARABLE] },
   { tag: 'b-textarea', label: 'Textarea', category: 'inputs', attrs: { label: 'Notes', placeholder: 'Multi-line…' }, controls: [DISABLED, BARE] },
   { tag: 'b-search-input', label: 'Search input', category: 'inputs', attrs: { placeholder: 'Search…' }, controls: [SIZE] },
-  { tag: 'b-select', label: 'Select', category: 'inputs', attrs: { label: 'Pick one', placeholder: 'Choose…' }, render: () => '<option value="1">One</option><option value="2">Two</option><option value="3">Three</option>', controls: [SIZE, BARE] },
+  { tag: 'b-select', label: 'Select', category: 'inputs', attrs: { label: 'Pick one', placeholder: 'Choose…' }, controls: [SIZE, BARE, CLEARABLE], setup: (el) => el.setOptions([{ value: '1', label: 'One' }, { value: '2', label: 'Two' }, { value: '3', label: 'Three' }]) },
   { tag: 'b-multi-select', label: 'Multi-select', category: 'inputs', attrs: { label: 'Pick many' }, controls: [BARE], setup: (el) => el.setOptions([{ value: '1', label: 'One' }, { value: '2', label: 'Two' }, { value: '3', label: 'Three' }]) },
   { tag: 'b-country-select', label: 'Country select', category: 'inputs', attrs: { label: 'Country', value: 'SK', preferred: 'SK,CZ' },
     controls: [{ label: 'multiple', attr: 'multiple', options: ['', 'multiple'] }, BARE] },

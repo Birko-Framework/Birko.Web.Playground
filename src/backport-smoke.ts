@@ -2706,6 +2706,64 @@ void (async () => {
         host.remove();
       }
     }
+
+    // Birko TASK-937: TASK-936 made a plain b-select clearable, but b-form select fields and ribbon select fields had no
+    // way to ask for it, so an optional form select or a ribbon filter could not go back to no value. Both now take an
+    // opt-in `clearable` and pass it through; without it nothing changes.
+    {
+      const pick = (s: HTMLSelectElement, v: string) => { s.value = v; s.dispatchEvent(new Event('change', { bubbles: true })); };
+      const settle = () => new Promise((r) => setTimeout(r, 30));
+      const opts = [{ value: 'a', label: 'Alpha' }, { value: 'b', label: 'Beta' }];
+      {
+        const form = document.createElement('b-form') as HTMLElement & { setSchema(s: unknown): void; getValues(): Record<string, unknown> };
+        document.body.appendChild(form);
+        await settle();
+        form.setSchema({ name: 'root', children: [
+          { name: 'kind', type: 'select', label: 'Kind', placeholder: 'Any kind', clearable: true, options: opts },
+          { name: 'plain', type: 'select', label: 'Plain', placeholder: 'Pick', options: opts },
+        ] });
+        await settle();
+        const ctl = (n: string) => (form.shadowRoot?.querySelector(`[data-path="${n}"]`) ?? form.querySelector(`[data-path="${n}"]`)) as HTMLElement | null;
+        const sel = (n: string) => ctl(n)?.shadowRoot?.querySelector('select') ?? null;
+        check(`TASK-937: a b-form select field passes clearable through (${ctl('kind')?.hasAttribute('clearable')})`, !!ctl('kind')?.hasAttribute('clearable'));
+        pick(sel('kind')!, 'a');
+        await settle();
+        pick(sel('kind')!, '');
+        await settle();
+        const v = form.getValues().kind;
+        const formEmpty = sel('kind')?.querySelector<HTMLOptionElement>('option[value=""]');
+        check(`TASK-937: a clearable b-form select can be emptied by the user (option ${formEmpty ? (formEmpty.disabled ? 'disabled' : 'enabled') : 'missing'}, value ${JSON.stringify(v)})`,
+          !!formEmpty && !formEmpty.disabled && (v === '' || v == null));
+        check('TASK-937: a b-form select field without clearable is unchanged',
+          !ctl('plain')?.hasAttribute('clearable') && !!sel('plain')?.querySelector<HTMLOptionElement>('option[value=""]')?.disabled);
+        form.remove();
+      }
+      {
+        if (!customElements.get('b-ribbon')) define('b-ribbon', BRibbon);
+        const ribbon = document.createElement('b-ribbon') as BRibbon;
+        ribbon.setAttribute('pinned', '');
+        ribbon.setAttribute('expanded', '');
+        document.body.appendChild(ribbon);
+        ribbon.setTabs([{ id: 'tf', label: 'Filter', groups: [{ id: 'gf', label: 'Filter', items: [
+          { id: 'state', label: 'State', field: { type: 'select', clearable: true, placeholder: 'Any state', value: 'a', options: opts } },
+          { id: 'other', label: 'Other', field: { type: 'select', value: 'a', options: opts } },
+        ] }] }] as RibbonTab[]);
+        await settle();
+        const changes: string[] = [];
+        ribbon.addEventListener('item-change', (e) => changes.push((e as CustomEvent).detail.value));
+        const ctl = (id: string) => ribbon.shadowRoot?.querySelector<HTMLElement>(`.ribbon-field-control[data-item="${id}"]`) ?? null;
+        check(`TASK-937: a ribbon select field passes clearable through (${ctl('state')?.hasAttribute('clearable')})`, !!ctl('state')?.hasAttribute('clearable'));
+        const ribbonEmpty = ctl('state')?.shadowRoot?.querySelector<HTMLOptionElement>('option[value=""]');
+        check(`TASK-937: the ribbon field's empty choice is pickable (${ribbonEmpty ? (ribbonEmpty.disabled ? 'disabled' : 'enabled') : 'missing'})`,
+          !!ribbonEmpty && !ribbonEmpty.disabled);
+        pick(ctl('state')!.shadowRoot!.querySelector('select')!, '');
+        await settle();
+        check(`TASK-937: picking the empty choice reports an empty value (${JSON.stringify(changes)})`, changes.join('|') === '');
+        check(`TASK-937: ...and only once (${changes.length})`, changes.length === 1);
+        check('TASK-937: a ribbon select field without clearable is unchanged', !!ctl('other') && !ctl('other')!.hasAttribute('clearable'));
+        ribbon.remove();
+      }
+    }
   } catch (e) {
     check(`unexpected throw: ${(e as Error).message}`, false);
   }

@@ -2764,6 +2764,34 @@ void (async () => {
         ribbon.remove();
       }
     }
+
+    // Birko TASK-940: b-data-table drew the row-action trigger on every row and filtered actions by visible(row) only
+    // when the menu opened, so a row with no applicable action got a button that opened an empty menu (Symbio's
+    // completed / rejected erasure requests). Such a row now gets no trigger; the __actions column stays.
+    {
+      const client = {
+        get: async () => ({ ok: true, status: 200, headers: new Headers(), data: [
+          { id: '1', name: 'Open', state: 'open' },
+          { id: '2', name: 'Done', state: 'done' },
+        ] }),
+      };
+      const dt = document.createElement('b-data-table') as BDataTable;
+      document.body.appendChild(dt);
+      dt.setConfig({ endpoint: 'items', columns: dtCols, apiClient: client as never, rowActions: [
+        { id: 'approve', label: 'Approve', visible: (r: Record<string, unknown>) => r.state === 'open' },
+        { id: 'reject', label: 'Reject', visible: (r: Record<string, unknown>) => r.state === 'open' },
+      ] } as never);
+      await dt.load();
+      await new Promise((r) => setTimeout(r, 10));
+      const tbl = dt.shadowRoot?.querySelector('b-table');
+      const row = (id: string) => tbl?.shadowRoot?.querySelector(`tbody tr[data-id="${id}"]`) ?? null;
+      const triggers = (id: string) => row(id)?.querySelectorAll('.row-action-trigger').length ?? -1;
+      const cells = (id: string) => row(id)?.querySelectorAll('td').length ?? -1;
+      check(`TASK-940: a row with an applicable action keeps its trigger (${triggers('1')})`, triggers('1') === 1);
+      check(`TASK-940: a row with no applicable action has no trigger (${triggers('2')})`, triggers('2') === 0);
+      check(`TASK-940: ...but keeps the actions cell (${cells('2')} of ${cells('1')} cells)`, cells('2') === 2 && cells('1') === 2);
+      dt.remove();
+    }
   } catch (e) {
     check(`unexpected throw: ${(e as Error).message}`, false);
   }

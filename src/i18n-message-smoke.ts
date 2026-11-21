@@ -17,6 +17,7 @@
 // backport-smoke asserts in English (`res.errors['rate'] === 'Enter a number.'`, `'Rate is required'`).
 // `addMessages` is not undoable, so this suite waits for backport-smoke to finish before touching it.
 import 'birko-web-components/inputs';
+import 'birko-web-components/data';
 import { getI18n } from 'birko-web-core';
 import { BAppShell, BUILTIN_THEMES } from 'birko-web-shell';
 
@@ -36,6 +37,28 @@ class I18nShell extends BAppShell {
   protected getAvailableThemes() { return [BUILTIN_THEMES.light, BUILTIN_THEMES.dark]; }
 }
 if (!customElements.get('pg-i18n-shell')) customElements.define('pg-i18n-shell', I18nShell);
+
+/** Birko TASK-953 (reported by Symbio): b-data-table's select-all, select-row and row-action labels, read off a table. */
+async function tableLabels(labels?: Record<string, string>): Promise<{ all: string; row: string; actions: string; quotedId: boolean }> {
+  const dt = document.createElement('b-data-table') as HTMLElement & { setConfig(c: unknown): void; load(): Promise<void> };
+  dt.style.position = 'absolute';
+  dt.style.left = '-9999px';
+  document.body.appendChild(dt);
+  const client = { get: async () => ({ ok: true, status: 200, headers: new Headers(), data: [{ id: 'a"b', name: 'Row' }] }) };
+  dt.setConfig({ endpoint: 'items', columns: [{ key: 'name', label: 'Name' }], apiClient: client, selectable: true,
+    rowActions: [{ id: 'edit', label: 'Edit' }], ...(labels ? { labels } : {}) });
+  await dt.load();
+  await new Promise((r) => setTimeout(r, 60));
+  const tbl = dt.shadowRoot?.querySelector('b-table')?.shadowRoot;
+  const out = {
+    all: tbl?.querySelector('.select-all')?.getAttribute('aria-label') ?? '(none)',
+    row: tbl?.querySelector('.row-select')?.getAttribute('aria-label') ?? '(none)',
+    actions: tbl?.querySelector('.row-action-trigger')?.getAttribute('aria-label') ?? '(none)',
+    quotedId: tbl?.querySelector('.row-action-trigger')?.getAttribute('data-id') === 'a"b',
+  };
+  dt.remove();
+  return out;
+}
 
 /** The shell's three Birko-owned strings, read off a freshly rendered shell. */
 async function shellStrings(attrs: Record<string, string> = {}): Promise<{ palette: string; theme: string; themes: string[] }> {
@@ -127,6 +150,11 @@ void (async () => {
       eq('TASK-952: shell command-palette label in English unchanged', en.palette, 'Command palette (Ctrl+K)');
       eq('TASK-952: shell theme-menu label in English unchanged', en.theme, 'Theme');
       eq('TASK-952: built-in theme names in English unchanged', en.themes.join(' | '), 'Light | Dark');
+      const tl = await tableLabels();
+      eq('TASK-953: data-table select-all label in English unchanged', tl.all, 'Select all rows');
+      eq('TASK-953: data-table select-row label in English unchanged', tl.row, 'Select row');
+      eq('TASK-953: data-table row-action label in English unchanged', tl.actions, 'Actions');
+      check(`TASK-953: a row id with a quote stays one data-id value (${tl.quotedId})`, tl.quotedId);
     }
 
     // ── Wait for backport-smoke: half B mutates the global singleton it asserts English against ──
@@ -207,6 +235,15 @@ void (async () => {
       const own = await shellStrings({ 'label-command-palette': 'Hladat', 'label-theme': 'Tema' });
       eq('TASK-952: a label-command-palette attribute still beats the translation', own.palette, 'Hladat');
       eq('TASK-952: a label-theme attribute still beats the translation', own.theme, 'Tema');
+
+      // TASK-953: b-data-table's selection and row-action labels take bwc.dataTable.* keys like its other labels.
+      getI18n().addMessages('en', { bwc: { dataTable: { selectAll: 'Vybrat vsetky riadky', selectRow: 'Vybrat riadok', actions: 'Akcie' } } });
+      const tsk = await tableLabels();
+      eq('TASK-953: i18n wins for the data-table select-all label', tsk.all, 'Vybrat vsetky riadky');
+      eq('TASK-953: i18n wins for the data-table select-row label', tsk.row, 'Vybrat riadok');
+      eq('TASK-953: i18n wins for the data-table row-action label', tsk.actions, 'Akcie');
+      const town = await tableLabels({ selectAll: 'All', selectRow: 'One', actions: 'Do' });
+      eq('TASK-953: config labels still beat the translation', `${town.all} | ${town.row} | ${town.actions}`, 'All | One | Do');
     }
   } catch (e) {
     check(`unexpected throw: ${(e as Error).message}`, false);

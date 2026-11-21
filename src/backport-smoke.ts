@@ -2894,6 +2894,79 @@ void (async () => {
         check('TASK-947: revertMove with nothing to undo answers false', typeof kb.revertMove === 'function' && kb.revertMove('a') === false);
         kb.remove();
       }
+
+      // Birko TASK-948 (FEATURE-022 D5 sections, D13, D14): lanes inside a column.
+      {
+        type Card = { id: string; columnId: string; laneId?: string };
+        const laneCfg = (extra: Record<string, unknown> = {}) => ({
+          columns: [
+            { id: 'todo', label: 'To do', defaultLane: 'normal',
+              lanes: [{ id: 'critical', label: 'Critical', color: '#c43c3c' }, { id: 'high', label: 'High' }, { id: 'normal', label: 'Normal' }] },
+            { id: 'doing', label: 'In progress' },
+          ],
+          cards: [{ id: 'a', columnId: 'todo', laneId: 'critical', title: 'A' }, { id: 'b', columnId: 'todo', laneId: 'normal', title: 'B' },
+            { id: 'x', columnId: 'todo', title: 'X no lane' }, { id: 'y', columnId: 'todo', laneId: 'nope', title: 'Y unknown lane' },
+            { id: 'c', columnId: 'doing', title: 'C' }],
+          ...extra,
+        });
+        const laneOf = (kb: KB, id: string) => (kb.getCards().find((c) => c.id === id) as Card | undefined)?.laneId;
+        const shownLane = (kb: KB, id: string) => sr(kb).querySelector(`.card[data-card-id="${id}"]`)?.closest('.lane')?.getAttribute('data-lane-id') ?? 'none';
+        const dragTo = (kb: KB, cardId: string, selector: string) => {
+          const dt = new DataTransfer();
+          const card = sr(kb).querySelector<HTMLElement>(`.card[data-card-id="${cardId}"]`)!;
+          card.dispatchEvent(new DragEvent('dragstart', { bubbles: true, cancelable: true, dataTransfer: dt }));
+          const target = sr(kb).querySelector<HTMLElement>(selector);
+          if (!target) return false;
+          const over = new DragEvent('dragover', { bubbles: true, cancelable: true, dataTransfer: dt, clientY: 99999 });
+          target.dispatchEvent(over);
+          if (over.defaultPrevented) target.dispatchEvent(new DragEvent('drop', { bubbles: true, cancelable: true, dataTransfer: dt, clientY: 99999 }));
+          card.isConnected && card.dispatchEvent(new DragEvent('dragend', { bubbles: true, dataTransfer: dt }));
+          return over.defaultPrevented;
+        };
+        const lanesOf = (kb: KB) => [...sr(kb).querySelectorAll<HTMLElement>('.column[data-column-id="todo"] .lane')]
+          .map((l) => `${l.getAttribute('data-lane-id')}:${l.querySelector('.lane-title')?.textContent?.trim()}(${l.querySelector('.lane-count')?.textContent?.trim()})`);
+        {
+          const { kb, moves } = await mk(laneCfg());
+          check(`TASK-948: a laned column shows each lane with its label and count (${lanesOf(kb).join(' ')})`,
+            lanesOf(kb).join(' ') === 'critical:Critical(1) high:High(0) normal:Normal(3)');
+          const high = sr(kb).querySelector<HTMLElement>('.lane[data-lane-id="high"]');
+          check(`TASK-948: an empty lane stays visible as a place to drop (${Math.round(high?.getBoundingClientRect().height ?? 0)}px, drop target ${!!high?.querySelector('.column-body')})`,
+            (high?.getBoundingClientRect().height ?? 0) > 20 && !!high?.querySelector('.column-body'));
+          check(`TASK-948: a card with no lane and one with an unknown lane show in the default lane (x in ${shownLane(kb, 'x')}, y in ${shownLane(kb, 'y')})`,
+            shownLane(kb, 'x') === 'normal' && shownLane(kb, 'y') === 'normal');
+          check(`TASK-948: a column without lanes has no lane sections (${sr(kb).querySelectorAll('.column[data-column-id="doing"] .lane').length})`,
+            sr(kb).querySelectorAll('.column[data-column-id="doing"] .lane').length === 0);
+          const ok = dragTo(kb, 'a', '.lane[data-lane-id="high"] .column-body');
+          await settle();
+          const m = moves[moves.length - 1] as Record<string, unknown> | undefined;
+          check(`TASK-948: a drag to another lane moves the card there (${ok}, a in ${laneOf(kb, 'a')}, shown in ${shownLane(kb, 'a')})`,
+            ok && laneOf(kb, 'a') === 'high' && shownLane(kb, 'a') === 'high');
+          check(`TASK-948: ...reported as card-move with the lanes it left and entered (${JSON.stringify(m && { from: m.fromLane, to: m.toLane, col: m.toColumn })})`,
+            !!m && m.fromLane === 'critical' && m.toLane === 'high' && m.toColumn === 'todo' && moves.length === 1);
+          const undone = kb.revertMove!('a');
+          await settle();
+          check(`TASK-948: revertMove puts the card back in its lane (${undone}, a in ${laneOf(kb, 'a')})`, undone && laneOf(kb, 'a') === 'critical');
+          dragTo(kb, 'c', '.lane[data-lane-id="high"] .column-body');
+          await settle();
+          const m2 = moves[moves.length - 1] as Record<string, unknown> | undefined;
+          check(`TASK-948: a card dragged in from a column without lanes lands in the lane it was dropped on (c in ${laneOf(kb, 'c')}, toLane ${m2?.toLane})`,
+            laneOf(kb, 'c') === 'high' && m2?.toLane === 'high' && m2?.fromColumn === 'doing');
+          (kb.moveCard as unknown as (id: string, col: string, i?: number, p?: string, lane?: string) => void)('b', 'todo', undefined, undefined, 'critical');
+          await settle();
+          check(`TASK-948: moveCard takes a lane (b in ${laneOf(kb, 'b')})`, laneOf(kb, 'b') === 'critical');
+          kb.remove();
+        }
+        {
+          const asked: Record<string, unknown>[] = [];
+          const { kb } = await mk(laneCfg({ canMove: (mv: Record<string, unknown>) => { asked.push(mv); return mv.toLane === 'critical' ? 'Only a lead sets Critical' : true; } }));
+          const ok = dragTo(kb, 'b', '.lane[data-lane-id="critical"] .column-body');
+          await settle();
+          const last = asked[asked.length - 1] ?? {};
+          check(`TASK-948: canMove sees the lanes and can refuse one (asked ${JSON.stringify({ from: last.fromLane, to: last.toLane })}, accepted ${ok}, b in ${laneOf(kb, 'b')}, "${live(kb)}")`,
+            last.fromLane === 'normal' && last.toLane === 'critical' && !ok && laneOf(kb, 'b') === 'normal' && live(kb).includes('Only a lead sets Critical'));
+          kb.remove();
+        }
+      }
     }
 
     // Birko TASK-943 (reported by DraCode): BMarkdownEditor.renderMarkdown escaped only & < >, so a link, image or

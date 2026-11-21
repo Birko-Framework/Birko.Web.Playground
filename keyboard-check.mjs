@@ -1677,6 +1677,29 @@ try {
     });
     check(`TASK-955: Escape puts a travelling card back (shown in ${aMoving} while moving, then ${aBack.shown}; data ${aBack.data})`,
       aMoving === 'doing' && aBack.shown === 'todo' && aBack.data === 'todo');
+    // TASK-948: a keyboard move into a column with lanes travels into, and lands in, its default lane.
+    await page.evaluate(async () => {
+      const kb = document.getElementById('kb-board');
+      kb.setConfig({
+        columns: [{ id: 'todo', label: 'To do', defaultLane: 'normal', lanes: [{ id: 'critical', label: 'Critical' }, { id: 'normal', label: 'Normal' }] },
+          { id: 'doing', label: 'In progress' }],
+        cards: [{ id: 'P', columnId: 'todo', laneId: 'critical', title: 'P' }, { id: 'Q', columnId: 'doing', title: 'Q' }],
+      });
+      await new Promise((r) => setTimeout(r, 60));
+      kb.shadowRoot.querySelector('.card[data-card-id="Q"]').focus();
+    });
+    await page.keyboard.press('Space');
+    await page.keyboard.press('ArrowLeft');
+    const qMoving = await page.evaluate(() => document.getElementById('kb-board').shadowRoot.querySelector('.card[data-card-id="Q"]')?.closest('.lane')?.getAttribute('data-lane-id') ?? 'none');
+    await page.keyboard.press('Enter');
+    await new Promise((r) => setTimeout(r, 60));
+    const qLane = await page.evaluate(() => {
+      const kb = document.getElementById('kb-board');
+      const q = kb.getCards().find((c) => c.id === 'Q');
+      return `${q?.columnId}/${q?.laneId}`;
+    });
+    check(`TASK-948: by keyboard, a card moved into a laned column travels into its default lane and lands there (shown in ${qMoving}, now ${qLane})`,
+      qMoving === 'normal' && qLane === 'todo/normal');
     await page.evaluate(() => document.getElementById('kb-host').remove());
   }
 } finally {

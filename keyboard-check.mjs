@@ -1635,6 +1635,11 @@ try {
     check(`TASK-955: ...and the board is one tab stop: the next Tab leaves it (focus ${await kbFocus()})`, (await kbFocus()) === 'kb-after');
     await page.keyboard.down('Shift'); await page.keyboard.press('Tab'); await page.keyboard.up('Shift');
     check(`TASK-955: Shift+Tab comes back to the card (focus ${await kbFocus()})`, (await kbFocus()) === 'card:A');
+    // Without a pick-up, → moves focus to the next column as ← already moved it to the previous one (it did nothing).
+    await page.keyboard.press('ArrowRight');
+    check(`TASK-955: → moves focus to the next column's card (focus ${await kbFocus()})`, (await kbFocus()) === 'card:B');
+    await page.keyboard.press('ArrowLeft');
+    check(`TASK-955: ← moves it back (focus ${await kbFocus()})`, (await kbFocus()) === 'card:A');
     await page.keyboard.press('ArrowDown');
     await page.keyboard.press('Tab');
     await page.keyboard.down('Shift'); await page.keyboard.press('Tab'); await page.keyboard.up('Shift');
@@ -1642,6 +1647,14 @@ try {
     await page.keyboard.press('Space');
     await page.keyboard.press('ArrowRight');
     const one = await kbState();
+    // A sighted keyboard user must SEE where the card would land, not only hear it.
+    const marked = await page.evaluate(() => {
+      const sr = document.getElementById('kb-board').shadowRoot;
+      return { col: [...sr.querySelectorAll('.column-body.drag-over')].map((b) => b.dataset.columnId).join(','),
+        line: sr.querySelectorAll('.card.drop-before, .card.drop-after').length };
+    });
+    check(`TASK-955: during a keyboard move the target column is marked on screen (marked "${marked.col}", ${marked.line} drop line)`,
+      marked.col === 'doing' && marked.line === 1);
     await page.keyboard.press('ArrowRight');
     const two = await kbState();
     check(`TASK-947: by keyboard, → reaches In progress ("${one.live}") and the next → does not enter the locked Done ("${two.live}")`,

@@ -1647,14 +1647,17 @@ try {
     await page.keyboard.press('Space');
     await page.keyboard.press('ArrowRight');
     const one = await kbState();
-    // A sighted keyboard user must SEE where the card would land, not only hear it.
-    const marked = await page.evaluate(() => {
+    // A sighted keyboard user must SEE the move: the card itself travels with the arrows (TASK-955, the user's choice).
+    const where = () => page.evaluate(() => {
       const sr = document.getElementById('kb-board').shadowRoot;
-      return { col: [...sr.querySelectorAll('.column-body.drag-over')].map((b) => b.dataset.columnId).join(','),
-        line: sr.querySelectorAll('.card.drop-before, .card.drop-after').length };
+      const el = sr.querySelector('.card[data-card-id="D"]');
+      const body = el?.closest('.column-body');
+      return { col: body?.dataset.columnId ?? 'none', pos: body ? [...body.querySelectorAll(':scope > .card')].indexOf(el) : -1,
+        marked: [...sr.querySelectorAll('.column-body.drag-over')].map((b) => b.dataset.columnId).join(',') };
     });
-    check(`TASK-955: during a keyboard move the target column is marked on screen (marked "${marked.col}", ${marked.line} drop line)`,
-      marked.col === 'doing' && marked.line === 1);
+    const moved = await where();
+    check(`TASK-955: during a keyboard move the card itself is shown in the target column (D shown in ${moved.col} at ${moved.pos}, marked "${moved.marked}")`,
+      moved.col === 'doing' && moved.marked === 'doing');
     await page.keyboard.press('ArrowRight');
     const two = await kbState();
     check(`TASK-947: by keyboard, → reaches In progress ("${one.live}") and the next → does not enter the locked Done ("${two.live}")`,
@@ -1662,6 +1665,18 @@ try {
     await page.keyboard.press('Enter');
     await new Promise((r) => setTimeout(r, 60));
     check(`TASK-947: Enter drops the card in In progress (D in ${(await kbState()).d})`, (await kbState()).d === 'doing');
+    await page.evaluate(() => document.getElementById('kb-board').shadowRoot.querySelector('.card[data-card-id="A"]').focus());
+    await page.keyboard.press('Space');
+    await page.keyboard.press('ArrowRight');
+    const aMoving = await page.evaluate(() => document.getElementById('kb-board').shadowRoot.querySelector('.card[data-card-id="A"]')?.closest('.column-body')?.dataset.columnId);
+    await page.keyboard.press('Escape');
+    await new Promise((r) => setTimeout(r, 60));
+    const aBack = await page.evaluate(() => {
+      const kb = document.getElementById('kb-board');
+      return { shown: kb.shadowRoot.querySelector('.card[data-card-id="A"]')?.closest('.column-body')?.dataset.columnId, data: kb.getCards().find((c) => c.id === 'A')?.columnId };
+    });
+    check(`TASK-955: Escape puts a travelling card back (shown in ${aMoving} while moving, then ${aBack.shown}; data ${aBack.data})`,
+      aMoving === 'doing' && aBack.shown === 'todo' && aBack.data === 'todo');
     await page.evaluate(() => document.getElementById('kb-host').remove());
   }
 } finally {

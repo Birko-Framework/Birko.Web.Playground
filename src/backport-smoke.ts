@@ -2792,6 +2792,90 @@ void (async () => {
       check(`TASK-940: ...but keeps the actions cell (${cells('2')} of ${cells('1')} cells)`, cells('2') === 2 && cells('1') === 2);
       dt.remove();
     }
+
+    // Birko TASK-943 (reported by DraCode): BMarkdownEditor.renderMarkdown escaped only & < >, so a link, image or
+    // code-fence language could close its attribute and add a handler, and a link or image target was never checked
+    // for its scheme (javascript: ran). Parsed inertly with DOMParser, so nothing here can execute.
+    {
+      const parse = (md: string) => new DOMParser().parseFromString(`<body>${BMarkdownEditor.renderMarkdown(md)}</body>`, 'text/html').body;
+      const hostile = [
+        '<script>window.__pwned = 1</script>',
+        '<img src=x onerror="window.__pwned = 2">',
+        '[click](javascript:window.__pwned=3)',
+        '[quote](x" onmouseover="window.__pwned=4)',
+        '![pic](y" onerror="window.__pwned=5)',
+        '![a" onerror="window.__pwned=6](z.png)',
+        '[tab](java\tscript:window.__pwned=7)',
+        '[case](JaVaScRiPt:window.__pwned=8)',
+        "[single](x' onmouseover='window.__pwned=9)",
+        '```js" onmouseover="window.__pwned=10\ncode\n```',
+        '[data](data:text/html,<script>window.__pwned=11</script>)',
+      ];
+      const handlersOf = (root: Element) => [root, ...root.querySelectorAll('*')]
+        .flatMap((el) => [...el.attributes].filter((a) => a.name.startsWith('on')).map((a) => `${el.tagName.toLowerCase()}[${a.name}]`));
+      const unsafeTargets = (root: Element) => [...root.querySelectorAll('[href], [src]')]
+        .map((el) => el.getAttribute('href') ?? el.getAttribute('src') ?? '')
+        // A browser ignores control characters and whitespace inside a scheme, so collapse them before asking.
+        .map((v) => Array.from(v).filter((c) => c.charCodeAt(0) > 0x20).join('').toLowerCase())
+        .filter((v) => /^[a-z][a-z0-9+.-]*:/.test(v) && !/^(https?|mailto|tel):/.test(v));
+      for (const md of hostile) {
+        const body = parse(md);
+        const handlers = handlersOf(body);
+        const bad = unsafeTargets(body);
+        check(`TASK-943: ${JSON.stringify(md)} → no script (${body.querySelectorAll('script').length}), handlers ${JSON.stringify(handlers)}, unsafe targets ${JSON.stringify(bad)}`,
+          body.querySelectorAll('script').length === 0 && handlers.length === 0 && bad.length === 0);
+      }
+      {
+        const body = parse('[click](javascript:alert(1))');
+        check(`TASK-943: a refused link stays visible as text (${JSON.stringify(body.textContent)}, ${body.querySelectorAll('a').length} links)`,
+          body.querySelectorAll('a').length === 0 && (body.textContent ?? '').includes('click'));
+      }
+      const safe: [string, string, string][] = [
+        ['[fine](https://example.com/docs)', 'a', 'https://example.com/docs'],
+        ['[rel](/docs/page)', 'a', '/docs/page'],
+        ['[frag](#section)', 'a', '#section'],
+        ['[mail](mailto:a@example.com)', 'a', 'mailto:a@example.com'],
+        ['[q](https://example.com/?a=1&b=2)', 'a', 'https://example.com/?a=1&b=2'],
+        ['![pic](https://example.com/p.png)', 'img', 'https://example.com/p.png'],
+        ['![pic](images/p.png)', 'img', 'images/p.png'],
+      ];
+      for (const [md, tag, want] of safe) {
+        const el = parse(md).querySelector(tag);
+        const got = el?.getAttribute(tag === 'a' ? 'href' : 'src') ?? null;
+        check(`TASK-943: a safe target is kept: ${md} → ${JSON.stringify(got)}`, got === want);
+      }
+      check('TASK-943: a fenced language still becomes the code class',
+        parse('```ts\nconst a = 1;\n```').querySelector('code')?.className === 'language-ts');
+    }
+
+    // Birko TASK-944 (reported by DraCode): three rendering bugs in BMarkdownEditor.renderMarkdown.
+    {
+      const parse = (md: string) => new DOMParser().parseFromString(`<body>${BMarkdownEditor.renderMarkdown(md)}</body>`, 'text/html').body;
+      {
+        const body = parse('1. waver.js exports greet(name). greet returns\n   `Hello, <name>!`.\n2. second');
+        const items = [...body.querySelectorAll('ol > li')].map((li) => li.textContent);
+        check(`TASK-944: an indented continuation line stays in its ordered item (${JSON.stringify(items)}, ${body.querySelectorAll('ol').length} lists, ${body.querySelectorAll('p').length} paragraphs)`,
+          body.querySelectorAll('ol').length === 1 && items.length === 2 && (items[0] ?? '').includes('Hello, <name>!') && body.querySelectorAll('p').length === 0);
+      }
+      {
+        const body = parse('- first item\n  continues here\n- second');
+        const items = [...body.querySelectorAll('ul > li')].map((li) => li.textContent);
+        check(`TASK-944: ...and in its unordered item (${JSON.stringify(items)})`,
+          body.querySelectorAll('ul').length === 1 && items.length === 2 && (items[0] ?? '').includes('continues here'));
+      }
+      {
+        const body = parse('Components:\n- a\n- b');
+        const ul = body.querySelector('ul');
+        check(`TASK-944: a list right after a paragraph line has no <br> between its items (${ul?.querySelectorAll('br').length ?? 'no list'} br, ${ul?.querySelectorAll('li').length ?? 0} items)`,
+          !!ul && ul.querySelectorAll('br').length === 0 && ul.querySelectorAll('li').length === 2);
+        check(`TASK-944: ...and the paragraph line is kept (${JSON.stringify(body.querySelector('p')?.textContent ?? null)})`,
+          (body.querySelector('p')?.textContent ?? '').trim() === 'Components:');
+      }
+      {
+        const code = parse('```\nfirst line\nsecond line\n```').querySelector('pre > code')?.textContent ?? '';
+        check(`TASK-944: a fence with no language starts on its first line (${JSON.stringify(code.slice(0, 12))})`, code.startsWith('first line'));
+      }
+    }
   } catch (e) {
     check(`unexpected throw: ${(e as Error).message}`, false);
   }

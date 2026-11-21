@@ -688,7 +688,7 @@ const CATALOGUE: ComponentDef[] = [
     setup: (el) => el.setItems(FABRICS.slice(0, 6)) },
   { tag: 'b-sortable-item', label: 'Sortable item', category: 'data', attrs: { label: 'Shaggy fur', meta: 'Long pile · ivory' } },
   { tag: 'b-kanban', label: 'Kanban', category: 'data', wide: true,
-    note: 'Done is locked (TASK-947): a person cannot move a card into it or out of it, by mouse or keyboard; the app's own moveCard() still can.',
+    note: 'Done is locked (TASK-947): a person cannot move a card into it or out of it, by mouse or keyboard; moveCard() called by the app still can.',
     setup: (el) => el.setConfig({ columns: [{ id: 'todo', label: 'To do' }, { id: 'doing', label: 'In progress' }, { id: 'done', label: 'Done', locked: true }], cards: [{ id: '1', columnId: 'todo', title: 'Task A' }, { id: '4', columnId: 'todo', title: 'Task D' }, { id: '2', columnId: 'doing', title: 'Task B' }, { id: '3', columnId: 'done', title: 'Task C' }] }) },
   { tag: 'b-object-tree', label: 'Object tree', category: 'data', setup: (el) => el.setData({ name: 'birko', version: 1, active: true, tags: ['a', 'b'], nested: { x: 1, y: [2, 3] } }) },
 

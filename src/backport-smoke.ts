@@ -2793,6 +2793,109 @@ void (async () => {
       dt.remove();
     }
 
+    // Birko TASK-947 (FEATURE-022 D1-D4, D11): b-kanban locked columns, a move rule, refusing a move as it happens
+    // (card-move-request) and undoing one (revertMove). A person cannot move a card into or out of a locked column; the
+    // app's own moveCard() still can. Synthetic drag events suffice: b-kanban's handlers read no trusted-only state.
+    {
+      if (!customElements.get('b-kanban')) define('b-kanban', BKanban);
+      type KB = BKanban & { revertMove?: (id: string) => boolean };
+      const settle = () => new Promise((r) => setTimeout(r, 30));
+      const mk = async (extra: Record<string, unknown> = {}) => {
+        const kb = document.createElement('b-kanban') as KB;
+        document.body.appendChild(kb);
+        kb.setConfig({
+          columns: [{ id: 'todo', label: 'To do' }, { id: 'doing', label: 'In progress', locked: true }, { id: 'done', label: 'Done' }],
+          cards: [{ id: 'a', columnId: 'todo', title: 'A', order: 0 }, { id: 'b', columnId: 'todo', title: 'B', order: 1 },
+            { id: 'c', columnId: 'doing', title: 'C', order: 0 }],
+          ...extra,
+        } as never);
+        await settle();
+        const moves: unknown[] = [];
+        kb.addEventListener('card-move', (e) => moves.push((e as CustomEvent).detail));
+        kb.addEventListener('card-reorder', (e) => moves.push((e as CustomEvent).detail));
+        return { kb, moves };
+      };
+      const sr = (kb: KB) => kb.shadowRoot!;
+      const colOf = (kb: KB, id: string) => kb.getCards().find((c) => c.id === id)?.columnId;
+      const live = (kb: KB) => sr(kb).querySelector('[aria-live]')?.textContent?.trim() ?? '';
+      const drag = (kb: KB, cardId: string, toColumn: string) => {
+        const dt = new DataTransfer();
+        const card = sr(kb).querySelector<HTMLElement>(`.card[data-card-id="${cardId}"]`)!;
+        const start = new DragEvent('dragstart', { bubbles: true, cancelable: true, dataTransfer: dt });
+        card.dispatchEvent(start);
+        const body = sr(kb).querySelector<HTMLElement>(`.column-body[data-column-id="${toColumn}"]`)!;
+        const over = new DragEvent('dragover', { bubbles: true, cancelable: true, dataTransfer: dt, clientY: 99999 });
+        body.dispatchEvent(over);
+        // A browser fires drop only where dragover was cancelled; do the same.
+        if (over.defaultPrevented) body.dispatchEvent(new DragEvent('drop', { bubbles: true, cancelable: true, dataTransfer: dt, clientY: 99999 }));
+        const refusedMark = body.closest('.column')?.classList.contains('drop-refused') ?? false;
+        card.isConnected && card.dispatchEvent(new DragEvent('dragend', { bubbles: true, dataTransfer: dt }));
+        return { started: !start.defaultPrevented && card.getAttribute('draggable') !== 'false', accepted: over.defaultPrevented, refusedMark };
+      };
+      const key = (kb: KB, cardId: string | null, k: string) => {
+        const el = cardId ? sr(kb).querySelector<HTMLElement>(`.card[data-card-id="${cardId}"]`) : null;
+        el?.focus();
+        (el ?? sr(kb).querySelector('.board')!).dispatchEvent(new KeyboardEvent('keydown', { key: k, bubbles: true, composed: true, cancelable: true }));
+      };
+      {
+        const { kb, moves } = await mk();
+        const into = drag(kb, 'a', 'doing');
+        await settle();
+        check(`TASK-947: a drag into a locked column is refused (accepted ${into.accepted}, now in ${colOf(kb, 'a')}, ${moves.length} events)`,
+          !into.accepted && colOf(kb, 'a') === 'todo' && moves.length === 0);
+        check(`TASK-947: ...the locked column shows it refuses (${into.refusedMark}) and says why ("${live(kb)}")`, into.refusedMark && /locked/i.test(live(kb)));
+        const out = drag(kb, 'c', 'done');
+        await settle();
+        check(`TASK-947: a card in a locked column cannot be dragged out (started ${out.started}, now in ${colOf(kb, 'c')})`, !out.started && colOf(kb, 'c') === 'doing');
+        key(kb, 'c', ' ');
+        await settle();
+        check(`TASK-947: picking up a card in a locked column by keyboard is refused and said ("${live(kb)}")`, /locked/i.test(live(kb)) && colOf(kb, 'c') === 'doing');
+        key(kb, null, 'Escape');
+        key(kb, 'a', ' '); key(kb, 'a', 'ArrowRight'); key(kb, 'a', 'Enter');
+        await settle();
+        check(`TASK-947: by keyboard, Right skips the locked column to the next that accepts (a in ${colOf(kb, 'a')}, ${moves.length} card-move)`,
+          colOf(kb, 'a') === 'done' && moves.length === 1);
+        kb.moveCard('b', 'doing');
+        await settle();
+        check(`TASK-947: the app's own moveCard() still moves into a locked column (b in ${colOf(kb, 'b')})`, colOf(kb, 'b') === 'doing');
+        kb.remove();
+      }
+      {
+        const asked: Record<string, unknown>[] = [];
+        const { kb, moves } = await mk({ canMove: (m: Record<string, unknown>) => { asked.push(m); return m.toColumn === 'done' ? 'Only an agent closes a card' : true; } });
+        const r = drag(kb, 'a', 'done');
+        await settle();
+        const m = asked[asked.length - 1] ?? {};
+        check(`TASK-947: canMove is asked with the move (${JSON.stringify({ card: (m.card as { id?: string })?.id, from: m.fromColumn, to: m.toColumn })})`,
+          (m.card as { id?: string })?.id === 'a' && m.fromColumn === 'todo' && m.toColumn === 'done');
+        check(`TASK-947: a reason from canMove refuses the drop and is said (accepted ${r.accepted}, a in ${colOf(kb, 'a')}, "${live(kb)}")`,
+          !r.accepted && colOf(kb, 'a') === 'todo' && live(kb).includes('Only an agent closes a card') && moves.length === 0);
+        kb.remove();
+      }
+      {
+        const { kb, moves } = await mk({ columns: [{ id: 'todo', label: 'To do' }, { id: 'done', label: 'Done' }] });
+        const requests: unknown[] = [];
+        const veto = (e: Event) => { requests.push((e as CustomEvent).detail); e.preventDefault(); };
+        kb.addEventListener('card-move-request', veto);
+        drag(kb, 'a', 'done');
+        await settle();
+        check(`TASK-947: cancelling card-move-request keeps the card put (${requests.length} request, a in ${colOf(kb, 'a')}, ${moves.length} card-move)`,
+          requests.length === 1 && colOf(kb, 'a') === 'todo' && moves.length === 0);
+        kb.removeEventListener('card-move-request', veto);
+        drag(kb, 'a', 'done');
+        await settle();
+        check(`TASK-947: an uncancelled move goes ahead and card-move fires after it, as before (a in ${colOf(kb, 'a')}, ${moves.length})`,
+          colOf(kb, 'a') === 'done' && moves.length === 1);
+        const undone = typeof kb.revertMove === 'function' && kb.revertMove('a');
+        await settle();
+        const order = kb.getCards('todo').map((c) => c.id).join('');
+        check(`TASK-947: revertMove puts the card back where it came from (${undone}, todo ${order})`, undone === true && order === 'ab');
+        check(`TASK-947: ...without reporting a new move (${moves.length} events)`, moves.length === 1);
+        check('TASK-947: revertMove with nothing to undo answers false', typeof kb.revertMove === 'function' && kb.revertMove('a') === false);
+        kb.remove();
+      }
+    }
+
     // Birko TASK-943 (reported by DraCode): BMarkdownEditor.renderMarkdown escaped only & < >, so a link, image or
     // code-fence language could close its attribute and add a handler, and a link or image target was never checked
     // for its scheme (javascript: ran). Parsed inertly with DOMParser, so nothing here can execute.

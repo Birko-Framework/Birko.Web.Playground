@@ -508,6 +508,8 @@ const CLEARABLE: ControlDef = { label: 'clearable', attr: 'clearable', options: 
 const RATING_MAX: ControlDef = { label: 'max', attr: 'max', options: ['5', '3', '7', '10'] }; // b-rating; 5 is its default
 // Birko TASK-787 — b-sortable-list / b-sortable-picker.
 const SORT_LAYOUT: ControlDef = { label: 'layout', attr: 'layout', options: ['list', 'grid', 'inline'] };
+/** Birko TASK-956 — the gallery kanban's lane mode; its setup re-applies the config when this attribute changes. */
+const KANBAN_LANES: ControlDef = { label: 'lanes', attr: 'data-lane-layout', options: ['sections', 'rows'] };
 const HANDLE_ONLY: ControlDef = { label: 'handle-only', attr: 'handle-only', options: ['', 'handle-only'] };
 const SORT_CONTROLS: ControlDef = { label: 'sort-controls', attr: 'sort-controls', options: ['', 'sort-controls'] };
 /** Birko TASK-789 — a page tree to reorder; the card's handle-only / sort-controls selectors feed its config. */
@@ -687,12 +689,24 @@ const CATALOGUE: ComponentDef[] = [
   { tag: 'b-sortable-list', label: 'Sortable list', category: 'data', wide: true, attrs: { label: 'Products', removable: '', numbered: '' }, controls: [SORT_LAYOUT, HANDLE_ONLY, SIZE],
     setup: (el) => el.setItems(FABRICS.slice(0, 6)) },
   { tag: 'b-sortable-item', label: 'Sortable item', category: 'data', attrs: { label: 'Shaggy fur', meta: 'Long pile · ivory' } },
-  { tag: 'b-kanban', label: 'Kanban', category: 'data', wide: true,
-    note: 'To do has lanes (TASK-948: Critical, High and an empty-able Normal, the default) and reordering off (TASK-949: the app order stands; up/down by keyboard jumps lanes). Done is locked (TASK-947): a person cannot move a card into it or out of it, by mouse or keyboard; moveCard() called by the app still can.',
-    setup: (el) => el.setConfig({ columns: [
-      { id: 'todo', label: 'To do', sortable: false, defaultLane: 'normal', lanes: [{ id: 'critical', label: 'Critical', color: '#dc2626' }, { id: 'high', label: 'High', color: '#ea580c' }, { id: 'normal', label: 'Normal' }] },
-      { id: 'doing', label: 'In progress' }, { id: 'done', label: 'Done', locked: true }],
-    cards: [{ id: '1', columnId: 'todo', laneId: 'critical', title: 'Task A', order: 1 }, { id: '5', columnId: 'todo', laneId: 'critical', title: 'Task E', order: 2 }, { id: '4', columnId: 'todo', laneId: 'normal', title: 'Task D', order: 1 }, { id: '2', columnId: 'doing', title: 'Task B' }, { id: '3', columnId: 'done', title: 'Task C' }] }) },
+  { tag: 'b-kanban', label: 'Kanban', category: 'data', wide: true, controls: [KANBAN_LANES],
+    note: 'Lanes (TASK-948/956): "sections" stacks Critical, High and Normal (the default) inside To do; "rows" runs them across the board from board-level lanes, with Done opted out as one tall cell. To do has reordering off (TASK-949: the app order stands; up/down by keyboard changes lane). Done is locked (TASK-947): a person cannot move a card into it or out of it; moveCard() called by the app still can.',
+    setup: (el) => {
+      const lanes = [{ id: 'critical', label: 'Critical', color: '#dc2626' }, { id: 'high', label: 'High', color: '#ea580c' }, { id: 'normal', label: 'Normal' }];
+      const cards = () => [{ id: '1', columnId: 'todo', laneId: 'critical', title: 'Task A', order: 1 }, { id: '5', columnId: 'todo', laneId: 'critical', title: 'Task E', order: 2 },
+        { id: '4', columnId: 'todo', laneId: 'normal', title: 'Task D', order: 1 }, { id: '2', columnId: 'doing', laneId: 'high', title: 'Task B' }, { id: '3', columnId: 'done', title: 'Task C' }];
+      const apply = () => {
+        const rows = el.getAttribute('data-lane-layout') === 'rows';
+        el.setConfig(rows
+          ? { laneLayout: 'rows', lanes, defaultLane: 'normal', cards: cards(), columns: [
+            { id: 'todo', label: 'To do', sortable: false }, { id: 'doing', label: 'In progress' }, { id: 'done', label: 'Done', locked: true, lanes: [] }] }
+          : { cards: cards(), columns: [
+            { id: 'todo', label: 'To do', sortable: false, defaultLane: 'normal', lanes },
+            { id: 'doing', label: 'In progress' }, { id: 'done', label: 'Done', locked: true }] });
+      };
+      apply();
+      new MutationObserver(apply).observe(el, { attributes: true, attributeFilter: ['data-lane-layout'] });
+    } },
   { tag: 'b-object-tree', label: 'Object tree', category: 'data', setup: (el) => el.setData({ name: 'birko', version: 1, active: true, tags: ['a', 'b'], nested: { x: 1, y: [2, 3] } }) },
 
   // ── feedback ──

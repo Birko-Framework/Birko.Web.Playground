@@ -3045,6 +3045,59 @@ void (async () => {
             press(kb, 'Escape');
             kb.remove();
           }
+
+          // Birko TASK-956 (FEATURE-022 D5 rows, D15, D16): lanes as rows across the board, from board-level lanes.
+          {
+            const rowsBoard = (layout: string) => ({
+              laneLayout: layout,
+              lanes: [{ id: 'critical', label: 'Critical', color: '#dc2626' }, { id: 'high', label: 'High' }, { id: 'normal', label: 'Normal' }],
+              defaultLane: 'normal',
+              columns: [{ id: 'todo', label: 'To do' }, { id: 'doing', label: 'In progress' }, { id: 'done', label: 'Done', locked: true, lanes: [] }],
+              cards: [{ id: 'a', columnId: 'todo', laneId: 'critical', title: 'A' }, { id: 'd', columnId: 'todo', title: 'D (no lane)' },
+                { id: 'b', columnId: 'doing', laneId: 'high', title: 'B' }, { id: 'c', columnId: 'done', title: 'C' }],
+            });
+            const cellOf = (kb: KB, id: string) => {
+              const body = sr(kb).querySelector(`.card[data-card-id="${id}"]`)?.closest('.column-body') as HTMLElement | null;
+              return body ? `${body.dataset.columnId}/${body.dataset.laneId ?? '-'}` : 'none';
+            };
+            {
+              const { kb, moves } = await mk(rowsBoard('rows'));
+              const rows = [...sr(kb).querySelectorAll<HTMLElement>('.row-header')].map((h) => `${h.querySelector('.lane-title')?.textContent?.trim()}(${h.querySelector('.lane-count')?.textContent?.trim()})`);
+              check(`TASK-956: rows mode shows one row per board lane with its label and count across the board (${rows.join(' ')})`,
+                rows.join(' ') === 'Critical(1) High(1) Normal(1)');
+              const cells = [...sr(kb).querySelectorAll<HTMLElement>('.column-body')].map((b) => `${b.dataset.columnId}/${b.dataset.laneId ?? '-'}`);
+              check(`TASK-956: ...a drop cell per column × row, and the opted-out column is one cell (${cells.join(' ')})`,
+                cells.length === 7 && cells.includes('todo/high') && cells.includes('doing/normal') && cells.filter((c) => c.startsWith('done')).join() === 'done/-');
+              const doneCell = sr(kb).querySelector<HTMLElement>('.column-body[data-column-id="done"]')?.closest<HTMLElement>('.column');
+              const span = doneCell ? getComputedStyle(doneCell).gridRow : '';
+              check(`TASK-956: ...which spans all the rows (grid-row ${span})`, /span 3/.test(span));
+              check(`TASK-956: cards sit in their column × row cell; one with no lane in the default row (a ${cellOf(kb, 'a')}, d ${cellOf(kb, 'd')}, b ${cellOf(kb, 'b')}, c ${cellOf(kb, 'c')})`,
+                cellOf(kb, 'a') === 'todo/critical' && cellOf(kb, 'd') === 'todo/normal' && cellOf(kb, 'b') === 'doing/high' && cellOf(kb, 'c') === 'done/-');
+              dragTo(kb, 'a', '.column-body[data-column-id="doing"][data-lane-id="normal"]');
+              await settle();
+              const m = moves[moves.length - 1] as Record<string, unknown> | undefined;
+              check(`TASK-956: a drag to another column's row moves the card there and reports both (${cellOf(kb, 'a')}, ${JSON.stringify(m && { col: m.toColumn, lane: m.toLane })})`,
+                cellOf(kb, 'a') === 'doing/normal' && m?.toColumn === 'doing' && m?.toLane === 'normal');
+              const refused = dragTo(kb, 'b', '.column-body[data-column-id="done"]');
+              await settle();
+              check(`TASK-956: a locked column's cell refuses a drop (accepted ${refused}, b in ${cellOf(kb, 'b')})`, !refused && cellOf(kb, 'b') === 'doing/high');
+              // Keyboard: → keeps the row.
+              pickUp(kb, 'b'); press(kb, 'ArrowLeft');
+              const moving = sr(kb).querySelector('.card[data-card-id="b"]')?.closest('.column-body') as HTMLElement | null;
+              press(kb, 'Enter');
+              await settle();
+              check(`TASK-956: by keyboard, ← keeps the card's row (shown in ${moving?.dataset.columnId}/${moving?.dataset.laneId}, now ${cellOf(kb, 'b')})`,
+                moving?.dataset.columnId === 'todo' && moving?.dataset.laneId === 'high' && cellOf(kb, 'b') === 'todo/high');
+              kb.remove();
+            }
+            {
+              const { kb } = await mk(rowsBoard('sections'));
+              const laned = [...sr(kb).querySelectorAll<HTMLElement>('.column')].map((c) => `${c.dataset.columnId}:${c.querySelectorAll('.lane').length}`);
+              check(`TASK-956: in sections mode the board-level lanes become each column's sections, and lanes: [] opts out (${laned.join(' ')})`,
+                laned.join(' ') === 'todo:3 doing:3 done:0' && sr(kb).querySelectorAll('.row-header').length === 0);
+              kb.remove();
+            }
+          }
         }
       }
     }

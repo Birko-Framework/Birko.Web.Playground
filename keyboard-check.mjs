@@ -1598,6 +1598,59 @@ try {
   check(`a key after the click is keyboard focus again: Tab to the next control shows it (opacity ${(await rotation()).opacity})`, (await rotation()).opacity === '1');
   await page.evaluate(() => document.getElementById('kb-host').remove());
   }
+
+  // ── b-kanban: a keyboard user can reach a card at all (TASK-955), then move it past a locked column (TASK-947) ──
+  // Every card had tabindex="-1" and Tab stopped only on the board, whose key handler ignores keys unless a CARD has
+  // focus: with the keyboard alone no card could be reached, picked up or moved. ACCESSIBILITY.md promised a roving
+  // tabindex. Only a real Tab can show where focus lands.
+  {
+    await page.evaluate(async () => {
+      document.getElementById('kb-host')?.remove();
+      const host = document.createElement('div');
+      host.id = 'kb-host';
+      host.style.cssText = 'position:fixed;top:0;left:0;z-index:99999;background:var(--b-bg);padding:8px;width:900px';
+      host.innerHTML = '<button id="kb-before">before</button><b-kanban id="kb-board"></b-kanban><button id="kb-after">after</button>';
+      document.body.prepend(host);
+      await customElements.whenDefined('b-kanban');
+      host.querySelector('b-kanban').setConfig({
+        columns: [{ id: 'todo', label: 'To do' }, { id: 'doing', label: 'In progress' }, { id: 'done', label: 'Done', locked: true }],
+        cards: [{ id: 'A', columnId: 'todo', title: 'Task A', order: 0 }, { id: 'D', columnId: 'todo', title: 'Task D', order: 1 },
+          { id: 'B', columnId: 'doing', title: 'Task B' }, { id: 'C', columnId: 'done', title: 'Task C' }],
+      });
+      await new Promise((r) => setTimeout(r, 60));
+    });
+    const kbFocus = () => page.evaluate(() => {
+      let el = document.activeElement;
+      while (el?.shadowRoot?.activeElement) el = el.shadowRoot.activeElement;
+      return el?.dataset?.cardId ? `card:${el.dataset.cardId}` : (el?.id || el?.className || el?.tagName.toLowerCase() || 'none');
+    });
+    const kbState = () => page.evaluate(() => {
+      const kb = document.getElementById('kb-board');
+      return { live: kb.shadowRoot.querySelector('[aria-live]')?.textContent.trim() ?? '', d: kb.getCards().find((c) => c.id === 'D')?.columnId };
+    });
+    await page.evaluate(() => document.getElementById('kb-before').focus());
+    await page.keyboard.press('Tab');
+    check(`TASK-955: Tab into the kanban lands on its first card (focus ${await kbFocus()})`, (await kbFocus()) === 'card:A');
+    await page.keyboard.press('Tab');
+    check(`TASK-955: ...and the board is one tab stop: the next Tab leaves it (focus ${await kbFocus()})`, (await kbFocus()) === 'kb-after');
+    await page.keyboard.down('Shift'); await page.keyboard.press('Tab'); await page.keyboard.up('Shift');
+    check(`TASK-955: Shift+Tab comes back to the card (focus ${await kbFocus()})`, (await kbFocus()) === 'card:A');
+    await page.keyboard.press('ArrowDown');
+    await page.keyboard.press('Tab');
+    await page.keyboard.down('Shift'); await page.keyboard.press('Tab'); await page.keyboard.up('Shift');
+    check(`TASK-955: returning by Tab lands on the card last focused (focus ${await kbFocus()})`, (await kbFocus()) === 'card:D');
+    await page.keyboard.press('Space');
+    await page.keyboard.press('ArrowRight');
+    const one = await kbState();
+    await page.keyboard.press('ArrowRight');
+    const two = await kbState();
+    check(`TASK-947: by keyboard, → reaches In progress ("${one.live}") and the next → does not enter the locked Done ("${two.live}")`,
+      /In progress/.test(one.live) && /Done/.test(two.live) && !/Column: Done/.test(two.live));
+    await page.keyboard.press('Enter');
+    await new Promise((r) => setTimeout(r, 60));
+    check(`TASK-947: Enter drops the card in In progress (D in ${(await kbState()).d})`, (await kbState()).d === 'doing');
+    await page.evaluate(() => document.getElementById('kb-host').remove());
+  }
 } finally {
   await browser.close();
   server.close();

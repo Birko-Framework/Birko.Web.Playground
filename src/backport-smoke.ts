@@ -8,7 +8,7 @@ import { BTreeMenu, BRibbon, type RibbonTab } from 'birko-web-components/nav';
 import { BMarkdownEditor } from 'birko-web-components/inputs';
 import { BPagination, BKanban, BDataTable, BChart, niceScale, tickIntervalsForHeight, formatTick } from 'birko-web-components/data';
 import { confirm as dlgConfirm } from 'birko-web-components/dialogs';
-import { BCard } from 'birko-web-components/layout';
+import { BCard, BChat } from 'birko-web-components/layout';
 import { BMobileAppShell, BasePage, activeSurface, type Surface } from 'birko-web-shell';
 import { getVisibleOptions, hasPermission, resolveModuleFromHash, createEntitySearchProvider } from 'birko-web-shell';
 
@@ -2875,6 +2875,33 @@ void (async () => {
         const code = parse('```\nfirst line\nsecond line\n```').querySelector('pre > code')?.textContent ?? '';
         check(`TASK-944: a fence with no language starts on its first line (${JSON.stringify(code.slice(0, 12))})`, code.startsWith('first line'));
       }
+    }
+
+    // Birko TASK-945 (reported by DraCode): b-chat put its placeholder (twice) and send label into markup unescaped, so a
+    // `"` closed the attribute and could add a handler or an element.
+    {
+      if (!customElements.get('b-chat')) define('b-chat', BChat);
+      const placeholder = 'Ask "anything" & <more>" onfocus="window.__pwned=12';
+      const sendLabel = 'Go <img src=x onerror="window.__pwned=13">';
+      const viaAttr = document.createElement('b-chat') as BChat;
+      viaAttr.setAttribute('placeholder', placeholder);
+      document.body.appendChild(viaAttr);
+      const viaConfig = document.createElement('b-chat') as BChat;
+      document.body.appendChild(viaConfig);
+      viaConfig.setConfig({ placeholder, sendLabel });
+      await new Promise((r) => setTimeout(r, 10));
+      for (const [label, chat] of [['attribute', viaAttr], ['config', viaConfig]] as const) {
+        const ta = chat.shadowRoot?.querySelector('textarea');
+        const handlers = [...(chat.shadowRoot?.querySelectorAll('*') ?? [])]
+          .flatMap((el) => [...el.attributes].filter((a) => a.name.startsWith('on')).map((a) => `${el.tagName.toLowerCase()}[${a.name}]`));
+        check(`TASK-945: a placeholder set by ${label} stays one attribute value (placeholder ${JSON.stringify(ta?.getAttribute('placeholder'))}, handlers ${JSON.stringify(handlers)})`,
+          ta?.getAttribute('placeholder') === placeholder && ta?.getAttribute('aria-label') === placeholder && handlers.length === 0);
+      }
+      const btn = viaConfig.shadowRoot?.querySelector('.send-btn');
+      check(`TASK-945: the send label is text, not markup (${btn?.querySelectorAll('img').length ?? 'no button'} img, ${JSON.stringify(btn?.textContent)})`,
+        !!btn && btn.querySelectorAll('img').length === 0 && btn.textContent === sendLabel);
+      viaAttr.remove();
+      viaConfig.remove();
     }
   } catch (e) {
     check(`unexpected throw: ${(e as Error).message}`, false);

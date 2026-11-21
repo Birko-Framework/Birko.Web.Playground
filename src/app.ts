@@ -688,11 +688,11 @@ const CATALOGUE: ComponentDef[] = [
     setup: (el) => el.setItems(FABRICS.slice(0, 6)) },
   { tag: 'b-sortable-item', label: 'Sortable item', category: 'data', attrs: { label: 'Shaggy fur', meta: 'Long pile · ivory' } },
   { tag: 'b-kanban', label: 'Kanban', category: 'data', wide: true,
-    note: 'To do has lanes (TASK-948: Critical, High and an empty-able Normal, the default). Done is locked (TASK-947): a person cannot move a card into it or out of it, by mouse or keyboard; moveCard() called by the app still can.',
+    note: 'To do has lanes (TASK-948: Critical, High and an empty-able Normal, the default) and reordering off (TASK-949: the app order stands; up/down by keyboard jumps lanes). Done is locked (TASK-947): a person cannot move a card into it or out of it, by mouse or keyboard; moveCard() called by the app still can.',
     setup: (el) => el.setConfig({ columns: [
-      { id: 'todo', label: 'To do', defaultLane: 'normal', lanes: [{ id: 'critical', label: 'Critical', color: '#dc2626' }, { id: 'high', label: 'High', color: '#ea580c' }, { id: 'normal', label: 'Normal' }] },
+      { id: 'todo', label: 'To do', sortable: false, defaultLane: 'normal', lanes: [{ id: 'critical', label: 'Critical', color: '#dc2626' }, { id: 'high', label: 'High', color: '#ea580c' }, { id: 'normal', label: 'Normal' }] },
       { id: 'doing', label: 'In progress' }, { id: 'done', label: 'Done', locked: true }],
-    cards: [{ id: '1', columnId: 'todo', laneId: 'critical', title: 'Task A' }, { id: '4', columnId: 'todo', laneId: 'normal', title: 'Task D' }, { id: '2', columnId: 'doing', title: 'Task B' }, { id: '3', columnId: 'done', title: 'Task C' }] }) },
+    cards: [{ id: '1', columnId: 'todo', laneId: 'critical', title: 'Task A', order: 1 }, { id: '5', columnId: 'todo', laneId: 'critical', title: 'Task E', order: 2 }, { id: '4', columnId: 'todo', laneId: 'normal', title: 'Task D', order: 1 }, { id: '2', columnId: 'doing', title: 'Task B' }, { id: '3', columnId: 'done', title: 'Task C' }] }) },
   { tag: 'b-object-tree', label: 'Object tree', category: 'data', setup: (el) => el.setData({ name: 'birko', version: 1, active: true, tags: ['a', 'b'], nested: { x: 1, y: [2, 3] } }) },
 
   // ── feedback ──

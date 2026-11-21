@@ -1700,6 +1700,20 @@ try {
     });
     check(`TASK-948: by keyboard, a card moved into a laned column travels into its default lane and lands there (shown in ${qMoving}, now ${qLane})`,
       qMoving === 'normal' && qLane === 'todo/normal');
+    // TASK-949: real ↑ keys cross lanes, within the lane first while reordering is on.
+    await page.evaluate(() => document.getElementById('kb-board').shadowRoot.querySelector('.card[data-card-id="Q"]').focus());
+    await page.keyboard.press('Space');
+    await page.keyboard.press('ArrowUp');
+    await page.keyboard.press('ArrowUp');
+    const qUp = await page.evaluate(() => ({
+      lane: document.getElementById('kb-board').shadowRoot.querySelector('.card[data-card-id="Q"]')?.closest('.lane')?.getAttribute('data-lane-id'),
+      live: document.getElementById('kb-board').shadowRoot.querySelector('[aria-live]')?.textContent.trim(),
+    }));
+    await page.keyboard.press('Enter');
+    await new Promise((r) => setTimeout(r, 60));
+    const qNow = await page.evaluate(() => document.getElementById('kb-board').getCards().find((c) => c.id === 'Q')?.laneId);
+    check(`TASK-949: with real keys, ↑ crosses into the lane above and Enter drops it there (shown in ${qUp.lane}, "${qUp.live}", now ${qNow})`,
+      qUp.lane === 'critical' && /Critical/.test(qUp.live) && qNow === 'critical');
     await page.evaluate(() => document.getElementById('kb-host').remove());
   }
 } finally {

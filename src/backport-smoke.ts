@@ -2966,6 +2966,86 @@ void (async () => {
             last.fromLane === 'normal' && last.toLane === 'critical' && !ok && laneOf(kb, 'b') === 'normal' && live(kb).includes('Only a lead sets Critical'));
           kb.remove();
         }
+
+        // Birko TASK-949 (FEATURE-022 D7, D9): reordering off per column, and the keyboard across lanes.
+        {
+          type OC = { id: string; order?: number; laneId?: string; columnId: string };
+          const card = (kb: KB, id: string) => kb.getCards().find((c) => c.id === id) as OC | undefined;
+          const lanesBoard = (sortable: boolean, extra: Record<string, unknown> = {}) => ({
+            columns: [
+              { id: 'todo', label: 'To do', sortable, defaultLane: 'normal',
+                lanes: [{ id: 'critical', label: 'Critical' }, { id: 'high', label: 'High' }, { id: 'normal', label: 'Normal' }] },
+              { id: 'doing', label: 'In progress' },
+            ],
+            cards: [{ id: 'a', columnId: 'todo', laneId: 'critical', title: 'A', order: 10 }, { id: 'b', columnId: 'todo', laneId: 'critical', title: 'B', order: 20 },
+              { id: 'n', columnId: 'todo', laneId: 'normal', title: 'N', order: 5 }, { id: 'c', columnId: 'doing', title: 'C', order: 15 }],
+            ...extra,
+          });
+          const press = (kb: KB, k: string) => {
+            const el = (sr(kb).activeElement as HTMLElement | null) ?? sr(kb).querySelector('.board')!;
+            el.dispatchEvent(new KeyboardEvent('keydown', { key: k, bubbles: true, composed: true, cancelable: true }));
+          };
+          const pickUp = (kb: KB, id: string) => { sr(kb).querySelector<HTMLElement>(`.card[data-card-id="${id}"]`)!.focus(); press(kb, ' '); };
+          {
+            const { kb, moves } = await mk(lanesBoard(false));
+            // Over a column with reordering off no drop line is drawn.
+            const dt = new DataTransfer();
+            const bEl = sr(kb).querySelector<HTMLElement>('.card[data-card-id="b"]')!;
+            bEl.dispatchEvent(new DragEvent('dragstart', { bubbles: true, cancelable: true, dataTransfer: dt }));
+            const crit = sr(kb).querySelector<HTMLElement>('.lane[data-lane-id="critical"] .column-body')!;
+            crit.dispatchEvent(new DragEvent('dragover', { bubbles: true, cancelable: true, dataTransfer: dt, clientY: 0 }));
+            const lines = sr(kb).querySelectorAll('.drop-before, .drop-after, .drop-inside').length;
+            crit.dispatchEvent(new DragEvent('drop', { bubbles: true, cancelable: true, dataTransfer: dt, clientY: 0 }));
+            bEl.isConnected && bEl.dispatchEvent(new DragEvent('dragend', { bubbles: true, dataTransfer: dt }));
+            await settle();
+            check(`TASK-949: with reordering off no drop line is drawn (${lines})`, lines === 0);
+            check(`TASK-949: ...and a drag within the same lane changes nothing (${kb.getCards('todo', 'critical').map((c) => c.id).join('')}, orders ${card(kb, 'a')?.order}/${card(kb, 'b')?.order}, ${moves.length} events)`,
+              kb.getCards('todo', 'critical').map((c) => c.id).join('') === 'ab' && card(kb, 'a')?.order === 10 && card(kb, 'b')?.order === 20 && moves.length === 0);
+            dragTo(kb, 'c', '.lane[data-lane-id="critical"] .column-body');
+            await settle();
+            check(`TASK-949: a card dropped in takes its own place by the app's order, not the drop position (critical ${kb.getCards('todo', 'critical').map((c) => c.id).join('')})`,
+              kb.getCards('todo', 'critical').map((c) => c.id).join('') === 'acb');
+            check(`TASK-949: ...and the board does not renumber the app's order (a ${card(kb, 'a')?.order}, b ${card(kb, 'b')?.order}, c ${card(kb, 'c')?.order})`,
+              card(kb, 'a')?.order === 10 && card(kb, 'b')?.order === 20 && card(kb, 'c')?.order === 15);
+            pickUp(kb, 'a'); press(kb, 'ArrowDown');
+            const step1 = { lane: sr(kb).querySelector('.card[data-card-id="a"]')?.closest('.lane')?.getAttribute('data-lane-id'), live: live(kb) };
+            press(kb, 'ArrowDown'); press(kb, 'Enter');
+            await settle();
+            check(`TASK-949: with reordering off, ↓ goes straight to the next lane, and the announcement names it (${step1.lane}, "${step1.live}")`,
+              step1.lane === 'high' && /High/.test(step1.live) && /To do/.test(step1.live));
+            check(`TASK-949: ...and Enter drops it in the lane reached (a in ${card(kb, 'a')?.laneId})`, card(kb, 'a')?.laneId === 'normal');
+            kb.remove();
+          }
+          {
+            const { kb } = await mk(lanesBoard(true));
+            pickUp(kb, 'a'); press(kb, 'ArrowDown');
+            const within = sr(kb).querySelector('.card[data-card-id="a"]')?.closest('.lane')?.getAttribute('data-lane-id');
+            press(kb, 'ArrowDown');
+            const crossed = { lane: sr(kb).querySelector('.card[data-card-id="a"]')?.closest('.lane')?.getAttribute('data-lane-id'), live: live(kb) };
+            press(kb, 'Enter');
+            await settle();
+            check(`TASK-949: with reordering on, ↓ moves within the lane first (${within}), then on into the next lane at its edge (${crossed.lane}, "${crossed.live}")`,
+              within === 'critical' && crossed.lane === 'high' && /High/.test(crossed.live));
+            check(`TASK-949: ...and Enter drops it there (a in ${card(kb, 'a')?.laneId})`, card(kb, 'a')?.laneId === 'high');
+            kb.remove();
+          }
+          {
+            const { kb } = await mk(lanesBoard(false, { canMove: (m: Record<string, unknown>) => m.toLane === 'high' ? 'High is full' : true }));
+            pickUp(kb, 'a'); press(kb, 'ArrowDown');
+            const lane = sr(kb).querySelector('.card[data-card-id="a"]')?.closest('.lane')?.getAttribute('data-lane-id');
+            check(`TASK-949: ↓ skips a lane the move rule refuses and says so (${lane}, "${live(kb)}")`, lane === 'normal' && /High/.test(live(kb)));
+            press(kb, 'Escape');
+            kb.remove();
+          }
+          {
+            const { kb } = await mk({ columns: [{ id: 'todo', label: 'To do', sortable: false }, { id: 'done', label: 'Done' }],
+              cards: [{ id: 'a', columnId: 'todo', title: 'A', order: 1 }, { id: 'b', columnId: 'todo', title: 'B', order: 2 }] });
+            pickUp(kb, 'a'); press(kb, 'ArrowDown');
+            check(`TASK-949: in a column without lanes and with reordering off, ↓ says so ("${live(kb)}")`, /reorder/i.test(live(kb)));
+            press(kb, 'Escape');
+            kb.remove();
+          }
+        }
       }
     }
 

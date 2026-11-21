@@ -3097,6 +3097,78 @@ void (async () => {
                 laned.join(' ') === 'todo:3 doing:3 done:0' && sr(kb).querySelectorAll('.row-header').length === 0);
               kb.remove();
             }
+
+            // Birko TASK-957 (FEATURE-022 D5 tags, D17, D18): lanes as a tag on each card, changed from the tag's menu.
+            {
+              const tagsBoard = (extra: Record<string, unknown> = {}) => ({
+                laneLayout: 'tags',
+                lanes: [{ id: 'critical', label: 'Critical', color: '#dc2626' }, { id: 'high', label: 'High' }, { id: 'normal', label: 'Normal' }],
+                defaultLane: 'normal',
+                columns: [{ id: 'todo', label: 'To do' }, { id: 'done', label: 'Done', lanes: [] }],
+                cards: [{ id: 'n', columnId: 'todo', laneId: 'normal', title: 'N', order: 0 }, { id: 'a', columnId: 'todo', laneId: 'critical', title: 'A', order: 1 },
+                  { id: 'h', columnId: 'todo', laneId: 'high', title: 'H', order: 2 }, { id: 'x', columnId: 'todo', title: 'X no lane', order: 3 },
+                  { id: 'c', columnId: 'done', title: 'C' }],
+                ...extra,
+              });
+              const tagOf = (kb: KB, id: string) => sr(kb).querySelector(`.card[data-card-id="${id}"] .lane-tag`)?.textContent?.replace(/[▾\s]+$/u, '').trim() ?? 'none';
+              const listed = (kb: KB) => [...sr(kb).querySelectorAll<HTMLElement>('.column-body[data-column-id="todo"] > .card')].map((c) => c.dataset.cardId).join('');
+              {
+                const { kb, moves } = await mk(tagsBoard());
+                check(`TASK-957: tags mode has no lane sections and one body per column (${sr(kb).querySelectorAll('.lane').length} sections, ${sr(kb).querySelectorAll('.column-body').length} bodies)`,
+                  sr(kb).querySelectorAll('.lane, .row-header').length === 0 && sr(kb).querySelectorAll('.column-body').length === 2);
+                check(`TASK-957: each laned card carries its lane as a tag; one with no lane the default (${['a', 'h', 'n', 'x'].map((id) => `${id}:${tagOf(kb, id)}`).join(' ')}; c ${tagOf(kb, 'c')})`,
+                  tagOf(kb, 'a') === 'Critical' && tagOf(kb, 'h') === 'High' && tagOf(kb, 'n') === 'Normal' && tagOf(kb, 'x') === 'Normal' && tagOf(kb, 'c') === 'none');
+                check(`TASK-957: cards are grouped by lane, in lane order (${listed(kb)})`, listed(kb) === 'ahnx');
+                const clicks: unknown[] = [];
+                kb.addEventListener('card-click', (e) => clicks.push(e));
+                const tag = sr(kb).querySelector<HTMLElement>('.card[data-card-id="n"] .lane-tag')!;
+                tag.click();
+                await settle();
+                const items = [...sr(kb).querySelectorAll<HTMLElement>('[role="menu"] [role="menuitemradio"]')].map((i) => `${i.textContent?.trim()}${i.getAttribute('aria-checked') === 'true' ? '*' : ''}`);
+                check(`TASK-957: clicking the tag opens a menu of the lanes with the current one checked (${items.join(' | ')})`, items.join('|') === 'Critical|High|Normal*');
+                check(`TASK-957: ...and is not a card click (${clicks.length})`, clicks.length === 0);
+                sr(kb).querySelector<HTMLElement>('[role="menu"] [role="menuitemradio"][data-lane-id="high"]')!.click();
+                await settle();
+                const m = moves[moves.length - 1] as Record<string, unknown> | undefined;
+                check(`TASK-957: picking a lane moves the card there and reports it (n ${tagOf(kb, 'n')}, ${JSON.stringify(m && { from: m.fromLane, to: m.toLane })}, menu ${sr(kb).querySelectorAll('[role="menu"]').length})`,
+                  tagOf(kb, 'n') === 'High' && m?.fromLane === 'normal' && m?.toLane === 'high' && sr(kb).querySelectorAll('[role="menu"]').length === 0);
+                check(`TASK-957: ...and the list regroups, the card at the end of its new lane (${listed(kb)})`, listed(kb) === 'ahnx');
+                const t2 = sr(kb).querySelector<HTMLElement>('.card[data-card-id="a"] .lane-tag')!;
+                t2.click(); await settle();
+                sr(kb).querySelector('[role="menu"]')!.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, composed: true }));
+                await settle();
+                check(`TASK-957: Escape closes the menu with no change (menu ${sr(kb).querySelectorAll('[role="menu"]').length}, a ${tagOf(kb, 'a')}, ${moves.length} events)`,
+                  sr(kb).querySelectorAll('[role="menu"]').length === 0 && tagOf(kb, 'a') === 'Critical' && moves.length === 1);
+                // The tag does not start a drag.
+                const t3 = sr(kb).querySelector<HTMLElement>('.card[data-card-id="h"] .lane-tag')!;
+                t3.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, composed: true }));
+                const ds = new DragEvent('dragstart', { bubbles: true, cancelable: true, dataTransfer: new DataTransfer() });
+                sr(kb).querySelector<HTMLElement>('.card[data-card-id="h"]')!.dispatchEvent(ds);
+                check(`TASK-957: a drag begun on the tag does not start (${ds.defaultPrevented ? 'prevented' : 'started'})`, ds.defaultPrevented);
+                sr(kb).querySelector<HTMLElement>('.card[data-card-id="h"]')!.dispatchEvent(new DragEvent('dragend', { bubbles: true }));
+                // Keyboard: ↓ past the end of a lane changes the lane.
+                // High now holds h then n (n moved to its end above), so the first ↓ passes n within the lane (D9), the second crosses.
+                pickUp(kb, 'h'); press(kb, 'ArrowDown');
+                const within = { list: listed(kb), live: live(kb) };
+                press(kb, 'ArrowDown');
+                const shownAfter = listed(kb);
+                press(kb, 'Enter');
+                await settle();
+                check(`TASK-957: by keyboard, ↓ moves within the lane first (shown ${within.list}, "${within.live}"), then past its end into the next lane (shown ${shownAfter}, h ${tagOf(kb, 'h')})`,
+                  within.list === 'anhx' && /High/.test(within.live) && shownAfter === 'anhx' && tagOf(kb, 'h') === 'Normal');
+                kb.remove();
+              }
+              {
+                const { kb } = await mk(tagsBoard({ canMove: (mv: Record<string, unknown>) => mv.toLane === 'critical' ? 'Only a lead sets Critical' : true }));
+                sr(kb).querySelector<HTMLElement>('.card[data-card-id="n"] .lane-tag')!.click();
+                await settle();
+                sr(kb).querySelector<HTMLElement>('[role="menu"] [role="menuitemradio"][data-lane-id="critical"]')!.click();
+                await settle();
+                check(`TASK-957: a lane the move rule refuses is said and the card stays (n ${tagOf(kb, 'n')}, "${live(kb)}")`,
+                  tagOf(kb, 'n') === 'Normal' && live(kb).includes('Only a lead sets Critical'));
+                kb.remove();
+              }
+            }
           }
         }
       }

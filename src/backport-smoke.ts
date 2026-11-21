@@ -3169,6 +3169,74 @@ void (async () => {
                 kb.remove();
               }
             }
+
+            // Birko TASK-950 (FEATURE-022 D6, D19, D20): an opt-in stacked layout, measured on the board's own width.
+            {
+              const frames = (n = 3) => new Promise<void>((r) => { let i = 0; const f = () => (++i >= n ? r() : requestAnimationFrame(f)); requestAnimationFrame(f); });
+              const mkSized = async (width: string, cfg: Record<string, unknown>) => {
+                const wrap = document.createElement('div');
+                wrap.style.cssText = `width:${width};position:absolute;left:0;top:0`;
+                document.body.appendChild(wrap);
+                const kb = document.createElement('b-kanban') as KB;
+                wrap.appendChild(kb);
+                kb.setConfig(cfg as never);
+                await frames(4); await settle();
+                return { kb, wrap };
+              };
+              const base = (extra: Record<string, unknown> = {}) => ({
+                columns: [{ id: 'todo', label: 'To do' }, { id: 'doing', label: 'In progress' }, { id: 'done', label: 'Done' }],
+                cards: [{ id: 'a', columnId: 'todo', laneId: 'critical', title: 'A' }, { id: 'b', columnId: 'doing', title: 'B' }],
+                ...extra,
+              });
+              const shape = (kb: KB) => {
+                const board = sr(kb).querySelector<HTMLElement>('.board')!;
+                const cols = [...sr(kb).querySelectorAll<HTMLElement>('.board > .column')];
+                const bw = board.getBoundingClientRect().width;
+                return { stacked: kb.hasAttribute('stacked'), dir: getComputedStyle(board).flexDirection, overflow: board.scrollWidth - board.clientWidth,
+                  fullWidth: cols.length > 0 && cols.every((c) => Math.abs(c.getBoundingClientRect().width - bw) < 2),
+                  oneTop: new Set(cols.map((c) => Math.round(c.getBoundingClientRect().top))).size === cols.length };
+              };
+              {
+                const { kb, wrap } = await mkSized('360px', base({ stackBelow: '44rem' }));
+                const s1 = shape(kb);
+                check(`TASK-950: a board narrower than stackBelow stacks its columns one per row, full width, with no sideways scroll (${JSON.stringify(s1)})`,
+                  s1.stacked && s1.dir === 'column' && s1.overflow <= 0 && s1.fullWidth && s1.oneTop);
+                const ok = dragTo(kb, 'a', '.column-body[data-column-id="done"]');
+                await settle();
+                check(`TASK-950: ...and a drag still works stacked (${ok}, a in ${colOf(kb, 'a')})`, ok && colOf(kb, 'a') === 'done');
+                wrap.style.width = '1200px';
+                await frames(4); await settle();
+                const s2 = shape(kb);
+                check(`TASK-950: widened past it, the board un-stacks (${JSON.stringify({ stacked: s2.stacked, dir: s2.dir })})`, !s2.stacked && s2.dir === 'row');
+                wrap.remove();
+              }
+              {
+                const { kb, wrap } = await mkSized('360px', base());
+                const s = shape(kb);
+                check(`TASK-950: without stackBelow a narrow board does not stack and scrolls sideways as before (${JSON.stringify({ stacked: s.stacked, dir: s.dir, overflow: s.overflow })})`,
+                  !s.stacked && s.dir === 'row' && s.overflow > 0);
+                wrap.remove();
+              }
+              {
+                const lanes = [{ id: 'critical', label: 'Critical' }, { id: 'normal', label: 'Normal' }];
+                const { kb, wrap } = await mkSized('360px', base({ stackBelow: '44rem', laneLayout: 'rows', lanes, defaultLane: 'normal' }));
+                const narrow = { rowsGrid: !!sr(kb).querySelector('.rows-board'), sections: sr(kb).querySelectorAll('.lane').length, overflow: shape(kb).overflow };
+                check(`TASK-950: a rows board falls back to sections when stacked (${JSON.stringify(narrow)})`,
+                  !narrow.rowsGrid && narrow.sections === 6 && narrow.overflow <= 0);
+                wrap.style.width = '1200px';
+                await frames(4); await settle();
+                check(`TASK-950: ...and returns to rows when wide again (${!!sr(kb).querySelector('.rows-board')})`, !!sr(kb).querySelector('.rows-board'));
+                wrap.remove();
+              }
+              {
+                const lanes = [{ id: 'critical', label: 'Critical' }, { id: 'normal', label: 'Normal' }];
+                const { kb, wrap } = await mkSized('360px', base({ stackBelow: '44rem', laneLayout: 'tags', lanes, defaultLane: 'normal' }));
+                const s = shape(kb);
+                check(`TASK-950: a tags board stacks as plain lists, tags kept (${JSON.stringify({ stacked: s.stacked, dir: s.dir, tags: sr(kb).querySelectorAll('.lane-tag').length, sections: sr(kb).querySelectorAll('.lane').length })})`,
+                  s.stacked && s.dir === 'column' && sr(kb).querySelectorAll('.lane-tag').length === 2 && sr(kb).querySelectorAll('.lane').length === 0);
+                wrap.remove();
+              }
+            }
           }
         }
       }

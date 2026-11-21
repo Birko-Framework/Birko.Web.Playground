@@ -690,7 +690,7 @@ const CATALOGUE: ComponentDef[] = [
     setup: (el) => el.setItems(FABRICS.slice(0, 6)) },
   { tag: 'b-sortable-item', label: 'Sortable item', category: 'data', attrs: { label: 'Shaggy fur', meta: 'Long pile · ivory' } },
   { tag: 'b-kanban', label: 'Kanban', category: 'data', wide: true, controls: [KANBAN_LANES],
-    note: 'Lanes (TASK-948/956): "sections" stacks Critical, High and Normal (the default) inside To do; "rows" runs them across the board from board-level lanes, with Done opted out as one tall cell; "tags" shows the lane of each card as a tag that opens a lane menu (TASK-957). To do has reordering off (TASK-949: the app order stands; up/down by keyboard changes lane). Done is locked (TASK-947): a person cannot move a card into it or out of it; moveCard() called by the app still can.',
+    note: 'Narrower than 44rem it stacks its columns (TASK-950; rows show as sections then). Lanes (TASK-948/956): "sections" stacks Critical, High and Normal (the default) inside To do; "rows" runs them across the board from board-level lanes, with Done opted out as one tall cell; "tags" shows the lane of each card as a tag that opens a lane menu (TASK-957). To do has reordering off (TASK-949: the app order stands; up/down by keyboard changes lane). Done is locked (TASK-947): a person cannot move a card into it or out of it; moveCard() called by the app still can.',
     setup: (el) => {
       const lanes = [{ id: 'critical', label: 'Critical', color: '#dc2626' }, { id: 'high', label: 'High', color: '#ea580c' }, { id: 'normal', label: 'Normal' }];
       const cards = () => [{ id: '1', columnId: 'todo', laneId: 'critical', title: 'Task A', order: 1 }, { id: '5', columnId: 'todo', laneId: 'critical', title: 'Task E', order: 2 },
@@ -698,9 +698,9 @@ const CATALOGUE: ComponentDef[] = [
       const apply = () => {
         const mode = el.getAttribute('data-lane-layout');
         el.setConfig(mode === 'rows' || mode === 'tags'
-          ? { laneLayout: mode, lanes, defaultLane: 'normal', cards: cards(), columns: [
+          ? { laneLayout: mode, lanes, defaultLane: 'normal', stackBelow: '44rem', cards: cards(), columns: [
             { id: 'todo', label: 'To do', sortable: false }, { id: 'doing', label: 'In progress' }, { id: 'done', label: 'Done', locked: true, lanes: [] }] }
-          : { cards: cards(), columns: [
+          : { stackBelow: '44rem', cards: cards(), columns: [
             { id: 'todo', label: 'To do', sortable: false, defaultLane: 'normal', lanes },
             { id: 'doing', label: 'In progress' }, { id: 'done', label: 'Done', locked: true }] });
       };

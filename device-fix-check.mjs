@@ -647,6 +647,30 @@ check(`gallery zoom on a desktop is a framed panel with backdrop around it (${Ma
   zDesk.open && zDesk.width < zDesk.vw * 0.95 && zDesk.height < zDesk.vh * 0.95 && zDesk.left > 0 && zDesk.top > 0);
 check('…and a click on the backdrop closes it', zDesk.openAfter === false);
 
+// ── b-kanban stacked at phone width (TASK-950, FEATURE-022 D6/D20) ───────────────────────────────────────────
+// A board that opts in with stackBelow stacks on a 390px phone, in light and dark: one column per row and nothing
+// wider than the screen. Its own width decides, so the page is measured as a whole, not only the board.
+for (const theme of ['light', 'dark']) {
+  await load(theme, { width: 390, height: 844, deviceScaleFactor: 2, isMobile: true, hasTouch: true });
+  const k = await page.evaluate(async () => {
+    const kb = document.createElement('b-kanban');
+    kb.style.display = 'block';
+    document.body.prepend(kb);
+    kb.setConfig({ stackBelow: '44rem', laneLayout: 'rows', defaultLane: 'normal',
+      lanes: [{ id: 'critical', label: 'Critical' }, { id: 'normal', label: 'Normal' }],
+      columns: [{ id: 'todo', label: 'To do' }, { id: 'doing', label: 'In progress' }, { id: 'done', label: 'Done', lanes: [] }],
+      cards: [{ id: 'a', columnId: 'todo', laneId: 'critical', title: 'A card with a fairly long title that wraps' }, { id: 'b', columnId: 'doing', title: 'B' }] });
+    for (let i = 0; i < 6; i++) await new Promise((r) => requestAnimationFrame(r));
+    const cols = [...kb.shadowRoot.querySelectorAll('.board > .column')];
+    const out = { stacked: kb.hasAttribute('stacked'), cols: cols.length, widest: Math.round(Math.max(...cols.map((c) => c.getBoundingClientRect().right))),
+      vw: window.innerWidth, pageScroll: document.documentElement.scrollWidth - window.innerWidth };
+    kb.remove();
+    return out;
+  });
+  check(`${theme} 390px: a stackBelow kanban stacks with nothing wider than the screen (${JSON.stringify(k)})`,
+    k.stacked && k.cols === 3 && k.widest <= k.vw && k.pageScroll <= 0);
+}
+
 check(`no page errors during the run (${pageErrors.length})`, pageErrors.length === 0);
 if (pageErrors.length) for (const e of pageErrors) console.log(`  PAGEERROR: ${e}`);
 

@@ -211,6 +211,68 @@ const rendered = await page.evaluate(async () => {
 });
 for (const m of rendered) check(`${m.where}: ${m.what} text is AA (${m.ratio}:1, ${m.fg} on ${m.bg})`, m.ratio >= 4.5);
 
+// ── 3c. b-json-diff's coloured text, every theme (TASK-951) ────────────────────────────────────────────────
+// The diff paints the semantic -text colours on its own card and on added/removed highlights, pairs the token gate
+// never sees. Measured on 2026-11-21 in dark: the added value at 2.80:1 and every marker under 4.5:1, because the card
+// sat on --b-bg-tertiary and the values on a translucent tint. Every coloured element, in both views, against the
+// background actually composited behind it (translucent layers included).
+const diffContrast = await page.evaluate(async () => {
+  const parse = (v) => (v.match(/[\d.]+/g) || []).map(Number);
+  const lum = (c) => { const [r, g, b] = c.slice(0, 3).map((v) => { const s = v / 255; return s <= 0.03928 ? s / 12.92 : ((s + 0.055) / 1.055) ** 2.4; }); return 0.2126 * r + 0.7152 * g + 0.0722 * b; };
+  const ratio = (fg, bg) => { const [x, y] = [lum(fg), lum(bg)].sort((p, q) => q - p); return Math.round(((x + 0.05) / (y + 0.05)) * 100) / 100; };
+  const behind = (el) => {
+    const layers = [];
+    for (let n = el; n; n = n.parentElement || n.getRootNode()?.host) {
+      const v = parse(getComputedStyle(n).backgroundColor);
+      if (v.length === 3 || (v.length === 4 && v[3] > 0)) { layers.push(v); if (v.length === 3 || v[3] >= 1) break; }
+    }
+    let base = (layers.pop() ?? [255, 255, 255]).slice(0, 3);
+    while (layers.length) { const [r, g, b, a = 1] = layers.pop(); base = [r * a + base[0] * (1 - a), g * a + base[1] * (1 - a), b * a + base[2] * (1 - a)]; }
+    return base;
+  };
+  const SELECTORS = ['.st-added > .row .marker', '.st-removed > .row .marker', '.st-modified > .row .marker', '.st-changed > .row .marker',
+    '.count', 'ins', 'del', '.summary .n-added', '.summary .n-removed', '.summary .n-changed'];
+  const out = [];
+  for (const theme of ['light', 'dark', 'neon', 'finstat']) {
+    document.documentElement.setAttribute('data-theme', theme);
+    for (const inverse of [false, true]) {
+      const host = document.createElement('div');
+      if (inverse) host.setAttribute('data-theme', 'inverse');
+      const d = document.createElement('b-json-diff');
+      d.setAttribute('label-a', 'production'); d.setAttribute('label-b', 'localhost');
+      host.appendChild(d);
+      document.body.appendChild(host);
+      d.setOptions({ ignore: ['**.Url'], arrays: [{ path: 'Items', key: 'Id' }] });
+      d.setData({ Name: 'Birko', Version: 1, Url: 'https://a', Items: [{ Id: 1, Price: 10 }, { Id: 2, Price: 20 }], Legacy: true },
+        { Name: 'Birko', Version: 2, Url: 'https://b', Items: [{ Id: 2, Price: 20 }, { Id: 1, Price: 12 }, { Id: 3, Price: 5 }], Tags: ['new'] });
+      await new Promise((r) => setTimeout(r, 80));
+      for (const view of ['tree', 'split']) {
+        d.shadowRoot.querySelector(`.view-${view}`)?.click();
+        await new Promise((r) => setTimeout(r, 60));
+        d.shadowRoot.querySelector('.expand-all')?.click();
+        await new Promise((r) => setTimeout(r, 60));
+        const seen = new Set();
+        for (const sel of SELECTORS) {
+          for (const el of d.shadowRoot.querySelectorAll(sel)) {
+            if (!el.textContent.trim() || el.getBoundingClientRect().height === 0) continue;
+            const fg = parse(getComputedStyle(el).color), bg = behind(el);
+            const key = `${sel}|${fg.join(',')}|${bg.map(Math.round).join(',')}`;
+            if (seen.has(key)) continue;
+            seen.add(key);
+            out.push({ where: `${inverse ? 'inverse/' : ''}${theme} ${view}`, what: sel, ratio: ratio(fg, bg),
+              fg: `rgb(${fg.slice(0, 3).join(',')})`, bg: `rgb(${bg.map(Math.round).join(',')})` });
+          }
+        }
+      }
+      host.remove();
+    }
+  }
+  document.documentElement.setAttribute('data-theme', 'dark');
+  return out;
+});
+check(`TASK-951: b-json-diff coloured text was measured (${diffContrast.length} element/background pairs)`, diffContrast.length >= 64);
+for (const m of diffContrast) check(`TASK-951: ${m.where}: b-json-diff ${m.what} is AA (${m.ratio}:1, ${m.fg} on ${m.bg})`, m.ratio >= 4.5);
+
 // A rendered consumer, so this is not purely a token-arithmetic result: b-stale-banner is the component
 // the device pass actually reported as unreadable.
 const banner = await page.evaluate(async () => {

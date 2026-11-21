@@ -18,6 +18,43 @@
 // `addMessages` is not undoable, so this suite waits for backport-smoke to finish before touching it.
 import 'birko-web-components/inputs';
 import { getI18n } from 'birko-web-core';
+import { BAppShell, BUILTIN_THEMES } from 'birko-web-shell';
+
+// Birko TASK-952 (reported by Symbio): the app shell's command-palette label, its theme-menu label and the built-in
+// theme names were hard-coded English, so a Czech or Slovak app showed them in English. A concrete shell to render.
+class I18nShell extends BAppShell {
+  protected get brandName() { return 'T'; }
+  protected get storagePrefix() { return 'i18n-shell'; }
+  protected getUserName() { return 'tester'; }
+  protected t(key: string) { return key; }
+  protected onSignOut() {}
+  protected getRibbonTabs() { return []; }
+  protected getActiveTabId() { return ''; }
+  protected onTabChange() {}
+  protected onItemClick() {}
+  protected get showStatusBar() { return false; }
+  protected getAvailableThemes() { return [BUILTIN_THEMES.light, BUILTIN_THEMES.dark]; }
+}
+if (!customElements.get('pg-i18n-shell')) customElements.define('pg-i18n-shell', I18nShell);
+
+/** The shell's three Birko-owned strings, read off a freshly rendered shell. */
+async function shellStrings(attrs: Record<string, string> = {}): Promise<{ palette: string; theme: string; themes: string[] }> {
+  const el = document.createElement('pg-i18n-shell');
+  for (const [k, v] of Object.entries(attrs)) el.setAttribute(k, v);
+  el.style.position = 'absolute';
+  el.style.left = '-9999px';
+  document.body.appendChild(el);
+  await new Promise((r) => setTimeout(r, 80));
+  const root = el.shadowRoot!;
+  const dd = root.querySelector('#theme-dropdown') as (HTMLElement & { _items?: { label: string }[] }) | null;
+  const out = {
+    palette: root.querySelector('#search-btn')?.getAttribute('aria-label') ?? '(no button)',
+    theme: root.querySelector('.theme-trigger')?.getAttribute('aria-label') ?? '(no trigger)',
+    themes: (dd?._items ?? []).map((i) => i.label.replace(/^&#10003; /, '')),
+  };
+  el.remove();
+  return out;
+}
 
 /** A real <form> in the document with the given controls inside. */
 function form(...html: string[]): HTMLFormElement {
@@ -84,6 +121,14 @@ void (async () => {
         'Pole Stitky je povinne.');
     }
 
+    // ── A3. TASK-952: the shell's own strings, untranslated, are the English that shipped ──
+    {
+      const en = await shellStrings();
+      eq('TASK-952: shell command-palette label in English unchanged', en.palette, 'Command palette (Ctrl+K)');
+      eq('TASK-952: shell theme-menu label in English unchanged', en.theme, 'Theme');
+      eq('TASK-952: built-in theme names in English unchanged', en.themes.join(' | '), 'Light | Dark');
+    }
+
     // ── Wait for backport-smoke: half B mutates the global singleton it asserts English against ──
     {
       const done = () => (window as unknown as { __backportSmokeDone?: boolean }).__backportSmokeDone === true;
@@ -146,6 +191,22 @@ void (async () => {
           'Pole Stitky je povinne');
         host.remove();
       }
+
+      // TASK-952: the shell's strings take bws.shell.* keys; a consumer's locale bundle translates them.
+      getI18n().addMessages('en', {
+        bws: { shell: {
+          commandPalette: 'Paleta prikazov (Ctrl+K)',
+          theme: 'Vzhlad',
+          themes: { light: 'Svetly', dark: 'Tmavy' },
+        } },
+      });
+      const sk = await shellStrings();
+      eq('TASK-952: i18n wins for the shell command-palette label', sk.palette, 'Paleta prikazov (Ctrl+K)');
+      eq('TASK-952: i18n wins for the shell theme-menu label', sk.theme, 'Vzhlad');
+      eq('TASK-952: i18n wins for the built-in theme names', sk.themes.join(' | '), 'Svetly | Tmavy');
+      const own = await shellStrings({ 'label-command-palette': 'Hladat', 'label-theme': 'Tema' });
+      eq('TASK-952: a label-command-palette attribute still beats the translation', own.palette, 'Hladat');
+      eq('TASK-952: a label-theme attribute still beats the translation', own.theme, 'Tema');
     }
   } catch (e) {
     check(`unexpected throw: ${(e as Error).message}`, false);

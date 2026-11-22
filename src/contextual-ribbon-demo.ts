@@ -2,7 +2,7 @@
 // BAppShell (Sales / Stock, switching tabs navigates nowhere, so the page stays) with an orders BaseSplitPage in it.
 // Select an order: its "Order" tab appears and opens; Confirm / Ship / Cancel change the order, and what is enabled
 // follows its status. Deselect (the detail's ✕) and the tab goes.
-import { BAppShell, BaseSplitPage, type ContextualRibbon } from 'birko-web-shell';
+import { BAppShell, BaseSplitPage, BUILTIN_THEMES, type ContextualRibbon } from 'birko-web-shell';
 import { toast } from 'birko-web-components/feedback';
 import type { ApiClient, ApiResponse } from 'birko-web-core/http';
 import type { RibbonTab } from 'birko-web-components';
@@ -44,6 +44,8 @@ class PgCtxShell extends BAppShell {
   protected onTabChange(tabId: string) { this._active = tabId; this.refreshRibbon(); }
   protected get showStatusBar() { return false; }
   protected get showCommandPalette() { return false; }
+  // Light and dark, so the theme menu offers Auto (Birko TASK-971); the Playground links dark.css.
+  protected getAvailableThemes() { return [BUILTIN_THEMES.light, BUILTIN_THEMES.dark]; }
 }
 
 class PgCtxOrders extends BaseSplitPage<Order> {

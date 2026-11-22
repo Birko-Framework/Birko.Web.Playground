@@ -149,7 +149,7 @@ void (async () => {
       const en = await shellStrings();
       eq('TASK-952: shell command-palette label in English unchanged', en.palette, 'Command palette (Ctrl+K)');
       eq('TASK-952: shell theme-menu label in English unchanged', en.theme, 'Theme');
-      eq('TASK-952: built-in theme names in English unchanged', en.themes.join(' | '), 'Light | Dark');
+      eq('TASK-952: built-in theme names in English unchanged', en.themes.join(' | '), 'Auto | Light | Dark'); // Auto first where dark is offered (Birko TASK-971)
       const tl = await tableLabels();
       eq('TASK-953: data-table select-all label in English unchanged', tl.all, 'Select all rows');
       eq('TASK-953: data-table select-row label in English unchanged', tl.row, 'Select row');
@@ -225,13 +225,13 @@ void (async () => {
         bws: { shell: {
           commandPalette: 'Paleta prikazov (Ctrl+K)',
           theme: 'Vzhlad',
-          themes: { light: 'Svetly', dark: 'Tmavy' },
+          themes: { auto: 'Automaticky', light: 'Svetly', dark: 'Tmavy' },
         } },
       });
       const sk = await shellStrings();
       eq('TASK-952: i18n wins for the shell command-palette label', sk.palette, 'Paleta prikazov (Ctrl+K)');
       eq('TASK-952: i18n wins for the shell theme-menu label', sk.theme, 'Vzhlad');
-      eq('TASK-952: i18n wins for the built-in theme names', sk.themes.join(' | '), 'Svetly | Tmavy');
+      eq('TASK-952: i18n wins for the built-in theme names', sk.themes.join(' | '), 'Automaticky | Svetly | Tmavy');
       const own = await shellStrings({ 'label-command-palette': 'Hladat', 'label-theme': 'Tema' });
       eq('TASK-952: a label-command-palette attribute still beats the translation', own.palette, 'Hladat');
       eq('TASK-952: a label-theme attribute still beats the translation', own.theme, 'Tema');

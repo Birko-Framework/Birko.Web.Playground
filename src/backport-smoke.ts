@@ -9,7 +9,7 @@ import { BMarkdownEditor } from 'birko-web-components/inputs';
 import { BPagination, BKanban, BDataTable, BChart, niceScale, tickIntervalsForHeight, formatTick } from 'birko-web-components/data';
 import { confirm as dlgConfirm } from 'birko-web-components/dialogs';
 import { BCard, BChat } from 'birko-web-components/layout';
-import { BMobileAppShell, BAppShell, BasePage, activeSurface, type Surface } from 'birko-web-shell';
+import { BMobileAppShell, BAppShell, BasePage, BUILTIN_THEMES, themeBootScript, activeSurface, type Surface } from 'birko-web-shell';
 import { getVisibleOptions, hasPermission, resolveModuleFromHash, createEntitySearchProvider } from 'birko-web-shell';
 
 void (async () => {
@@ -3588,6 +3588,124 @@ void (async () => {
         host.clicks.join() === 'add,batch');
       (host.shadowRoot!.querySelector('#add-modal') as unknown as { close(): void }).close();
       host.remove();
+    }
+
+    // Birko FEATURE-023 (DraCode): quieter kanban headers. TASK-968 a board can hide the column footer; TASK-969 a
+    // locked column shows only the lock icon, named "Locked"; TASK-970 a whole board can be locked, shown once.
+    {
+      const fr = (n = 2) => new Promise<void>((r) => { let i = 0; const f = () => (++i >= n ? r() : requestAnimationFrame(f)); requestAnimationFrame(f); });
+      const wrap = document.createElement('div'); wrap.style.width = '900px'; document.body.appendChild(wrap);
+      const kb = document.createElement('b-kanban') as BKanban; wrap.appendChild(kb); await fr();
+      const base = () => ({ columns: [{ id: 'a', label: 'A' }, { id: 'b', label: 'B', locked: true }],
+        cards: [{ id: '1', columnId: 'a', title: 'One' }, { id: '2', columnId: 'b', title: 'Two' }] });
+      const r = kb.shadowRoot!;
+      kb.setConfig(base() as never); await fr();
+      const footers = r.querySelectorAll('.column-footer').length;
+      const lock = r.querySelector<HTMLElement>('.column[data-column-id="b"] .column-lock');
+      kb.setConfig({ ...base(), showColumnFooter: false } as never); await fr();
+      check(`TASK-968: the column footer shows by default (${footers}) and showColumnFooter: false hides it (${r.querySelectorAll('.column-footer').length})`,
+        footers === 2 && r.querySelectorAll('.column-footer').length === 0);
+      check(`TASK-969: a locked column shows the lock icon only, named Locked (role ${lock?.getAttribute('role')}, name ${lock?.getAttribute('aria-label')}, tooltip ${lock?.getAttribute('title')}, text ${JSON.stringify(lock?.textContent)})`,
+        lock?.getAttribute('role') === 'img' && lock.getAttribute('aria-label') === 'Locked' && lock.getAttribute('title') === 'Locked'
+        && !lock.textContent!.includes('Locked'));
+      kb.setConfig({ ...base(), locked: true } as never); await fr();
+      const notices = r.querySelectorAll('.board-lock').length;
+      const colLocks = r.querySelectorAll('.column-lock').length;
+      const card1 = r.querySelector<HTMLElement>('.card[data-card-id="1"]')!;
+      card1.focus();
+      card1.dispatchEvent(new KeyboardEvent('keydown', { key: ' ', bubbles: true, composed: true, cancelable: true }));
+      const said = r.querySelector('[aria-live]')?.textContent ?? '';
+      check(`TASK-970: a locked board shows its lock once (${notices}) and no column lock (${colLocks}); its cards cannot be dragged (${card1.getAttribute('draggable')}) or picked up by keyboard (${JSON.stringify(said)})`,
+        notices === 1 && colLocks === 0 && card1.getAttribute('draggable') === 'false' && said === 'The board is locked: its cards cannot be moved.');
+      kb.moveCard('1', 'b'); await fr();
+      check(`TASK-970: the app's own moveCard() still moves a card on a locked board (card 1 in ${r.querySelector<HTMLElement>('.card[data-card-id="1"]')?.dataset.columnId})`,
+        r.querySelector<HTMLElement>('.card[data-card-id="1"]')?.dataset.columnId === 'b');
+      wrap.remove();
+    }
+
+    // Birko FEATURE-024 (DraCode): TASK-971 an Auto theme that follows the browser's light/dark setting, live;
+    // TASK-972 the first-paint script. The browser setting is emulated by a stand-in matchMedia.
+    {
+      const html = document.documentElement;
+      const prevTheme = html.getAttribute('data-theme');
+      const realMM = window.matchMedia;
+      let prefersDark = true;
+      const subs = new Set<() => void>();
+      const mql = { get matches() { return prefersDark; }, media: '(prefers-color-scheme: dark)',
+        addEventListener: (_t: string, f: () => void) => subs.add(f), removeEventListener: (_t: string, f: () => void) => subs.delete(f) };
+      window.matchMedia = ((q: string) => (q.includes('prefers-color-scheme') ? mql : realMM.call(window, q))) as typeof window.matchMedia;
+      const flip = (dark: boolean) => { prefersDark = dark; subs.forEach((f) => f()); };
+      try {
+        class AutoShell extends BAppShell {
+          start = 'auto'; themes = [BUILTIN_THEMES.light, BUILTIN_THEMES.dark];
+          protected get brandName() { return 'Smoke'; }
+          protected get storagePrefix() { return 'smoke-971'; }
+          protected get defaultTheme() { return this.start; }
+          protected getAvailableThemes() { return this.themes; }
+          protected getUserName() { return ''; }
+          protected t(key: string) { return key; }
+          protected onSignOut() {}
+          protected getRibbonTabs() { return []; }
+          protected getActiveTabId() { return ''; }
+          protected onTabChange() {}
+          protected get showStatusBar() { return false; }
+          protected get showCommandPalette() { return false; }
+          menu() { return ((this.shadowRoot!.querySelector('#theme-dropdown') as unknown as { _items: { id: string; label: string }[] })._items ?? []); }
+        }
+        if (!customElements.get('smoke-auto-shell')) define('smoke-auto-shell', AutoShell);
+        const mount = async (setup: (s: AutoShell) => void) => {
+          const sh = document.createElement('smoke-auto-shell') as AutoShell; setup(sh);
+          document.body.appendChild(sh); await new Promise((r) => setTimeout(r, 30)); return sh;
+        };
+        localStorage.removeItem('smoke-971-theme');
+        let sh = await mount(() => {});
+        const first = { current: sh.currentTheme, applied: sh.appliedTheme, attr: html.getAttribute('data-theme'), menu: sh.menu().map((i) => i.id).join(), ticked: sh.menu()[0]?.label };
+        flip(false);
+        const afterLight = { applied: sh.appliedTheme, attr: html.getAttribute('data-theme') };
+        flip(true);
+        const afterDark = html.getAttribute('data-theme');
+        check(`TASK-971: an app starting on Auto follows the browser setting, live (${JSON.stringify(first)}, light ${JSON.stringify(afterLight)}, dark again ${afterDark})`,
+          first.current === 'auto' && first.applied === 'dark' && first.attr === 'dark' && first.menu === 'auto,light,dark' && first.ticked === '&#10003; Auto'
+          && afterLight.applied === 'light' && afterLight.attr === null && afterDark === 'dark');
+        sh.setTheme('light');
+        const saved = localStorage.getItem('smoke-971-theme');
+        flip(true);
+        const fixed = html.getAttribute('data-theme');
+        sh.setTheme('auto');
+        const savedAuto = localStorage.getItem('smoke-971-theme');
+        sh.remove();
+        check(`TASK-971: a chosen theme is kept whatever the browser says (saved ${saved}, applied ${fixed}); Auto is saved as auto (${savedAuto}); the browser listener goes with the shell (${subs.size} left)`,
+          saved === 'light' && fixed === null && savedAuto === 'auto' && subs.size === 0);
+        sh = await mount((s) => { s.themes = [BUILTIN_THEMES.light, BUILTIN_THEMES.neon]; });
+        const noDark = { applied: sh.appliedTheme, attr: html.getAttribute('data-theme'), menu: sh.menu().map((i) => i.id).join() };
+        sh.remove();
+        localStorage.removeItem('smoke-971-theme');
+        sh = await mount((s) => { s.start = 'light'; });
+        const byDefault = { current: sh.currentTheme, attr: html.getAttribute('data-theme') };
+        sh.remove();
+        check(`TASK-971: without dark, Auto is light and not offered (${JSON.stringify(noDark)}); an app that does not opt in starts light (${JSON.stringify(byDefault)})`,
+          noDark.applied === 'light' && noDark.attr === null && noDark.menu === 'light,neon' && byDefault.current === 'light' && byDefault.attr === null);
+
+        const boot = (saved: string | null, opts: Parameters<typeof themeBootScript>[0]) => {
+          html.removeAttribute('data-theme');
+          if (saved === null) localStorage.removeItem('smoke-972-theme'); else localStorage.setItem('smoke-972-theme', saved);
+          new Function(themeBootScript({ prefix: 'smoke-972', ...opts }))();
+          return html.getAttribute('data-theme');
+        };
+        prefersDark = true;
+        const cases = { autoDark: boot('auto', {}), autoNoDark: boot('auto', { hasDark: false }), defaultAuto: boot(null, { defaultTheme: 'auto' }),
+          defaultLight: boot(null, {}), savedNeon: boot('neon', {}) };
+        prefersDark = false;
+        const autoLight = boot('auto', {});
+        localStorage.removeItem('smoke-972-theme');
+        check(`TASK-972: the first-paint script applies what the shell would (${JSON.stringify({ ...cases, autoLight })})`,
+          cases.autoDark === 'dark' && cases.autoNoDark === null && cases.defaultAuto === 'dark' && cases.defaultLight === null
+          && cases.savedNeon === 'neon' && autoLight === null);
+      } finally {
+        window.matchMedia = realMM;
+        if (prevTheme) html.setAttribute('data-theme', prevTheme); else html.removeAttribute('data-theme');
+        localStorage.removeItem('smoke-971-theme');
+      }
     }
 
     // Birko TASK-966 (reported by DraCode): the default user menu always offered Profile (#/profile), a dead link in an

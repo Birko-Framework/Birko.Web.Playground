@@ -1738,6 +1738,76 @@ try {
       rState.retry === 3 && rState.cardClicks === 0 && rState.lifted === 0);
     await page.evaluate(() => document.getElementById('kb-host').remove());
   }
+
+  // ── b-kanban: controls on cards (TASK-958, FEATURE-022 D21) ──
+  // Only the focused card's controls are in the Tab order, so a board whose every card has buttons stays one Tab stop
+  // plus that card's controls. Real Tab, Shift+Tab, arrows, Escape and Space; one control is b-button-like (its real
+  // <button> in its own shadow root).
+  {
+    await page.evaluate(async () => {
+      if (!customElements.get('x-kb-shadow-btn')) {
+        customElements.define('x-kb-shadow-btn', class extends HTMLElement {
+          constructor() { super(); this.attachShadow({ mode: 'open' }).innerHTML = '<button type="button">More</button>'; }
+        });
+      }
+      document.getElementById('kc-host')?.remove();
+      const host = document.createElement('div');
+      host.id = 'kc-host';
+      host.style.cssText = 'position:fixed;top:0;left:0;z-index:99999;background:var(--b-bg);padding:8px;width:900px';
+      host.innerHTML = '<button id="kc-before">before</button><b-kanban id="kc-board"></b-kanban><button id="kc-after">after</button>';
+      document.body.prepend(host);
+      await customElements.whenDefined('b-kanban');
+      const kb = host.querySelector('b-kanban');
+      window.__kcRetry = [];
+      kb.shadowRoot.addEventListener('click', (e) => { const b = e.composedPath().find((n) => n.classList?.contains('retry')); if (b) window.__kcRetry.push(b.dataset.for); });
+      kb.setConfig({
+        columns: [{ id: 'todo', label: 'To do' }, { id: 'doing', label: 'In progress' }],
+        cards: [{ id: 'A', columnId: 'todo', title: 'Task A', order: 0 }, { id: 'D', columnId: 'todo', title: 'Task D', order: 1 },
+          { id: 'B', columnId: 'doing', title: 'Task B' }],
+        renderCard: (card) => `<span class="card-title">${card.title}</span> <button type="button" class="retry" data-for="${card.id}">Retry</button> <x-kb-shadow-btn></x-kb-shadow-btn>`,
+      });
+      await new Promise((r) => setTimeout(r, 60));
+    });
+    const where = () => page.evaluate(() => {
+      let el = document.activeElement;
+      while (el?.shadowRoot?.activeElement) el = el.shadowRoot.activeElement;
+      if (el?.dataset?.cardId) return `card:${el.dataset.cardId}`;
+      if (el?.classList?.contains('retry')) return `retry:${el.dataset.for}`;
+      const host = el?.getRootNode?.().host;
+      if (host?.localName === 'x-kb-shadow-btn') return `more:${host.closest('.card')?.dataset.cardId}`;
+      return el?.id || el?.tagName?.toLowerCase() || 'none';
+    });
+    await page.evaluate(() => document.getElementById('kc-before').focus());
+    const order = [];
+    for (let i = 0; i < 4; i++) { await page.keyboard.press('Tab'); order.push(await where()); }
+    check(`TASK-958: Tab goes to a card, then its own controls, then out of the board (${order.join(' > ')})`,
+      order.join(' > ') === 'card:A > retry:A > more:A > kc-after');
+    await page.keyboard.down('Shift'); await page.keyboard.press('Tab'); const back1 = await where(); await page.keyboard.press('Tab'); const back2 = await where(); await page.keyboard.press('Tab'); const back3 = await where(); await page.keyboard.up('Shift');
+    check(`TASK-958: Shift+Tab comes back through them to the card (${back1} > ${back2} > ${back3})`,
+      back1 === 'more:A' && back2 === 'retry:A' && back3 === 'card:A');
+    await page.keyboard.press('ArrowDown');
+    const onD = await where();
+    await page.keyboard.press('Tab');
+    const dCtl = await where();
+    check(`TASK-958: after an arrow to another card, Tab reaches that card's control (${onD} > ${dCtl})`, onD === 'card:D' && dCtl === 'retry:D');
+    await page.keyboard.press('Space');
+    const lifted = await page.evaluate(() => document.getElementById('kc-board').shadowRoot.querySelectorAll('.card.keyboard-dragging').length);
+    check(`TASK-958: Space on it presses it and picks nothing up (pressed ${JSON.stringify(await page.evaluate(() => window.__kcRetry))}, ${lifted} lifted)`,
+      JSON.stringify(await page.evaluate(() => window.__kcRetry)) === '["D"]' && lifted === 0);
+    await page.keyboard.press('Escape');
+    const esc = await where();
+    await page.keyboard.press('Space');
+    const liftedNow = await page.evaluate(() => document.getElementById('kc-board').shadowRoot.querySelectorAll('.card.keyboard-dragging').length);
+    await page.keyboard.press('Escape');
+    check(`TASK-958: Escape on the control returns to its card, where Space still picks it up (${esc}, ${liftedNow} lifted)`, esc === 'card:D' && liftedNow === 1);
+    const hint = await page.evaluate(() => {
+      const kb = document.getElementById('kc-board');
+      const card = kb.shadowRoot.querySelector('.card[data-card-id="A"]');
+      return (card.getAttribute('aria-describedby') ?? '').split(/\s+/).filter(Boolean).map((id) => kb.shadowRoot.getElementById(id)?.textContent.trim()).join(' ');
+    });
+    check(`TASK-958: a card with controls describes how to reach them ("${hint}")`, /Tab/.test(hint));
+    await page.evaluate(() => document.getElementById('kc-host').remove());
+  }
 } finally {
   await browser.close();
   server.close();

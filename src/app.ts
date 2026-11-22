@@ -690,14 +690,14 @@ const CATALOGUE: ComponentDef[] = [
     setup: (el) => el.setItems(FABRICS.slice(0, 6)) },
   { tag: 'b-sortable-item', label: 'Sortable item', category: 'data', attrs: { label: 'Shaggy fur', meta: 'Long pile · ivory' } },
   { tag: 'b-kanban', label: 'Kanban', category: 'data', wide: true, controls: [KANBAN_LANES],
-    note: 'Narrower than 44rem it stacks its columns (TASK-950; rows show as sections then). Lanes (TASK-948/956): "sections" stacks Critical, High and Normal (the default) inside To do; "rows" runs them across the board from board-level lanes, with Done opted out as one tall cell; "tags" shows the lane of each card as a tag that opens a lane menu (TASK-957). To do has reordering off (TASK-949: the app order stands; up/down by keyboard changes lane). Done is locked (TASK-947): a person cannot move a card into it or out of it; moveCard() called by the app still can. Task B carries a Retry button (TASK-946): pressing it, by mouse or by Tab and Space, shows a Retry toast, not a card-click toast, and a drag begun on it does not start.',
+    note: 'Narrower than 44rem it stacks its columns (TASK-950; rows show as sections then). Lanes (TASK-948/956): "sections" stacks Critical, High and Normal (the default) inside To do; "rows" runs them across the board from board-level lanes, with Done opted out as one tall cell; "tags" shows the lane of each card as a tag that opens a lane menu (TASK-957). To do has reordering off (TASK-949: the app order stands; up/down by keyboard changes lane). Done is locked (TASK-947): a person cannot move a card into it or out of it; moveCard() called by the app still can. Each card carries a Retry button (TASK-946): pressing it, by mouse or by Tab and Space, shows a Retry toast, not a card-click toast, and a drag begun on it does not start. Only the button of the focused card is in the Tab order (TASK-958): Tab goes card, its Retry, then out of the board; Escape on the button returns to its card.',
     setup: (el) => {
       const lanes = [{ id: 'critical', label: 'Critical', color: '#dc2626' }, { id: 'high', label: 'High', color: '#ea580c' }, { id: 'normal', label: 'Normal' }];
       const cards = () => [{ id: '1', columnId: 'todo', laneId: 'critical', title: 'Task A', order: 1 }, { id: '5', columnId: 'todo', laneId: 'critical', title: 'Task E', order: 2 },
         { id: '4', columnId: 'todo', laneId: 'normal', title: 'Task D', order: 1 }, { id: '2', columnId: 'doing', laneId: 'high', title: 'Task B' }, { id: '3', columnId: 'done', title: 'Task C' }];
       // TASK-946: a control on a card is the control's, not the card's.
       const renderCard = (card: { id: string; title?: string }) => `<span class="card-title">${card.title ?? ''}</span>`
-        + (card.id === '2' ? ` <button type="button" class="pg-retry" style="margin-left:0.5rem">Retry</button>` : '');
+        + ` <button type="button" class="pg-retry" style="margin-left:0.5rem">Retry</button>`;
       el.addEventListener('card-click', (e: Event) => BirkoWebComponents.toast.info(`Card click: ${(e as CustomEvent).detail.card?.title ?? ''}`));
       el.shadowRoot?.addEventListener('click', (e: Event) => { if ((e.target as HTMLElement).closest('.pg-retry')) BirkoWebComponents.toast.success('Retry pressed'); });
       const apply = () => {

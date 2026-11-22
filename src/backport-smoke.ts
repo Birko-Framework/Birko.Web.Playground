@@ -3529,6 +3529,67 @@ void (async () => {
       shell.remove();
     }
 
+    // Birko TASK-967 (reported by Symbio, a TASK-962 regression): a page renders an empty <b-form> in a <b-modal>, its
+    // own update() redraws it once, and only then the form gets its schema; validate() then reported invalid and no
+    // field showed its error (Symbio's rooms page, create room).
+    {
+      const frames967 = (n = 3) => new Promise<void>((r) => { let i = 0; const f = () => (++i >= n ? r() : requestAnimationFrame(f)); requestAnimationFrame(f); });
+      class RoomsHost extends BaseComponent {
+        selected = false;
+        render() {
+          // As Symbio's rooms page: one element before the modals becomes two, so the positional morph turns the
+          // second modal (and its form) into the first.
+          return (this.selected ? '<div class="filters">f</div><div class="panel">p</div>' : '<b-card>empty</b-card>')
+            + '<b-modal id="add-modal" title="Add"><b-form id="room-form"></b-form>'
+            + '<div slot="footer"><b-button id="add-save-btn">Save</b-button></div></b-modal>'
+            + '<b-modal id="batch-modal" title="Batch" size="lg"><b-form id="batch-form"></b-form>'
+            + '<div slot="footer"><b-button id="batch-save-btn">Save</b-button></div></b-modal>';
+        }
+        clicks: string[] = [];
+        redraw() { this.update(); }
+        // As Symbio wires its buttons (its TASK-099): once per node, marked with data-wired.
+        protected onUpdated() {
+          for (const [id, name] of [['add-save-btn', 'add'], ['batch-save-btn', 'batch']]) {
+            const el = this.shadowRoot!.querySelector<HTMLElement>(`#${id}`);
+            if (el && !el.dataset.wired) { el.dataset.wired = '1'; el.addEventListener('click', () => this.clicks.push(name)); }
+          }
+        }
+      }
+      if (!customElements.get('smoke-rooms-host')) define('smoke-rooms-host', RoomsHost);
+      const host = document.createElement('smoke-rooms-host') as RoomsHost;
+      document.body.appendChild(host);
+      await frames967(2);
+      host.selected = true;
+      host.redraw();
+      await frames967(2);
+      const form = host.shadowRoot!.querySelector('#room-form') as unknown as {
+        setSchema(s: unknown): void; reset(): void; setFieldOptions(p: string, o: unknown[]): void; setFieldHint(p: string, h: string): void;
+        validate(): { valid: boolean; errors: Record<string, string> }; shadowRoot: ShadowRoot };
+      form.setSchema({ name: 'root', children: [
+        { name: 'general', label: 'General', layout: 'grid', children: [
+          { name: 'roomNumber', type: 'text', label: 'Room', rules: [{ type: 'required' }] },
+          { name: 'type', type: 'select', label: 'Type', placeholder: 'Pick', options: [], rules: [{ type: 'required' }] },
+        ] },
+      ] });
+      form.reset();
+      form.setFieldOptions('general.type', [{ value: 'a', label: 'A' }]);
+      form.setFieldHint('general.type', 'hint');
+      (host.shadowRoot!.querySelector('#add-modal') as unknown as { open(): void }).open();
+      await frames967(2);
+      const res = form.validate();
+      await frames967(2);
+      const marked = [...form.shadowRoot.querySelectorAll('[error]')].map((e) => e.getAttribute('data-path'));
+      check(`TASK-967: a form the page redrew while empty marks its invalid fields (valid ${res.valid}, errors ${Object.keys(res.errors).join(', ')}, marked ${marked.join(', ') || 'none'})`,
+        !res.valid && marked.length === 2);
+      host.clicks = [];
+      host.shadowRoot!.querySelector<HTMLElement>('#add-save-btn')!.click();
+      host.shadowRoot!.querySelector<HTMLElement>('#batch-save-btn')!.click();
+      check(`TASK-967: after the page redraw each Save button runs its own handler, once (add-save-btn then batch-save-btn ran: ${host.clicks.join(', ') || 'nothing'})`,
+        host.clicks.join() === 'add,batch');
+      (host.shadowRoot!.querySelector('#add-modal') as unknown as { close(): void }).close();
+      host.remove();
+    }
+
     // Birko TASK-966 (reported by DraCode): the default user menu always offered Profile (#/profile), a dead link in an
     // app with no profile page. It is now opt-in through showProfileMenuItem.
     {

@@ -3237,6 +3237,58 @@ void (async () => {
                 wrap.remove();
               }
             }
+
+            // Birko TASK-946 (FEATURE-022 D8): buttons, links and fields on a card, and anything inside [data-no-drag], are
+            // the card's controls: a click on one is not a card click and a drag begun on one does not start.
+            {
+              const controls = ['button.retry', 'a.lnk', 'input.f', 'select.s', 'textarea.ta', 'label.lb', '[data-no-drag] b.inner', 'x-shadow-btn'];
+              // Like b-button: the real <button> is inside the element's own shadow root, so closest('button') cannot see it.
+              if (!customElements.get('x-shadow-btn')) {
+                customElements.define('x-shadow-btn', class extends HTMLElement {
+                  constructor() { super(); this.attachShadow({ mode: 'open' }).innerHTML = '<button type="button">Go</button>'; }
+                });
+              }
+              const { kb, moves } = await mk({
+                renderCard: (card: { id: string; title: string }) => `<span class="t">${card.title}</span> <button type="button" class="retry">Retry</button>`
+                  + ` <a class="lnk" href="#nowhere">Log</a> <input class="f"> <select class="s"><option>1</option></select> <textarea class="ta"></textarea>`
+                  + ` <label class="lb">Note</label> <span data-no-drag><b class="inner">menu</b></span> <x-shadow-btn></x-shadow-btn>`,
+              });
+              const clicks: string[] = [];
+              kb.addEventListener('card-click', (e) => clicks.push((e as CustomEvent).detail.cardId));
+              const cardA = () => sr(kb).querySelector<HTMLElement>('.card[data-card-id="a"]')!;
+              // For the shadow button, act on the real <button> inside it, as a real click does.
+              const inA = (sel: string) => { const el = cardA().querySelector<HTMLElement>(sel)!; return el.shadowRoot?.querySelector<HTMLElement>('button') ?? el; };
+              sr(kb).addEventListener('click', (e) => { if ((e.target as HTMLElement).closest('a')) e.preventDefault(); });
+              const clicked = controls.filter((sel) => { const before = clicks.length; inA(sel).click(); return clicks.length > before; });
+              check(`TASK-946: a click on a button, link, field, label or [data-no-drag] in a card is not a card click (card clicks from: ${clicked.join(', ') || 'none'})`,
+                clicked.length === 0);
+              inA('.t').click();
+              check(`TASK-946: ...a click elsewhere on the card still is (${clicks.join(',')})`, clicks.join(',') === 'a');
+              const started = controls.filter((sel) => {
+                inA(sel).dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, composed: true }));
+                // composed, as a browser's own drag events are, so it leaves a shadow root as a real one does
+                const ds = new DragEvent('dragstart', { bubbles: true, composed: true, cancelable: true, dataTransfer: new DataTransfer() });
+                inA(sel).dispatchEvent(ds);
+                cardA().dispatchEvent(new DragEvent('dragend', { bubbles: true }));
+                return !ds.defaultPrevented;
+              });
+              check(`TASK-946: a drag begun on any of them does not start (started from: ${started.join(', ') || 'none'})`, started.length === 0);
+              // A pointer that went down on a control and came up without a drag must not block the next drag from the title.
+              inA('button.retry').dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, composed: true }));
+              inA('.t').dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, composed: true }));
+              const ok = dragTo(kb, 'a', '.column-body[data-column-id="done"]');
+              await settle();
+              check(`TASK-946: ...and after a press on a control, a drag from the title still moves the card (${ok}, a in ${colOf(kb, 'a')}, ${moves.length} events)`,
+                ok && colOf(kb, 'a') === 'done' && moves.length === 1);
+              // Space on a focused control is the control's, not a pick-up.
+              const btn = sr(kb).querySelector<HTMLElement>('.card[data-card-id="b"] button.retry')!;
+              btn.focus();
+              const sp = new KeyboardEvent('keydown', { key: ' ', bubbles: true, composed: true, cancelable: true });
+              btn.dispatchEvent(sp);
+              check(`TASK-946: Space on a focused control is left to it, no card is picked up (${sp.defaultPrevented ? 'prevented' : 'not prevented'}, "${live(kb)}", ${sr(kb).querySelectorAll('.card.keyboard-dragging').length} lifted)`,
+                !sp.defaultPrevented && sr(kb).querySelectorAll('.card.keyboard-dragging').length === 0);
+              kb.remove();
+            }
           }
         }
       }

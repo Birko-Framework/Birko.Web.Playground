@@ -1714,6 +1714,28 @@ try {
     const qNow = await page.evaluate(() => document.getElementById('kb-board').getCards().find((c) => c.id === 'Q')?.laneId);
     check(`TASK-949: with real keys, ↑ crosses into the lane above and Enter drops it there (shown in ${qUp.lane}, "${qUp.live}", now ${qNow})`,
       qUp.lane === 'critical' && /Critical/.test(qUp.live) && qNow === 'critical');
+    // TASK-946: a real Space / Enter / click on a button inside a card belongs to the button, not to the card.
+    const retry = await page.evaluate(async () => {
+      const kb = document.getElementById('kb-board');
+      window.__retry = 0; window.__cardClicks = 0;
+      kb.addEventListener('card-click', () => { window.__cardClicks++; });
+      kb.shadowRoot.addEventListener('click', (e) => { if (e.target.closest('.retry')) window.__retry++; });
+      kb.renderCard = (card) => `<span>${card.title}</span> <button type="button" class="retry">Retry</button>`;
+      await new Promise((r) => setTimeout(r, 60));
+      const b = kb.shadowRoot.querySelector('.card .retry');
+      b.focus();
+      const r = b.getBoundingClientRect();
+      return { x: r.x + r.width / 2, y: r.y + r.height / 2 };
+    });
+    await page.keyboard.press('Space');
+    await page.keyboard.press('Enter');
+    await page.mouse.click(retry.x, retry.y);
+    await new Promise((r) => setTimeout(r, 60));
+    const rState = await page.evaluate(() => ({ retry: window.__retry, cardClicks: window.__cardClicks,
+      lifted: document.getElementById('kb-board').shadowRoot.querySelectorAll('.card.keyboard-dragging').length,
+      live: document.getElementById('kb-board').shadowRoot.querySelector('[aria-live]')?.textContent.trim() }));
+    check(`TASK-946: real Space, Enter and a click on a card's button press the button and do not count as the card (${JSON.stringify(rState)})`,
+      rState.retry === 3 && rState.cardClicks === 0 && rState.lifted === 0);
     await page.evaluate(() => document.getElementById('kb-host').remove());
   }
 } finally {

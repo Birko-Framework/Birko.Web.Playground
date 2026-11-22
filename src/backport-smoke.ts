@@ -3529,6 +3529,33 @@ void (async () => {
       shell.remove();
     }
 
+    // Birko TASK-966 (reported by DraCode): the default user menu always offered Profile (#/profile), a dead link in an
+    // app with no profile page. It is now opt-in through showProfileMenuItem.
+    {
+      class SmokeMenuShell extends BAppShell {
+        profile = false;
+        protected get brandName() { return 'Smoke'; }
+        protected get storagePrefix() { return 'smoke-966'; }
+        protected getUserName() { return 'Ann'; }
+        protected t(key: string) { return key; }
+        protected onSignOut() {}
+        protected getRibbonTabs() { return []; }
+        protected getActiveTabId() { return ''; }
+        protected onTabChange() {}
+        protected get showStatusBar() { return false; }
+        protected get showCommandPalette() { return false; }
+        protected get showProfileMenuItem() { return this.profile; }
+        ids() { return this.getUserMenuItems().map((i) => i.id); }
+      }
+      if (!customElements.get('smoke-menu-shell')) define('smoke-menu-shell', SmokeMenuShell);
+      const shell = document.createElement('smoke-menu-shell') as SmokeMenuShell;
+      const byDefault = shell.ids();
+      shell.profile = true;
+      const optedIn = shell.ids();
+      check(`TASK-966: the default user menu has no Profile (${byDefault.join(', ')}); an app that opts in gets it first (${optedIn.join(', ')})`,
+        byDefault.join() === 'settings,signout' && optedIn.join() === 'profile,settings,signout');
+    }
+
     // Birko TASK-962 (reported by DraCode): a page's redraw removed every attribute its render did not contain, so an
     // attribute a component set on itself (b-kanban stacked, b-checkbox checked, ...) was lost at the page's next update.
     // Now only an attribute the page rendered and has stopped rendering is removed.

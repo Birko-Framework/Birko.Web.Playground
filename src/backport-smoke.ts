@@ -3238,6 +3238,49 @@ void (async () => {
               }
             }
 
+            // Birko TASK-959 (found by the user testing FEATURE-022): after a drag ends, however it ends, no card stays gray
+            // and the board takes clicks and drags again. The browser fires dragend at the card the drag began on, even
+            // when a drop has re-rendered the board, so it is dispatched on that original element here.
+            {
+              const cases: Array<[string, Record<string, unknown>, string | null]> = [
+                ['moved to another column', {}, '.column-body[data-column-id="done"]'],
+                ['dropped in place where reordering is off', { columns: [{ id: 'todo', label: 'To do', sortable: false }, { id: 'done', label: 'Done' }] }, '.column-body[data-column-id="todo"]'],
+                ['refused by a locked column', { columns: [{ id: 'todo', label: 'To do' }, { id: 'done', label: 'Done', locked: true }] }, '.column-body[data-column-id="done"]'],
+                ['released outside the board', {}, null],
+                // The user's case in the gallery: a card from In progress dropped into a To do lane with reordering off.
+                ['moved into a lane where reordering is off', { columns: [{ id: 'todo', label: 'To do', sortable: false, defaultLane: 'normal',
+                  lanes: [{ id: 'critical', label: 'Critical' }, { id: 'normal', label: 'Normal' }] }, { id: 'done', label: 'Done' }],
+                  cards: [{ id: 'a', columnId: 'done', title: 'A', order: 0 }, { id: 'b', columnId: 'todo', laneId: 'normal', title: 'B', order: 1 }] },
+                  '.column-body[data-column-id="todo"][data-lane-id="critical"]'],
+              ];
+              for (const [what, extra, target] of cases) {
+                const { kb } = await mk({ columns: [{ id: 'todo', label: 'To do' }, { id: 'done', label: 'Done' }],
+                  cards: [{ id: 'a', columnId: 'todo', title: 'A', order: 0 }, { id: 'b', columnId: 'todo', title: 'B', order: 1 }], ...extra });
+                const src = sr(kb).querySelector<HTMLElement>('.card[data-card-id="a"]')!;
+                const dt = new DataTransfer();
+                src.dispatchEvent(new DragEvent('dragstart', { bubbles: true, composed: true, cancelable: true, dataTransfer: dt }));
+                if (target) {
+                  const body = sr(kb).querySelector<HTMLElement>(target)!;
+                  const over = new DragEvent('dragover', { bubbles: true, cancelable: true, dataTransfer: dt, clientY: 99999 });
+                  body.dispatchEvent(over);
+                  if (over.defaultPrevented) body.dispatchEvent(new DragEvent('drop', { bubbles: true, cancelable: true, dataTransfer: dt, clientY: 99999 }));
+                }
+                await settle();
+                src.dispatchEvent(new DragEvent('dragend', { bubbles: true, composed: true, dataTransfer: dt }));
+                await settle();
+                const gray = sr(kb).querySelectorAll('.card.dragging').length;
+                const clicks: string[] = [];
+                kb.addEventListener('card-click', (e) => clicks.push((e as CustomEvent).detail.cardId));
+                sr(kb).querySelector<HTMLElement>('.card[data-card-id="a"]')!.click();
+                sr(kb).querySelector<HTMLElement>('.card[data-card-id="b"]')!.click();
+                const again = dragTo(kb, 'a', '.column-body[data-column-id="todo"]');
+                await settle();
+                check(`TASK-959: a drag ${what}: no card stays gray and the board works again (${gray} gray, card clicks ${clicks.join(',') || 'none'}, the same card dragged again ${again}, ${sr(kb).querySelectorAll('.card.dragging').length} gray after)`,
+                  gray === 0 && clicks.join(',') === 'a,b' && again && sr(kb).querySelectorAll('.card.dragging').length === 0);
+                kb.remove();
+              }
+            }
+
             // Birko TASK-946 (FEATURE-022 D8): buttons, links and fields on a card, and anything inside [data-no-drag], are
             // the card's controls: a click on one is not a card click and a drag begun on one does not start.
             {

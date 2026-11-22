@@ -9,7 +9,7 @@ import { BMarkdownEditor } from 'birko-web-components/inputs';
 import { BPagination, BKanban, BDataTable, BChart, niceScale, tickIntervalsForHeight, formatTick } from 'birko-web-components/data';
 import { confirm as dlgConfirm } from 'birko-web-components/dialogs';
 import { BCard, BChat } from 'birko-web-components/layout';
-import { BMobileAppShell, BasePage, activeSurface, type Surface } from 'birko-web-shell';
+import { BMobileAppShell, BAppShell, BasePage, activeSurface, type Surface } from 'birko-web-shell';
 import { getVisibleOptions, hasPermission, resolveModuleFromHash, createEntitySearchProvider } from 'birko-web-shell';
 
 void (async () => {
@@ -3489,6 +3489,44 @@ void (async () => {
           }
         }
       }
+    }
+
+    // Birko TASK-965 (reported by DraCode): the shell's user menu put getUserName() and getUserInitials() into its HTML
+    // unescaped, and the name is often a federated profile field anyone can set, so a name holding markup ran script.
+    {
+      const hostile = '<img src=x onerror="window.__task965=1">"Eve" & co';
+      (window as unknown as { __task965?: number }).__task965 = 0;
+      class SmokeNameShell extends BAppShell {
+        name = hostile;
+        protected get brandName() { return 'Smoke'; }
+        protected get storagePrefix() { return 'smoke-965'; }
+        protected getUserName() { return this.name; }
+        protected t(key: string) { return key; }
+        protected onSignOut() {}
+        protected getRibbonTabs() { return []; }
+        protected getActiveTabId() { return ''; }
+        protected onTabChange() {}
+        protected get showStatusBar() { return false; }
+        protected get showCommandPalette() { return false; }
+        redraw() { this.update(); }
+      }
+      if (!customElements.get('smoke-name-shell')) define('smoke-name-shell', SmokeNameShell);
+      const shell = document.createElement('smoke-name-shell') as SmokeNameShell;
+      document.body.appendChild(shell);
+      await new Promise((r) => setTimeout(r, 50));
+      const root = shell.shadowRoot!;
+      const name = root.querySelector('.user-name');
+      const avatar = root.querySelector('.user-avatar');
+      const injected = root.querySelectorAll('.user-trigger img, .user-trigger [onerror]').length;
+      check(`TASK-965: a user name holding markup renders as text (name ${JSON.stringify(name?.textContent)}, avatar ${JSON.stringify(avatar?.textContent)}, injected elements ${injected}, handler ran ${(window as unknown as { __task965?: number }).__task965})`,
+        name?.textContent === hostile && avatar?.textContent === '<I' && injected === 0
+        && (window as unknown as { __task965?: number }).__task965 === 0);
+      shell.name = 'Ann Lee';
+      shell.redraw();
+      await new Promise((r) => setTimeout(r, 20));
+      check(`TASK-965: an ordinary name renders as before (${JSON.stringify(root.querySelector('.user-name')?.textContent)}, ${JSON.stringify(root.querySelector('.user-avatar')?.textContent)})`,
+        root.querySelector('.user-name')?.textContent === 'Ann Lee' && root.querySelector('.user-avatar')?.textContent === 'AN');
+      shell.remove();
     }
 
     // Birko TASK-962 (reported by DraCode): a page's redraw removed every attribute its render did not contain, so an

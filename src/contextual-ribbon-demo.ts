@@ -32,7 +32,8 @@ class PgCtxShell extends BAppShell {
   private _active = 'sales';
   protected get brandName() { return 'Contextual demo'; }
   protected get storagePrefix() { return 'pg-ctx'; }
-  protected getUserName() { return 'You'; }
+  // A deliberately hostile name (Birko TASK-965): the header must show it as text, with no broken image and no log.
+  protected getUserName() { return '<img src=x onerror="console.error(\'TASK-965: the user name ran script\')"> You'; }
   protected t(key: string) { return key; }
   protected onSignOut() {}
   protected getRibbonTabs() { return TABS; }

@@ -2,7 +2,7 @@
 // playground's headless verify (verify.mjs surfaces `[playground]` console logs + page errors).
 // This is how the framework's frontend backports are verified (no in-framework unit runner).
 import { BaseComponent } from 'birko-web-core';
-import { parseDecimal, getFormatter, createWakeLockManager, createAudioCue, MirrorStore, readThrough, readWindowThrough, syncWindow, inWindow, createListMirror, readAllClassifiedThrough, peekList, define, registerServiceWorker, I18n, signal, setPersistPrefix, SyncManager, ActionQueue, Store, unwrapList, apiErrorMessage, appendQuery, ApiClient, DEFAULT_REQUEST_TIMEOUT_MS } from 'birko-web-core';
+import { parseDecimal, getFormatter, getI18n, createWakeLockManager, createAudioCue, MirrorStore, readThrough, readWindowThrough, syncWindow, inWindow, createListMirror, readAllClassifiedThrough, peekList, define, registerServiceWorker, I18n, signal, setPersistPrefix, SyncManager, ActionQueue, Store, unwrapList, apiErrorMessage, appendQuery, ApiClient, DEFAULT_REQUEST_TIMEOUT_MS } from 'birko-web-core';
 import { BSyncStatus, type SyncSource } from 'birko-web-components/feedback';
 import { BTreeMenu, BRibbon, type RibbonTab } from 'birko-web-components/nav';
 import { BMarkdownEditor } from 'birko-web-components/inputs';
@@ -3238,6 +3238,120 @@ void (async () => {
               }
             }
 
+            // Birko TASK-963 (found at FEATURE-023): the column footer was hard-coded English ("3 cards").
+            {
+              const i18n = getI18n();
+              i18n.addMessages('en', { bwc: { kanban: { cardCount: { one: '{count} karta', other: '{count} kariet' } } } });
+              const { kb } = await mk({ columns: [{ id: 'todo', label: 'To do' }, { id: 'done', label: 'Done' }],
+                cards: [{ id: 'a', columnId: 'todo', title: 'A' }, { id: 'b', columnId: 'todo', title: 'B' }, { id: 'c', columnId: 'done', title: 'C' }] });
+              const footers = [...sr(kb).querySelectorAll('.column-footer')].map((f) => f.textContent?.trim()).join(' | ');
+              i18n.addMessages('en', { bwc: { kanban: { cardCount: { one: '{count} card', other: '{count} cards' } } } });
+              check(`TASK-963: the column footer comes from bwc.kanban.cardCount, singular and plural (${footers})`, footers === '2 kariet | 1 karta');
+              kb.remove();
+            }
+
+            // Birko TASK-964 (found at TASK-961): the drop position was worked out against the column's first card only (any
+            // card above the pointer counted as "drop after it"), so a drop below the first card landed second.
+            {
+              const { kb } = await mk({ columns: [{ id: 'todo', label: 'To do' }, { id: 'done', label: 'Done' }],
+                cards: [{ id: 'a', columnId: 'todo', title: 'A', order: 0 }, { id: 'b', columnId: 'todo', title: 'B', order: 1 }, { id: 'c', columnId: 'todo', title: 'C', order: 2 },
+                  { id: 'x', columnId: 'done', title: 'X', order: 0 }, { id: 'y', columnId: 'done', title: 'Y', order: 1 }] });
+              const dropY = async (id: string, y: (r: DOMRect) => number, onto: string) => {
+                const card = sr(kb).querySelector<HTMLElement>(`.card[data-card-id="${id}"]`)!;
+                const dt = new DataTransfer();
+                card.dispatchEvent(new DragEvent('dragstart', { bubbles: true, composed: true, cancelable: true, dataTransfer: dt }));
+                const r = sr(kb).querySelector<HTMLElement>(`.card[data-card-id="${onto}"]`)!.getBoundingClientRect();
+                const at = { clientX: r.left + 10, clientY: y(r) };
+                const body = sr(kb).querySelector<HTMLElement>('.column-body[data-column-id="todo"]')!;
+                const over = new DragEvent('dragover', { bubbles: true, cancelable: true, dataTransfer: dt, ...at });
+                body.dispatchEvent(over);
+                const line = [...sr(kb).querySelectorAll<HTMLElement>('.card.drop-before, .card.drop-after')].map((c) => `${c.classList.contains('drop-before') ? 'before' : 'after'} ${c.dataset.cardId}`).join();
+                if (over.defaultPrevented) body.dispatchEvent(new DragEvent('drop', { bubbles: true, cancelable: true, dataTransfer: dt, ...at }));
+                card.dispatchEvent(new DragEvent('dragend', { bubbles: true, composed: true }));
+                await settle();
+                return line;
+              };
+              const order = () => kb.getCards('todo').filter((c) => !c.parentId).sort((p, q) => (p.order ?? 0) - (q.order ?? 0)).map((c) => c.id).join('');
+              const l1 = await dropY('x', (r) => r.top + r.height * 0.1, 'c');
+              const o1 = order();
+              const l2 = await dropY('y', (r) => r.bottom + 40, 'c');
+              check(`TASK-964: a drop on the third card's top edge lands before it, and one below the last card lands at the end (shown "${l1}", ${o1}; then shown "${l2}", ${order()})`,
+                o1 === 'abxc' && l1 === 'before c' && order() === 'abxcy');
+              kb.remove();
+            }
+            {
+              // Sub-cards shown above count in the column's card list but are not the dropped card's siblings.
+              const { kb } = await mk({ columns: [{ id: 'todo', label: 'To do' }, { id: 'done', label: 'Done' }],
+                cards: [{ id: 'a', columnId: 'todo', title: 'A', order: 0, children: [{ id: 'a1', columnId: 'todo', title: 'A1', parentId: 'a', order: 0 }, { id: 'a2', columnId: 'todo', title: 'A2', parentId: 'a', order: 1 }] },
+                  { id: 'b', columnId: 'todo', title: 'B', order: 1 }, { id: 'c', columnId: 'todo', title: 'C', order: 2 }, { id: 'x', columnId: 'done', title: 'X', order: 0 }] });
+              kb.expandCard('a'); await settle();
+              const card = sr(kb).querySelector<HTMLElement>('.card[data-card-id="x"]')!;
+              const dt = new DataTransfer();
+              card.dispatchEvent(new DragEvent('dragstart', { bubbles: true, composed: true, cancelable: true, dataTransfer: dt }));
+              const r = sr(kb).querySelector<HTMLElement>('.card[data-card-id="c"]')!.getBoundingClientRect();
+              const at = { clientX: r.left + 10, clientY: r.top + r.height * 0.1 };
+              const body = sr(kb).querySelector<HTMLElement>('.column-body[data-column-id="todo"]')!;
+              const over = new DragEvent('dragover', { bubbles: true, cancelable: true, dataTransfer: dt, ...at });
+              body.dispatchEvent(over);
+              if (over.defaultPrevented) body.dispatchEvent(new DragEvent('drop', { bubbles: true, cancelable: true, dataTransfer: dt, ...at }));
+              card.dispatchEvent(new DragEvent('dragend', { bubbles: true, composed: true }));
+              await settle();
+              const top = kb.getCards('todo').filter((c) => !c.parentId).sort((p, q) => (p.order ?? 0) - (q.order ?? 0)).map((c) => c.id).join('');
+              check(`TASK-964: with sub-cards shown above, a drop on a card's top edge still lands before that card (${top})`, top === 'abxc');
+              kb.remove();
+            }
+
+            // Birko TASK-961 (reported by DraCode): maxNestingDepth 0 counted as unlimited (an empty sub-card spacer on every
+            // card), and a drop on a card's middle nested the card whatever maxNestingDepth said.
+            {
+              const dropAt = async (kb: KB, id: string, targetId: string, rel: number) => {
+                const card = sr(kb).querySelector<HTMLElement>(`.card[data-card-id="${id}"]`)!;
+                const dt = new DataTransfer();
+                card.dispatchEvent(new DragEvent('dragstart', { bubbles: true, composed: true, cancelable: true, dataTransfer: dt }));
+                const t = sr(kb).querySelector<HTMLElement>(`.card[data-card-id="${targetId}"]`)!;
+                const r = t.getBoundingClientRect();
+                const at = { clientX: r.left + 10, clientY: r.top + r.height * rel };
+                const body = t.closest<HTMLElement>('.column-body')!;
+                const over = new DragEvent('dragover', { bubbles: true, cancelable: true, dataTransfer: dt, ...at });
+                body.dispatchEvent(over);
+                const inside = !!sr(kb).querySelector('.card.drop-inside');
+                if (over.defaultPrevented) body.dispatchEvent(new DragEvent('drop', { bubbles: true, cancelable: true, dataTransfer: dt, ...at }));
+                card.dispatchEvent(new DragEvent('dragend', { bubbles: true, composed: true }));
+                await settle();
+                return inside;
+              };
+              const parentOf = (kb: KB, id: string) => kb.getCards().find((c) => c.id === id)?.parentId ?? '';
+              const flat = (extra: Record<string, unknown>) => ({ columns: [{ id: 'todo', label: 'To do' }, { id: 'done', label: 'Done' }],
+                cards: [{ id: 'a', columnId: 'todo', title: 'A', order: 0 }, { id: 'b', columnId: 'todo', title: 'B', order: 1 }, { id: 'c', columnId: 'todo', title: 'C', order: 2 }], ...extra });
+              {
+                const { kb } = await mk(flat({ maxNestingDepth: 0 }));
+                const strips = sr(kb).querySelectorAll('.card-toggle-spacer, .card-toggle').length;
+                const shown = await dropAt(kb, 'c', 'a', 0.6);
+                const order = kb.getCards('todo').filter((c) => !c.parentId).sort((x, y) => (x.order ?? 0) - (y.order ?? 0)).map((c) => c.id).join('');
+                check(`TASK-961: maxNestingDepth 0 shows no sub-card strip and a drop on a card's middle does not nest (${strips} strips, c inside "${parentOf(kb, 'c')}", nest shown ${shown}, order ${order})`,
+                  strips === 0 && parentOf(kb, 'c') === '' && !shown && order === 'acb');
+                kb.remove();
+              }
+              {
+                const { kb } = await mk({ maxNestingDepth: 1, columns: [{ id: 'todo', label: 'To do' }, { id: 'done', label: 'Done' }],
+                  cards: [{ id: 'a', columnId: 'todo', title: 'A', order: 0, children: [{ id: 'a1', columnId: 'todo', title: 'A1', parentId: 'a', order: 0 }] },
+                    { id: 'b', columnId: 'todo', title: 'B', order: 1 }, { id: 'c', columnId: 'todo', title: 'C', order: 2 }] });
+                kb.expandCard('a'); await settle();
+                await dropAt(kb, 'b', 'a1', 0.5);
+                const bParent = parentOf(kb, 'b');
+                await dropAt(kb, 'a', 'c', 0.5);
+                check(`TASK-961: maxNestingDepth 1 refuses a nest that would go deeper: onto a sub-card (b under "${bParent}"), or a card with sub-cards into another (a under "${parentOf(kb, 'a')}")`,
+                  bParent === 'a' && parentOf(kb, 'a') === '');
+                kb.remove();
+              }
+              {
+                const { kb } = await mk(flat({}));
+                await dropAt(kb, 'c', 'a', 0.5);
+                check(`TASK-961: with no maxNestingDepth a drop on a card's middle still nests (c under "${parentOf(kb, 'c')}")`, parentOf(kb, 'c') === 'a');
+                kb.remove();
+              }
+            }
+
             // Birko TASK-960 (found testing the gallery's reordering switch): a card dropped at a position among cards that
             // carry their own `order` lands there. The drop put it at the position in the list, then sorted the group by
             // the cards' old `order`, so it went back where it was. Drops on the top quarter of a card (before it).
@@ -3375,6 +3489,58 @@ void (async () => {
           }
         }
       }
+    }
+
+    // Birko TASK-962 (reported by DraCode): a page's redraw removed every attribute its render did not contain, so an
+    // attribute a component set on itself (b-kanban stacked, b-checkbox checked, ...) was lost at the page's next update.
+    // Now only an attribute the page rendered and has stopped rendering is removed.
+    {
+      const frames = (n = 3) => new Promise<void>((r) => { let i = 0; const f = () => (++i >= n ? r() : requestAnimationFrame(f)); requestAnimationFrame(f); });
+      if (!customElements.get('smoke-self-attr')) {
+        customElements.define('smoke-self-attr', class extends HTMLElement {
+          connectedCallback() { if (!this.hasAttribute('data-own')) this.setAttribute('data-own', 'connected'); }
+        });
+      }
+      class MorphHost extends BaseComponent {
+        title_ = true; tip = 'one'; late = false;
+        render() {
+          // The morph matches children by position, so the element that appears later goes last.
+          return '<smoke-self-attr id="early"></smoke-self-attr>'
+            + `<div id="plain"${this.title_ ? ' title="t"' : ''} data-tip="${this.tip}"></div>`
+            + '<b-checkbox id="cb" label="Agree"></b-checkbox>'
+            + '<div style="width:360px"><b-kanban id="kb"></b-kanban></div>'
+            + (this.late ? '<smoke-self-attr id="late"></smoke-self-attr>' : '');
+        }
+        redraw() { this.update(); }
+      }
+      if (!customElements.get('smoke-morph-host')) define('smoke-morph-host', MorphHost);
+      const host = document.createElement('smoke-morph-host') as MorphHost;
+      document.body.appendChild(host);
+      await frames(2);
+      const q = <T extends Element = HTMLElement>(sel: string) => host.shadowRoot!.querySelector(sel) as T;
+      const kb = q<BKanban>('#kb');
+      kb.setConfig({ stackBelow: '44rem', columns: [{ id: 'a', label: 'A' }, { id: 'b', label: 'B' }], cards: [] } as never);
+      (q('#cb') as unknown as { checked: boolean }).checked = true;
+      q('#early').setAttribute('data-later', 'set-by-itself');
+      await frames(4);
+      const before = { own: q('#early').getAttribute('data-own'), later: q('#early').getAttribute('data-later'),
+        checked: q('#cb').hasAttribute('checked'), stacked: kb.hasAttribute('stacked') };
+      host.late = true;
+      host.redraw();
+      q('#late').setAttribute('data-later', 'set-by-itself');
+      host.tip = 'two'; host.title_ = false;
+      host.redraw();
+      await frames(2);
+      const same = q('#cb') !== null && q('#kb') === kb;
+      const after = { same, own: q('#early').getAttribute('data-own'), later: q('#early').getAttribute('data-later'),
+        lateOwn: q('#late')?.getAttribute('data-later'), checked: q('#cb').hasAttribute('checked'), stacked: q('#kb').hasAttribute('stacked') };
+      check(`TASK-962: attributes components set on themselves survive their page's redraw (before ${JSON.stringify(before)}, after ${JSON.stringify(after)})`,
+        before.own === 'connected' && before.checked && before.stacked
+        && after.same && after.own === 'connected' && after.later === 'set-by-itself' && after.lateOwn === 'set-by-itself' && after.checked && after.stacked);
+      const plain = q('#plain');
+      check(`TASK-962: ...while an attribute the page stopped rendering is removed and a changed one updates (title ${plain.getAttribute('title')}, tip ${plain.getAttribute('data-tip')})`,
+        !plain.hasAttribute('title') && plain.getAttribute('data-tip') === 'two');
+      host.remove();
     }
 
     // Birko TASK-943 (reported by DraCode): BMarkdownEditor.renderMarkdown escaped only & < >, so a link, image or

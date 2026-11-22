@@ -511,6 +511,8 @@ const SORT_LAYOUT: ControlDef = { label: 'layout', attr: 'layout', options: ['li
 /** Birko TASK-956 — the gallery kanban's lane mode; its setup re-applies the config when this attribute changes. */
 const KANBAN_LANES: ControlDef = { label: 'lanes', attr: 'data-lane-layout', options: ['sections', 'rows', 'tags'] };
 // Which column has reordering off (TASK-949): To do (its lanes keep the app order) or In progress (the lanes reorder).
+// Whether cards may get sub-cards (TASK-961): maxNestingDepth unset, or 0.
+const KANBAN_NESTING: ControlDef = { label: 'nesting', attr: 'data-nesting', options: ['unlimited', 'off'] };
 const KANBAN_REORDER: ControlDef = { label: 'reordering off in', attr: 'data-reorder-off', options: ['to do', 'in progress'] };
 const HANDLE_ONLY: ControlDef = { label: 'handle-only', attr: 'handle-only', options: ['', 'handle-only'] };
 const SORT_CONTROLS: ControlDef = { label: 'sort-controls', attr: 'sort-controls', options: ['', 'sort-controls'] };
@@ -691,8 +693,8 @@ const CATALOGUE: ComponentDef[] = [
   { tag: 'b-sortable-list', label: 'Sortable list', category: 'data', wide: true, attrs: { label: 'Products', removable: '', numbered: '' }, controls: [SORT_LAYOUT, HANDLE_ONLY, SIZE],
     setup: (el) => el.setItems(FABRICS.slice(0, 6)) },
   { tag: 'b-sortable-item', label: 'Sortable item', category: 'data', attrs: { label: 'Shaggy fur', meta: 'Long pile · ivory' } },
-  { tag: 'b-kanban', label: 'Kanban', category: 'data', wide: true, controls: [KANBAN_LANES, KANBAN_REORDER],
-    note: 'Narrower than 44rem it stacks its columns (TASK-950; rows show as sections then). Lanes (TASK-948/956): "sections" stacks Critical, High and Normal (the default) inside To do; "rows" runs them across the board from board-level lanes, with Done opted out as one tall cell; "tags" shows the lane of each card as a tag that opens a lane menu (TASK-957). The reordering switch picks the column with reordering off (TASK-949: the app order stands; up/down by keyboard changes lane): To do by default, or In progress, so the To do lanes can be reordered by drag. Done is locked (TASK-947): a person cannot move a card into it or out of it; moveCard() called by the app still can. Each card carries a Retry button (TASK-946): pressing it, by mouse or by Tab and Space, shows a Retry toast, not a card-click toast, and a drag begun on it does not start. Only the button of the focused card is in the Tab order (TASK-958): Tab goes card, its Retry, then out of the board; Escape on the button returns to its card.',
+  { tag: 'b-kanban', label: 'Kanban', category: 'data', wide: true, controls: [KANBAN_LANES, KANBAN_REORDER, KANBAN_NESTING],
+    note: 'Narrower than 44rem it stacks its columns (TASK-950; rows show as sections then). Lanes (TASK-948/956): "sections" stacks Critical, High and Normal (the default) inside To do; "rows" runs them across the board from board-level lanes, with Done opted out as one tall cell; "tags" shows the lane of each card as a tag that opens a lane menu (TASK-957). The reordering switch picks the column with reordering off (TASK-949: the app order stands; up/down by keyboard changes lane): To do by default, or In progress, so the To do lanes can be reordered by drag. Done is locked (TASK-947): a person cannot move a card into it or out of it; moveCard() called by the app still can. Each card carries a Retry button (TASK-946): pressing it, by mouse or by Tab and Space, shows a Retry toast, not a card-click toast, and a drag begun on it does not start. Only the button of the focused card is in the Tab order (TASK-958): Tab goes card, its Retry, then out of the board; Escape on the button returns to its card. The nesting switch set to off is maxNestingDepth 0 (TASK-961): no sub-card strip, and a drop on the middle of a card places it beside, not inside.',
     setup: (el) => {
       const lanes = [{ id: 'critical', label: 'Critical', color: '#dc2626' }, { id: 'high', label: 'High', color: '#ea580c' }, { id: 'normal', label: 'Normal' }];
       const cards = () => [{ id: '1', columnId: 'todo', laneId: 'critical', title: 'Task A', order: 1 }, { id: '5', columnId: 'todo', laneId: 'critical', title: 'Task E', order: 2 },
@@ -705,15 +707,16 @@ const CATALOGUE: ComponentDef[] = [
       const apply = () => {
         const mode = el.getAttribute('data-lane-layout');
         const todoFixed = el.getAttribute('data-reorder-off') !== 'in progress';
+        const nesting = el.getAttribute('data-nesting') === 'off' ? { maxNestingDepth: 0 } : {};
         el.setConfig(mode === 'rows' || mode === 'tags'
-          ? { laneLayout: mode, lanes, defaultLane: 'normal', stackBelow: '44rem', renderCard, cards: cards(), columns: [
+          ? { ...nesting, laneLayout: mode, lanes, defaultLane: 'normal', stackBelow: '44rem', renderCard, cards: cards(), columns: [
             { id: 'todo', label: 'To do', sortable: !todoFixed }, { id: 'doing', label: 'In progress', sortable: todoFixed }, { id: 'done', label: 'Done', locked: true, lanes: [] }] }
-          : { stackBelow: '44rem', renderCard, cards: cards(), columns: [
+          : { ...nesting, stackBelow: '44rem', renderCard, cards: cards(), columns: [
             { id: 'todo', label: 'To do', sortable: !todoFixed, defaultLane: 'normal', lanes },
             { id: 'doing', label: 'In progress', sortable: todoFixed }, { id: 'done', label: 'Done', locked: true }] });
       };
       apply();
-      new MutationObserver(apply).observe(el, { attributes: true, attributeFilter: ['data-lane-layout', 'data-reorder-off'] });
+      new MutationObserver(apply).observe(el, { attributes: true, attributeFilter: ['data-lane-layout', 'data-reorder-off', 'data-nesting'] });
     } },
   { tag: 'b-object-tree', label: 'Object tree', category: 'data', setup: (el) => el.setData({ name: 'birko', version: 1, active: true, tags: ['a', 'b'], nested: { x: 1, y: [2, 3] } }) },
 

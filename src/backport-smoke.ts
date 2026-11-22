@@ -3238,6 +3238,46 @@ void (async () => {
               }
             }
 
+            // Birko TASK-960 (found testing the gallery's reordering switch): a card dropped at a position among cards that
+            // carry their own `order` lands there. The drop put it at the position in the list, then sorted the group by
+            // the cards' old `order`, so it went back where it was. Drops on the top quarter of a card (before it).
+            {
+              const dropBefore = async (kb: KB, id: string, beforeId: string, body: string) => {
+                const card = sr(kb).querySelector<HTMLElement>(`.card[data-card-id="${id}"]`)!;
+                const dt = new DataTransfer();
+                card.dispatchEvent(new DragEvent('dragstart', { bubbles: true, composed: true, cancelable: true, dataTransfer: dt }));
+                const r = sr(kb).querySelector<HTMLElement>(`.card[data-card-id="${beforeId}"]`)!.getBoundingClientRect();
+                const at = { clientX: r.left + 10, clientY: r.top + r.height * 0.1 };
+                const target = sr(kb).querySelector<HTMLElement>(body)!;
+                const over = new DragEvent('dragover', { bubbles: true, cancelable: true, dataTransfer: dt, ...at });
+                target.dispatchEvent(over);
+                if (over.defaultPrevented) target.dispatchEvent(new DragEvent('drop', { bubbles: true, cancelable: true, dataTransfer: dt, ...at }));
+                card.dispatchEvent(new DragEvent('dragend', { bubbles: true, composed: true }));
+                await settle();
+              };
+              const orderIn = (kb: KB, col: string, lane?: string) => kb.getCards(col, lane).filter((c) => !c.parentId)
+                .sort((x, y) => (x.order ?? 0) - (y.order ?? 0)).map((c) => c.id).join('');
+              {
+                const { kb, moves } = await mk({ columns: [{ id: 'todo', label: 'To do' }, { id: 'done', label: 'Done' }],
+                  cards: [{ id: 'a', columnId: 'todo', title: 'A', order: 0 }, { id: 'b', columnId: 'todo', title: 'B', order: 1 }, { id: 'c', columnId: 'todo', title: 'C', order: 2 }] });
+                await dropBefore(kb, 'c', 'a', '.column-body[data-column-id="todo"]');
+                const shown = [...sr(kb).querySelectorAll<HTMLElement>('.column-body[data-column-id="todo"] > .card')].map((c) => c.dataset.cardId).join('');
+                const m = moves[moves.length - 1] as Record<string, unknown> | undefined;
+                check(`TASK-960: a card dropped before the first one in its column goes first (order ${orderIn(kb, 'todo')}, shown ${shown}, reported toIndex ${m?.toIndex})`,
+                  orderIn(kb, 'todo') === 'cab' && shown === 'cab' && m?.toIndex === 0);
+                kb.remove();
+              }
+              {
+                const { kb } = await mk({ columns: [{ id: 'todo', label: 'To do', lanes: [{ id: 'hi', label: 'High' }, { id: 'lo', label: 'Low' }] }, { id: 'done', label: 'Done' }],
+                  cards: [{ id: 'a', columnId: 'todo', laneId: 'hi', title: 'A', order: 1 }, { id: 'e', columnId: 'todo', laneId: 'hi', title: 'E', order: 2 },
+                    { id: 'x', columnId: 'done', title: 'X', order: 0 }] });
+                await dropBefore(kb, 'e', 'a', '.column-body[data-column-id="todo"][data-lane-id="hi"]');
+                await dropBefore(kb, 'x', 'e', '.column-body[data-column-id="todo"][data-lane-id="hi"]');
+                check(`TASK-960: ...within a lane, and from another column into a lane at a position (High ${orderIn(kb, 'todo', 'hi')})`, orderIn(kb, 'todo', 'hi') === 'xea');
+                kb.remove();
+              }
+            }
+
             // Birko TASK-959 (found by the user testing FEATURE-022): after a drag ends, however it ends, no card stays gray
             // and the board takes clicks and drags again. The browser fires dragend at the card the drag began on, even
             // when a drop has re-rendered the board, so it is dispatched on that original element here.

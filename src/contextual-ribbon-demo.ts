@@ -34,7 +34,10 @@ class PgCtxShell extends BAppShell {
   protected get storagePrefix() { return 'pg-ctx'; }
   // A deliberately hostile name (Birko TASK-965): the header must show it as text, with no broken image and no log.
   protected getUserName() { return '<img src=x onerror="console.error(\'TASK-965: the user name ran script\')"> You'; }
-  protected t(key: string) { return key; }
+  // The shell takes its menu labels from the app's own translations; this demo has none, so it names them here.
+  protected t(key: string) {
+    return ({ 'nav.profile': 'Profile', 'nav.settings': 'Settings', 'auth.signOut': 'Sign out' } as Record<string, string>)[key] ?? key;
+  }
   protected onSignOut() {}
   protected getRibbonTabs() { return TABS; }
   protected getActiveTabId() { return this._active; }

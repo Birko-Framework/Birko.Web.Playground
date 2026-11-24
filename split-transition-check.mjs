@@ -1,4 +1,4 @@
-// Birko TASK-979 (asked for by DraCode TASK-058) — b-split-panel's column change can animate, opt-in. DraCode widens
+// Birko TASK-979 (asked for by DraCode TASK-058; the fixed-detail drag found by DraCode's test of it) — b-split-panel's column change can animate, opt-in. DraCode widens
 // its chat panel by setting `sizes` and used to animate its own grid; the grid now lives in the panel's shadow root.
 // Checked with a real mouse and Chrome's computed styles:
 //   - no animation by default (0s); `--b-split-transition` turns it on, and a `sizes` change then animates;
@@ -37,17 +37,17 @@ try {
   await page.waitForFunction(() => !!customElements.get('b-split-panel'));
 
   /** A fresh panel at the top of the page; `transition` is the app's --b-split-transition, or none. */
-  const mount = (transition) => page.evaluate((transition) => {
+  const mount = (transition, master = '1fr', detail = '300px') => page.evaluate((transition, master, detail) => {
     document.getElementById('st-host')?.remove();
     const host = document.createElement('div');
     host.id = 'st-host';
     host.style.cssText = 'position:fixed;inset:0;z-index:99999;background:#fff;padding:20px;width:1000px';
-    host.innerHTML = `<b-split-panel id="st" resizable master-width="1fr" detail-width="300px" gap="20px"
+    host.innerHTML = `<b-split-panel id="st" resizable master-width="${master}" detail-width="${detail}" gap="20px"
       static-detail ${transition ? `style="--b-split-transition:${transition}"` : ''}>
       <div slot="master" style="height:200px;background:#eef">master</div>
       <div slot="detail" style="height:200px;background:#fee">detail</div></b-split-panel>`;
     document.body.appendChild(host);
-  }, transition);
+  }, transition, master, detail);
   const state = () => page.evaluate(() => {
     const el = document.getElementById('st');
     const split = el.shadowRoot.querySelector('.split');
@@ -56,6 +56,7 @@ try {
     return { duration: cs.transitionDuration, property: cs.transitionProperty, cols: cs.gridTemplateColumns,
       detailW: el.shadowRoot.querySelector('.detail').getBoundingClientRect().width,
       masterW: el.shadowRoot.querySelector('.master').getBoundingClientRect().width,
+      totalW: split.getBoundingClientRect().width, gap: parseFloat(cs.columnGap) || 0, sizes: el.sizes,
       handle: { x: r.x + r.width / 2, y: r.y + r.height / 2 } };
   });
   const setSizes = (detail) => page.evaluate((detail) => { document.getElementById('st').sizes = { master: '1fr', detail }; }, detail);
@@ -104,6 +105,54 @@ try {
   await sleep(50);
   const after = await state();
   check(`drag: the transition is back after the drop (${after.duration})`, after.duration === '0.4s');
+
+  // ── A fixed-length detail (DraCode's shape: master 1fr, detail px) ─────────────────────────────────────────
+  // The drag must resize the DETAIL, or the master moves while the detail keeps its width and a strip opens beside
+  // it; the drop then commits {1fr, Npx}, so a consumer that re-sets those sizes on split-resize changes nothing.
+  const fills = (st) => Math.abs(st.masterW + st.gap + st.detailW - st.totalW) <= 2;
+  await mount('400ms linear');
+  await page.evaluate(() => {
+    const el = document.getElementById('st');
+    el.addEventListener('split-resize', (e) => { el.sizes = { master: '1fr', detail: e.detail.sizes.detail }; });
+  });
+  await sleep(100);
+  s = await state();
+  await page.mouse.move(s.handle.x, s.handle.y);
+  await page.mouse.down();
+  await page.mouse.move(s.handle.x - 150, s.handle.y, { steps: 5 });
+  await sleep(30);
+  const fd = await state();
+  check(`fixed detail: while dragged the columns fill the panel, no strip (master ${Math.round(fd.masterW)} + gap ${fd.gap} + detail ${Math.round(fd.detailW)} = ${Math.round(fd.totalW)})`,
+    fills(fd) && Math.abs(fd.detailW - 450) <= 3);
+  await page.mouse.up();
+  await sleep(30);
+  const fdrop = await state();
+  check(`fixed detail: the drop commits ${JSON.stringify(fdrop.sizes)} and nothing moves (detail ${Math.round(fdrop.detailW)}px, panel full)`,
+    fdrop.sizes.master === '1fr' && /^\d+px$/.test(fdrop.sizes.detail) && Math.abs(fdrop.detailW - fd.detailW) <= 3 && fills(fdrop));
+  await sleep(500);
+  const fsettled = await state();
+  check(`fixed detail: still there after the transition time (detail ${Math.round(fsettled.detailW)}px)`,
+    Math.abs(fsettled.detailW - fd.detailW) <= 3 && fills(fsettled));
+  // The keyboard takes the same path: Left widens the detail by one step, the master keeps filling.
+  await page.evaluate(() => document.getElementById('st').shadowRoot.querySelector('.resizer').focus());
+  await page.keyboard.press('ArrowLeft');
+  await sleep(500);
+  const fk = await state();
+  check(`fixed detail: Left arrow widens the detail by 16px and the panel stays full (${Math.round(fsettled.detailW)} -> ${Math.round(fk.detailW)}px)`,
+    Math.abs(fk.detailW - fsettled.detailW - 16) <= 2 && fills(fk));
+
+  // ── The classic shape (fixed master, flexible detail) still drags the master ─────────────────────────────
+  await mount(null, '300px', '1fr');
+  await sleep(100);
+  s = await state();
+  await page.mouse.move(s.handle.x, s.handle.y);
+  await page.mouse.down();
+  await page.mouse.move(s.handle.x + 100, s.handle.y, { steps: 5 });
+  await page.mouse.up();
+  await sleep(30);
+  const classic = await state();
+  check(`fixed master: the drag moves the master (${JSON.stringify(classic.sizes)}, master ${Math.round(classic.masterW)}px), panel full`,
+    classic.sizes.detail === '1fr' && Math.abs(classic.masterW - 400) <= 3 && fills(classic));
 
   // ── Reduced motion wins ───────────────────────────────────────────────────────────────────────────────────
   await page.emulateMediaFeatures([{ name: 'prefers-reduced-motion', value: 'reduce' }]);

@@ -207,6 +207,46 @@ void (async () => {
       check('the next sync sends it and it drains', !(await s.find(id)) && s.api.sent.length === 2);
       check('retry() of an unknown id is false', !(await s.mgr.retry('nope')));
     }
+
+    // ── 6. TASK-973: a reconnect makes a backing-off write due now, keeping its retry count; dead stays dead ──
+    {
+      // `online` reaches every live SyncManager on the page, so retire the earlier cases' managers first: their
+      // queues still hold backing-off actions, which this event would otherwise send.
+      managers.splice(0).forEach((m) => m.dispose());
+      const s = await setup();
+      managers.push(s.mgr);
+      const settle = async (sent: number) => {
+        const deadline = Date.now() + 2000;
+        while (s.api.sent.length < sent && Date.now() < deadline) await new Promise((r) => setTimeout(r, 10));
+        await new Promise((r) => setTimeout(r, 20)); // let the drain write its outcome
+      };
+      s.api.answers.set('o', 'throw');
+      s.api.answers.set('gone', 422);
+      const id = await s.enqueue('PUT', 'o', 'o1');
+      const deadId = await s.enqueue('PUT', 'gone', 'g1');
+      await s.mgr.sync();
+      let o = await s.find(id);
+      check(`precondition: it backs off (status ${o?.status}, retries ${o?.retries}, +${(o?.nextAttemptAt ?? 0) - s.clock.t})`,
+        o?.status === 'failed' && o.retries === 1 && o.nextAttemptAt === s.clock.t + 1000);
+      check('precondition: the 422 is dead', (await s.find(deadId))?.status === 'dead');
+
+      await s.mgr.sync();
+      check(`a plain sync() before its time still sends nothing (sent ${s.api.sent.length})`, s.api.sent.length === 2);
+
+      window.dispatchEvent(new Event('online'));
+      await settle(3);
+      o = await s.find(id);
+      check(`online sends it before its backoff is up (sent: ${s.api.sent.join(', ')})`,
+        s.api.sent.join() === 'PUT o,PUT gone,PUT o');
+      check(`and it backs off from its kept retry count (retries ${o?.retries}, +${(o?.nextAttemptAt ?? 0) - s.clock.t})`,
+        o?.status === 'failed' && o.retries === 2 && o.nextAttemptAt === s.clock.t + 2000);
+      check('online does not revive a dead action', (await s.find(deadId))?.status === 'dead');
+
+      s.api.answers.set('o', 200);
+      window.dispatchEvent(new Event('online'));
+      await settle(4);
+      check('a reconnect that gets through drains it', !(await s.find(id)));
+    }
   } catch (e) {
     check(`unexpected throw: ${(e as Error).message}`, false);
   }

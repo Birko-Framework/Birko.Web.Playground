@@ -132,6 +132,29 @@ void (async () => {
       check(`getDead lists them (${(await mgr.getDead()).length})`, (await mgr.getDead()).length === 2);
       check(`a later write to the same entity waits behind it (sent: ${s.api.sent.join(', ') || 'nothing'})`,
         !s.api.sent.includes('PUT n-later') && (await s.find(later))?.status === 'pending');
+      // TASK-977: the queue counts them, apart from the pending writes, so a chip can show them.
+      check(`the queue's deadCount counts them (${s.queue.deadCount}) and pendingCount does not (${s.queue.pendingCount})`,
+        s.queue.deadCount === 2 && s.queue.pendingCount === 1);
+      await mgr.discard(post);
+      check(`discarding one lowers deadCount (${s.queue.deadCount})`, s.queue.deadCount === 1);
+    }
+
+    // ── 3b. TASK-977: a `replaySafe` POST or PATCH (its endpoint upserts) is resent, not made dead ──
+    {
+      const s = await setup();
+      const meta = (path: string, entityId: string) =>
+        ({ moduleId: 'm', description: path, entityType: 'thing', entityId, replaySafe: true });
+      const post = await s.queue.enqueue({ method: 'POST', path: 'u', body: {}, metadata: meta('u', 'u1') });
+      const patch = await s.queue.enqueue({ method: 'PATCH', path: 'v', body: {}, metadata: meta('v', 'v1') });
+      await s.strand(post, 1);
+      await s.strand(patch, 0);
+      const mgr = s.make();
+      managers.push(mgr);
+      const r = await mgr.sync();
+      check(`a replaySafe POST and PATCH are resent (sent: ${s.api.sent.join(', ') || 'nothing'})`,
+        s.api.sent.includes('POST u') && s.api.sent.includes('PATCH v'));
+      check(`…and leave the queue, none dead (synced ${r.synced}, dead ${r.dead}, left ${(await s.queue.getAll()).length})`,
+        r.synced === 2 && r.dead === 0 && (await s.queue.getAll()).length === 0);
     }
 
     // ── 4. Two managers on one queue (two tabs): every action is sent exactly once ──

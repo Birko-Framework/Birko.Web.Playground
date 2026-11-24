@@ -285,6 +285,44 @@ void (async () => {
     check('sync chip shows syncing count', !chip.hasAttribute('hidden') && chipText.includes('3'));
     chip.remove();
 
+    // TASK-977 — a write the sync layer gave up on (`deadCount`) outranks the other states: a red button reading
+    // "N not saved" that dispatches `b-sync-dead`, so the chip no longer clears the moment a write dies.
+    {
+      let notifyDead: (n: number) => void = () => {};
+      let deadPending = 0;
+      let dead = 0;
+      const deadSource: SyncSource = {
+        get pendingCount() { return deadPending; },
+        get deadCount() { return dead; },
+        onChange(fn) { notifyDead = fn; return () => {}; },
+      };
+      const deadChip = document.createElement('b-sync-status') as BSyncStatus;
+      document.body.appendChild(deadChip);
+      deadChip.bind(deadSource);
+      await new Promise((r) => setTimeout(r, 0));
+      const button = () => deadChip.shadowRoot?.querySelector('button.dead') as HTMLButtonElement | null;
+      check('dead chip: no button while nothing is dead', !!button() && button()!.hidden && deadChip.hasAttribute('hidden'));
+      dead = 2;
+      deadPending = 1;
+      notifyDead(1);
+      await new Promise((r) => setTimeout(r, 0));
+      check(`dead chip: shown online, reading "${button()?.textContent}"`,
+        !deadChip.hasAttribute('hidden') && !button()!.hidden && button()!.textContent === '2 not saved');
+      check('dead chip: the syncing state still shows beside it', !(deadChip.shadowRoot?.querySelector('.chip') as HTMLElement).hidden
+        && (deadChip.shadowRoot?.querySelector('.chip')?.textContent ?? '').includes('1'));
+      let fired: { count: number } | null = null;
+      document.body.addEventListener('b-sync-dead', (e) => { fired = (e as CustomEvent<{ count: number }>).detail; }, { once: true });
+      button()!.click();
+      check(`dead chip: a tap dispatches b-sync-dead with the count (${JSON.stringify(fired)})`,
+        (fired as { count: number } | null)?.count === 2);
+      dead = 0;
+      notifyDead(1);
+      await new Promise((r) => setTimeout(r, 0));
+      check('dead chip: back to syncing once nothing is dead', button()!.hidden
+        && (deadChip.shadowRoot?.querySelector('.chip')?.textContent ?? '').includes('1'));
+      deadChip.remove();
+    }
+
     // TASK-150 — `Surface.alsoMatches`: a surface can claim a route outside its own subtree, for the nav
     // highlight only. Found in Reps, whose exercise library sits at a top-level `/library` reached from the Plans
     // surface: the exact-or-nested rule could not attribute it, so it fell to the root catch-all and every visit

@@ -109,6 +109,28 @@ void (async () => {
       check('a dead action is never re-sent by sync()', s.api.sent.length === sentBefore);
     }
 
+    // ── 2b. TASK-977: maxRetries Infinity — a network error or a retryable status never kills a write ──
+    {
+      const s = await setup({ maxRetries: Infinity });
+      managers.push(s.mgr);
+      s.api.answers.set('n', 'throw');
+      s.api.answers.set('f', 503);
+      const net = await s.enqueue('POST', 'n', 'n1');
+      const srv = await s.enqueue('PUT', 'f', 'f1');
+      for (let i = 0; i < 12; i++) { await s.mgr.sync(); s.clock.t += 10_000; }
+      const n = await s.find(net);
+      const f = await s.find(srv);
+      check(`twelve network failures leave it failed, not dead (${n?.status}, retries ${n?.retries})`,
+        n?.status === 'failed' && n.retries === 12);
+      check(`twelve 503s leave it failed, not dead (${f?.status}, retries ${f?.retries})`, f?.status === 'failed' && f.retries === 12);
+      check(`…still backing off at retryMaxMs (+${(n?.nextAttemptAt ?? 0) - (s.clock.t - 10_000)})`,
+        n?.nextAttemptAt === s.clock.t - 10_000 + 4000);
+      check(`nothing is counted dead (${s.queue.deadCount})`, s.queue.deadCount === 0);
+      s.api.answers.set('n', 200);
+      await s.mgr.sync();
+      check(`it still lands once the network is back (left ${(await s.queue.getAll()).length})`, !(await s.find(net)));
+    }
+
     // ── 3. A response a retry cannot change: dead at once. Ones that can change: backoff ──
     {
       const cases: [Method, number, 'dead' | 'failed' | 'gone' | 'conflict'][] = [

@@ -1,5 +1,5 @@
 // TASK-545 — a reversible delete can offer Undo instead of a confirm dialog. Two halves:
-//   1. b-toast takes an action: a real <button> beside the message, inside the live region, translatable, that
+//   1. b-toast takes an action: a real <button> beside the message, announced (TASK-976), translatable, that
 //      dismisses the toast and runs the callback; and no toast disappears while it is hovered or holds focus.
 //   2. base-crud-page's `deleteMode: 'undo'`: delete at once, the row leaves, Undo calls the page's own
 //      restoreDeleted. Opting in without one throws at connect; a failed restore says so and restores nothing.
@@ -81,15 +81,16 @@ void (async () => {
   // Toasts the base page shows are found through the real container, newest last. Since TASK-786 the container lives
   // inside whichever modal is open, so it is looked for through open shadow roots too: another suite's modal open at
   // the wrong moment (modal-title-smoke's) hid it from a document-level query, and this suite failed 3 checks.
-  const findContainer = (root: Document | ShadowRoot): Element | null => {
-    const direct = root.querySelector('#b-toast-system');
+  const findById = (root: Document | ShadowRoot, id: string): Element | null => {
+    const direct = root.querySelector(`#${id}`);
     if (direct) return direct;
     for (const el of root.querySelectorAll('*')) {
-      const inner = el.shadowRoot ? findContainer(el.shadowRoot) : null;
+      const inner = el.shadowRoot ? findById(el.shadowRoot, id) : null;
       if (inner) return inner;
     }
     return null;
   };
+  const findContainer = (root: Document | ShadowRoot): Element | null => findById(root, 'b-toast-system');
   const toasts = () => [...(findContainer(document)?.querySelectorAll<BToastItem>('b-toast-item') ?? [])]
     .filter((t) => !t.classList.contains('fade-out'));
   const lastToast = () => toasts().at(-1) ?? null;
@@ -105,14 +106,26 @@ void (async () => {
     // ── 1. The toast action ──
     {
       let clicks = 0;
+      // Every announcement from here on (other suites share the announcer, so one read could see theirs).
+      const said: string[] = [];
+      const announcer = findById(document, 'b-toast-announce');
+      const sayObs = announcer ? new MutationObserver(() => { if (announcer.textContent) said.push(announcer.textContent); }) : null;
+      if (announcer) sayObs!.observe(announcer, { childList: true, characterData: true, subtree: true });
       const t = toast.show('Thing deleted', 'success', undefined, { action: { onClick: () => { clicks++; } } });
       await waitFor(() => !!actionOf(t));
       const btn = actionOf(t);
       check('show() returns the toast item', t instanceof HTMLElement && t.localName === 'b-toast-item');
       check('the action renders as a real <button type="button">', btn?.localName === 'button' && btn.type === 'button');
       check(`the default label is "Undo" (got "${btn?.textContent}")`, btn?.textContent === 'Undo');
-      const live = t.shadowRoot?.querySelector('[role="status"]');
-      check('the action sits inside the toast\'s live region, so the announcement carries it', !!live && live.contains(btn));
+      // Birko TASK-976: the toast is not a live region; the manager's polite announcer says the message and that the
+      // action is available, once, without the buttons' text (NVDA said "Item deletedUndo ×" before).
+      check('the toast item is not a live region (its buttons stay out of the announcement)',
+        !t.shadowRoot?.querySelector('[role], [aria-live]') && !findContainer(document)?.hasAttribute('aria-live'));
+      const expected = 'Thing deleted. Undo is available.';
+      await waitFor(() => said.includes(expected), 1500);
+      sayObs?.disconnect();
+      check(`the announcer says the message and that the action is available (said: ${JSON.stringify(said)})`,
+        announcer?.getAttribute('aria-live') === 'polite' && said.includes(expected));
       check('the action follows the message', btn?.previousElementSibling?.classList.contains('msg') === true);
       await waitFor(() => false, 30); // let onUpdated wire the click
       btn?.click();

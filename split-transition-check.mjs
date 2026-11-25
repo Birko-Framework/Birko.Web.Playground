@@ -37,17 +37,17 @@ try {
   await page.waitForFunction(() => !!customElements.get('b-split-panel'));
 
   /** A fresh panel at the top of the page; `transition` is the app's --b-split-transition, or none. */
-  const mount = (transition, master = '1fr', detail = '300px') => page.evaluate((transition, master, detail) => {
+  const mount = (transition, master = '1fr', detail = '300px', extra = '', width = 1000) => page.evaluate((transition, master, detail, extra, width) => {
     document.getElementById('st-host')?.remove();
     const host = document.createElement('div');
     host.id = 'st-host';
-    host.style.cssText = 'position:fixed;inset:0;z-index:99999;background:#fff;padding:20px;width:1000px';
+    host.style.cssText = `position:fixed;inset:0;z-index:99999;background:#fff;padding:20px;width:${width}px`;
     host.innerHTML = `<b-split-panel id="st" resizable master-width="${master}" detail-width="${detail}" gap="20px"
-      static-detail ${transition ? `style="--b-split-transition:${transition}"` : ''}>
+      static-detail ${extra} ${transition ? `style="--b-split-transition:${transition}"` : ''}>
       <div slot="master" style="height:200px;background:#eef">master</div>
       <div slot="detail" style="height:200px;background:#fee">detail</div></b-split-panel>`;
     document.body.appendChild(host);
-  }, transition, master, detail);
+  }, transition, master, detail, extra, width);
   const state = () => page.evaluate(() => {
     const el = document.getElementById('st');
     const split = el.shadowRoot.querySelector('.split');
@@ -153,6 +153,63 @@ try {
   const classic = await state();
   check(`fixed master: the drag moves the master (${JSON.stringify(classic.sizes)}, master ${Math.round(classic.masterW)}px), panel full`,
     classic.sizes.detail === '1fr' && Math.abs(classic.masterW - 400) <= 3 && fills(classic));
+
+  // ── A consumer minimum per column (TASK-981, asked for by DraCode: its chat panel must stay 320px) ───────────
+  // The drag and the keys stop at the minimum, so the drop already respects it and nothing animates afterwards.
+  const drag = async (dx) => {
+    const st = await state();
+    await page.mouse.move(st.handle.x, st.handle.y);
+    await page.mouse.down();
+    await page.mouse.move(st.handle.x + dx, st.handle.y, { steps: 5 });
+    await sleep(30);
+    const during = await state();
+    await page.mouse.up();
+    await sleep(30);
+    return { during, dropped: await state() };
+  };
+  await mount('400ms linear', '1fr', '400px', 'detail-min="320px"');
+  await sleep(100);
+  let mn = await drag(300);
+  check(`detail-min: the drag stops the detail at 320px while dragged (${Math.round(mn.during.detailW)}px), panel full`,
+    Math.abs(mn.during.detailW - 320) <= 2 && fills(mn.during));
+  check(`detail-min: the drop commits ${JSON.stringify(mn.dropped.sizes)}, nothing moves`,
+    mn.dropped.sizes.detail === '320px' && Math.abs(mn.dropped.detailW - 320) <= 2);
+  await sleep(500);
+  s = await state();
+  check(`detail-min: still 320px after the transition time (${Math.round(s.detailW)}px)`, Math.abs(s.detailW - 320) <= 2);
+  await page.evaluate(() => document.getElementById('st').shadowRoot.querySelector('.resizer').focus());
+  await page.keyboard.press('ArrowRight');
+  await page.keyboard.press('End');
+  await sleep(500);
+  s = await state();
+  check(`detail-min: Right and End stop at it too (${Math.round(s.detailW)}px)`, Math.abs(s.detailW - 320) <= 2);
+  const aria = await page.evaluate(() => { const r = document.getElementById('st').shadowRoot.querySelector('.resizer'); return Number(r.getAttribute('aria-valuemax')); });
+  check(`detail-min: the separator's aria-valuemax leaves the detail 320px (${aria} = ${Math.round(s.totalW)} - ${s.gap} - 320)`,
+    Math.abs(aria - (s.totalW - s.gap - 320)) <= 1);
+
+  // 15rem at the page's root font size (the Playground's is 14px, so 210px).
+  const remPx = 15 * await page.evaluate(() => parseFloat(getComputedStyle(document.documentElement).fontSize));
+  await mount(null, '300px', '1fr', 'master-min="15rem"');
+  await sleep(100);
+  mn = await drag(-200);
+  check(`master-min in rem: the drag stops the master at 15rem = ${remPx}px (${Math.round(mn.during.masterW)}px), drop ${JSON.stringify(mn.dropped.sizes)}`,
+    Math.abs(mn.during.masterW - remPx) <= 2 && mn.dropped.sizes.master === `${Math.round(remPx)}px`);
+  await page.evaluate(() => document.getElementById('st').shadowRoot.querySelector('.resizer').focus());
+  await page.keyboard.press('Home');
+  s = await state();
+  check(`master-min: Home goes to it (${Math.round(s.masterW)}px)`, Math.abs(s.masterW - remPx) <= 2);
+
+  // Too narrow for both: the column the separator resizes keeps its minimum, never a negative or NaN width.
+  await mount(null, '1fr', '400px', 'detail-min="320px" master-min="200px"', 400);
+  await sleep(100);
+  mn = await drag(100);
+  check(`too narrow, fixed detail: the detail keeps 320px, the master gets the rest (${Math.round(mn.dropped.masterW)} + ${mn.dropped.gap} + ${Math.round(mn.dropped.detailW)}), sizes ${JSON.stringify(mn.dropped.sizes)}`,
+    Math.abs(mn.dropped.detailW - 320) <= 2 && mn.dropped.masterW >= 0 && /^\d+px$/.test(mn.dropped.sizes.detail));
+  await mount(null, '250px', '1fr', 'detail-min="320px" master-min="200px"', 400);
+  await sleep(100);
+  mn = await drag(-100);
+  check(`too narrow, fixed master: the master keeps 200px (${Math.round(mn.dropped.masterW)}px), sizes ${JSON.stringify(mn.dropped.sizes)}`,
+    Math.abs(mn.dropped.masterW - 200) <= 2 && mn.dropped.sizes.master === '200px');
 
   // ── Reduced motion wins ───────────────────────────────────────────────────────────────────────────────────
   await page.emulateMediaFeatures([{ name: 'prefers-reduced-motion', value: 'reduce' }]);

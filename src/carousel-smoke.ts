@@ -152,13 +152,30 @@ void (async () => {
     check(`per-view 2: two slides reachable (${inertMap(p.slides)})`, inertMap(p.slides) === 'vviii');
     p.el.goTo(10);
     check(`goTo past the end clamps to the last page (${p.el.index})`, p.el.index === 3 && inertMap(p.slides) === 'iiivv');
-    check('…and lands at the end', await waitFor(() => p.aligned(3)));
+    const landedEnd = await waitFor(() => p.aligned(3));
+    check(`…and lands at the end (index ${p.el.index}, slide 4 ${Math.round(p.slides[3].getBoundingClientRect().left - p.vp.getBoundingClientRect().left)}px from the start, scroll ${Math.round(p.vp.scrollLeft)}/${p.vp.scrollWidth - p.vp.clientWidth}, events ${JSON.stringify(p.events)})`, landedEnd);
     // A consumer breakpoint: their CSS sets the property, and the resize that comes with it re-pages.
     p.el.style.setProperty('--b-carousel-per-view', '3');
     host.style.width = '30rem';
     check('a consumer --b-carousel-per-view wins and re-pages on resize', await waitFor(() => p.dots().length === 3));
     check(`…the index is clamped to the new last page (${p.el.index})`, p.el.index === 2);
     host.style.width = '24rem';
+
+    // ── a smooth scroll the engine leaves unfinished (Birko TASK-985) ──
+    // Measured in 2 of 20 full Playground runs: Chrome left goTo's smooth scroll part-way with no further scrollend, so
+    // the carousel kept index 3 while showing slides 2-3, for good. Dropping every smooth scroll reproduces that every
+    // time: the watchdog must finish it at once, on the slide that was asked for.
+    p = await mount('', 3);
+    {
+      const vp = p.vp as unknown as { scrollTo: (o?: ScrollToOptions) => void };
+      const real = vp.scrollTo.bind(p.vp);
+      vp.scrollTo = (o?: ScrollToOptions) => { if (o?.behavior !== 'smooth') real(o); };
+      p.el.goTo(2);
+      const landed = await waitFor(() => p.aligned(2), 2500);
+      check(`a smooth scroll the engine never finishes still lands on its slide (scroll ${Math.round(p.vp.scrollLeft)}, index ${p.el.index})`, landed);
+      check(`…with the index and one slide-change for it (${p.el.index}, ${JSON.stringify(p.events)})`, p.el.index === 2 && p.events.join() === '2');
+      vp.scrollTo = real;
+    }
 
     // ── native swipe (the viewport scrolls) ──
     p = await mount('', 3);

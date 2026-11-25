@@ -51,6 +51,16 @@ function settle(ms = 60): Promise<void> {
   return new Promise((r) => setTimeout(() => requestAnimationFrame(() => r()), ms));
 }
 
+/**
+ * Wait until `cond` holds, for a state the ribbon reaches on its own (a scroll or resize event, then a frame). A fixed
+ * settle raced those on a busy page: "back chevron became visible" failed once in a full verify run (Birko TASK-985).
+ */
+async function waitFor(cond: () => boolean, ms = 2000): Promise<boolean> {
+  const deadline = Date.now() + ms;
+  while (Date.now() < deadline) { if (cond()) return true; await settle(20); }
+  return cond();
+}
+
 const visible = (el: Ribbon, sel: string): boolean =>
   !!el.shadowRoot?.querySelector(sel)?.classList.contains('visible');
 
@@ -100,11 +110,9 @@ void (async () => {
       const el = await mount(CROWDED, 1600);
       check('starts wide with the tab chevron hidden', !visible(el, '#scroll-right'));
       el.style.width = '320px';
-      await settle(140);
-      check('narrowing alone reveals the tab chevron (ResizeObserver)', visible(el, '#scroll-right'));
+      check('narrowing alone reveals the tab chevron (ResizeObserver)', await waitFor(() => visible(el, '#scroll-right')));
       el.style.width = '1600px';
-      await settle(140);
-      check('widening alone hides it again', !visible(el, '#scroll-right'));
+      check('widening alone hides it again', await waitFor(() => !visible(el, '#scroll-right')));
       el.remove();
     }
 
@@ -112,8 +120,7 @@ void (async () => {
     {
       const el = await mount(CROWDED, 320);
       el.removeAttribute('pinned');
-      await settle();
-      check('unpinned: chevron visible before the re-render', visible(el, '#scroll-right'));
+      check('unpinned: chevron visible before the re-render', await waitFor(() => visible(el, '#scroll-right')));
       el.setAttribute('active', 'design');
       check('tab chevron survives a re-render (no blank frame)', visible(el, '#scroll-right'));
 
@@ -127,8 +134,7 @@ void (async () => {
         !left.classList.contains('visible') && left.offsetWidth > 0);
 
       track.scrollLeft = 40;
-      await settle();
-      check('back chevron became visible', visible(el, '#scroll-left'));
+      check('back chevron became visible', await waitFor(() => visible(el, '#scroll-left')));
       check('the track did not resize when it appeared', track.clientWidth === widthAtOrigin);
       check('the forward chevron did not move (stable click target)',
         Math.abs(right.getBoundingClientRect().left - rightEdge) < 0.5);

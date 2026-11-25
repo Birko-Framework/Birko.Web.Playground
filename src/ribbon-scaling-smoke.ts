@@ -87,6 +87,35 @@ void (async () => {
       check('item sizes: a layout size of popup is refused',
         throws(() => sizes(clipboard({ small: { paste: 'popup' as RibbonItemSize } }), 'small'), /'paste' as popup/));
       check('item sizes: a popup starting step is refused', throws(() => sizes(clipboard(), 'medium', 'popup'), /starting step cannot be popup/));
+      // TASK-121: layouts never get roomier at a tighter step.
+      check('item sizes: a layout making an item roomier at a tighter step is refused',
+        throws(() => sizes(clipboard({ small: { cut: 'large' } }), 'medium'), /'cut' is large, medium, large.*same or get smaller/));
+    }
+
+    // ── TASK-121: the ladder over mixed groups — parity with RibbonItemSizingTests.cs ──
+    {
+      // The Clipboard group's widths as measured from its resolved layouts (start medium).
+      const mixed = (scalingPriority = 0, minSize: RibbonGroupSize = 'popup'): RibbonGroupMetrics =>
+        ({ widths: { large: 200, medium: 140, small: 90, popup: 40 }, scalingPriority, minSize });
+      const uniform = (scalingPriority = 0): RibbonGroupMetrics =>
+        ({ widths: { large: 100, medium: 60, small: 30, popup: 10 }, scalingPriority });
+      const row = () => [mixed(10), uniform(0)];
+      for (const [available, expected] of [
+        [400, 'medium,medium'], [200, 'medium,medium'], [199, 'medium,small'], [170, 'medium,small'], [169, 'medium,popup'],
+        [150, 'medium,popup'], [149, 'small,popup'], [100, 'small,popup'], [99, 'popup,popup'],
+      ] as const)
+        eq(`mixed ladder: ${available}px`, resolveRibbonSizes(row(), available).join(','), expected);
+      const first = resolveRibbonSizes(row(), 160).join(',');
+      resolveRibbonSizes(row(), 1000); resolveRibbonSizes(row(), 1);
+      eq('mixed ladder: a pure function whatever ran before', resolveRibbonSizes(row(), 160).join(','), first);
+      const up = new Map<number, string>();
+      for (let w = 60; w <= 260; w++) up.set(w, resolveRibbonSizes(row(), w).join(','));
+      let sweep = 'same';
+      for (let w = 260; w >= 60; w--) if (resolveRibbonSizes(row(), w).join(',') !== up.get(w)) { sweep = `differs at ${w}px`; break; }
+      eq('mixed ladder: a boundary sweep resolves the same in both directions', sweep, 'same');
+      const floored = () => [mixed(0, 'small'), uniform(10)];
+      eq('mixed ladder: a floor holds while another group can still give (100px)', resolveRibbonSizes(floored(), 100).join(','), 'small,popup');
+      eq('mixed ladder: then gives way rather than overflowing (99px)', resolveRibbonSizes(floored(), 99).join(','), 'popup,popup');
     }
 
     // ── Policy parity with RibbonScalingTests.cs ──────────────────────────────

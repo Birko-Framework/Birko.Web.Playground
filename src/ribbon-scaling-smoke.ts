@@ -9,7 +9,7 @@
 // (Stronger option, not built: have the C# suite emit this table as a JSON fixture that this smoke
 // consumes, so the two cannot even be edited apart. Worth doing if the policy grows.)
 import 'birko-web-components/nav';
-import { resolveRibbonSizes, type RibbonGroupMetrics } from 'birko-web-components/nav';
+import { resolveRibbonSizes, ribbonItemSizes, type RibbonGroupMetrics, type RibbonGroup, type RibbonGroupSize, type RibbonItemSize } from 'birko-web-components/nav';
 
 /** Mirrors the C# helper `G(...)`: variants cost 100 / 60 / 30 / 10. */
 const G = (
@@ -57,6 +57,38 @@ void (async () => {
     check(`${name} (got ${JSON.stringify(actual)})`, JSON.stringify(actual) === JSON.stringify(expected));
 
   try {
+    // ── Item sizes: parity with RibbonItemSizingTests.cs (TASK-120, FEATURE-015 D13 / D14) ──
+    {
+      const item = (id: string, size?: RibbonItemSize) => ({ id, label: id, ...(size ? { size } : {}) });
+      const plain = { label: 'Plain', items: [item('a'), item('b'), item('c')] };
+      const clipboard = (layouts?: RibbonGroup['layouts']) =>
+        ({ label: 'Clipboard', items: [item('paste', 'large'), item('cut'), item('copy'), item('format')], layouts });
+      const sizes = (g: Parameters<typeof ribbonItemSizes>[0], step: RibbonGroupSize, start: RibbonGroupSize = 'medium') =>
+        ribbonItemSizes(g, step, start).map((s) => s[0].toUpperCase()).join(',');
+      const throws = (f: () => unknown, pattern: RegExp) => { try { f(); return false; } catch (e) { return pattern.test((e as Error).message); } };
+
+      for (const [step, expected] of [['large', 'L,L,L'], ['medium', 'M,M,M'], ['small', 'S,S,S'], ['popup', 'L,L,L']] as const)
+        eq(`item sizes: no item sizes, ${step} renders every item at the step`, sizes(plain, step), expected);
+      for (const [step, expected] of [['large', 'L,L,L,L'], ['medium', 'L,M,M,M'], ['small', 'M,S,S,S'], ['popup', 'L,L,L,L']] as const)
+        eq(`item sizes: anchored Paste keeps its offset at ${step}`, sizes(clipboard(), step), expected);
+      for (const [step, expected] of [['large', 'M'], ['medium', 'S'], ['small', 'S']] as const)
+        eq(`item sizes: a smaller anchor clamps at small (${step})`, sizes({ label: 'G', items: [item('x', 'small')] }, step), expected);
+      const officeSmall = clipboard({ small: { paste: 'large' } });
+      for (const [step, expected] of [['large', 'L,L,L,L'], ['medium', 'L,M,M,M'], ['small', 'L,S,S,S']] as const)
+        eq(`item sizes: a declared layout overrides the anchor (${step})`, sizes(officeSmall, step), expected);
+      eq('item sizes: the offset is from the starting step (start large, step large)', sizes(clipboard(), 'large', 'large'), 'L,L,L,L');
+      eq('item sizes: the offset is from the starting step (start large, step medium)', sizes(clipboard(), 'medium', 'large'), 'M,M,M,M');
+      check('item sizes: an item sized popup is refused',
+        throws(() => sizes({ label: 'G', items: [{ id: 'x', label: 'x', size: 'popup' as RibbonItemSize }] }, 'medium'), /'x'.*cannot be popup/));
+      check('item sizes: a layout for the popup step is refused',
+        throws(() => sizes(clipboard({ popup: { paste: 'large' } } as RibbonGroup['layouts']), 'medium'), /layout for popup/));
+      check('item sizes: a layout naming an unknown item is refused',
+        throws(() => sizes(clipboard({ small: { pastee: 'large' } }), 'small'), /'pastee'.*not one of its items/));
+      check('item sizes: a layout size of popup is refused',
+        throws(() => sizes(clipboard({ small: { paste: 'popup' as RibbonItemSize } }), 'small'), /'paste' as popup/));
+      check('item sizes: a popup starting step is refused', throws(() => sizes(clipboard(), 'medium', 'popup'), /starting step cannot be popup/));
+    }
+
     // ── Policy parity with RibbonScalingTests.cs ──────────────────────────────
     eq('everything stays at preferred when it fits',
       resolveRibbonSizes([G(), G(), G()], 1000, 'large'), ['large', 'large', 'large']);

@@ -35,6 +35,8 @@ const EXPLORE = process.argv.includes('--explore');
 const browser = await launchBrowser({ headless: 'new', args: ['--no-sandbox', '--disable-setuid-sandbox'] });
 try {
   const page = await browser.newPage();
+  const warnings = [];
+  page.on('console', (m) => { if (m.type().startsWith('warn')) warnings.push(m.text()); });
   await page.setViewport({ width: 1400, height: 900 });
   await page.goto(`${base}?kb=1`, { waitUntil: 'networkidle0' });
 
@@ -119,8 +121,29 @@ try {
     visited.join(' > ') === 'paste > cut > copy > format > paste');
 
   // ── Degrading: find the widths where the group reaches Small and Popup ──
+  // TASK-123: at every width nothing is cut off by the panel's ceiling (--b-ribbon-panel-height). Symbio once sized
+  // it for the full-width look; it was perfect at 1600px and clipped two links at 1024px.
+  const clipped = () => page.evaluate(() => {
+    const sr = document.getElementById('mx').shadowRoot;
+    const panel = sr.querySelector('.ribbon-panel').getBoundingClientRect();
+    // A group stretches to the panel, so its box never sticks out: what overflows is its content. Popovers are not drawn.
+    return [...sr.querySelectorAll('.ribbon-panel-inner > .ribbon-group')]
+      .filter((g) => [...g.querySelectorAll('*')].some((e) => { const r = e.getBoundingClientRect(); return r.height > 0 && r.bottom > panel.bottom + 0.5; }))
+      .map((g) => g.dataset.group ?? '?');
+  });
   const sweep = [];
-  for (let w = 900; w >= 200; w -= 10) { await setWidth(w); sweep.push([w, await state()]); }
+  const clipAt = [];
+  for (let w = 900; w >= 200; w -= 10) {
+    await setWidth(w);
+    sweep.push([w, await state()]);
+    const c = await clipped();
+    if (c.length) clipAt.push(`${w}px: ${c.join(',')}`);
+  }
+  check(`no group is cut off by the panel at any width from 900 to 200px (${clipAt.slice(0, 3).join('; ') || 'none'})`, clipAt.length === 0);
+  const required = await page.evaluate(() => document.getElementById('mx').requiredPanelHeight);
+  const ceiling = await page.evaluate(() => parseFloat(getComputedStyle(document.getElementById('mx').shadowRoot.querySelector('.ribbon-panel')).maxHeight));
+  check(`requiredPanelHeight is reported and the default ceiling covers it (${required}px needed, ${ceiling}px ceiling)`,
+    typeof required === 'number' && required > 0 && ceiling >= required);
   const small = sweep.find(([, st]) => st.clip?.step === 'small');
   const popup = sweep.find(([, st]) => /size-popup/.test(st.clip?.cls ?? ''));
   check(`degrades to its Small step (at ${small?.[0]}px)`, !!small);
@@ -153,6 +176,17 @@ try {
     if (brief(await state()) !== brief(down)) { same = `differs at ${w}px`; break; }
   }
   check(`a sweep down and back up resolves the same at every width (${same})`, same === 'same');
+
+  // ── TASK-123: a ceiling below what the ribbon can reach is reported, and the clipping it causes is caught ──
+  check('no panel-height warning with the default ceiling', !warnings.some((w) => w.includes('--b-ribbon-panel-height')));
+  await page.evaluate(() => document.getElementById('mx').style.setProperty('--b-ribbon-panel-height', '60px'));
+  await setWidth(880);
+  await setWidth(900);
+  await sleep(400); // the panel animates its height
+  const warned = warnings.find((w) => w.includes('--b-ribbon-panel-height is 60px'));
+  check(`a 60px ceiling is warned about, naming the height needed ("${warned?.slice(0, 90) ?? 'no warning'}")`, !!warned);
+  check(`…and the clipping it causes is caught (${(await clipped()).join(', ') || 'none'})`, (await clipped()).length > 0);
+  await page.evaluate(() => document.getElementById('mx').style.removeProperty('--b-ribbon-panel-height'));
 } finally {
   await browser.close();
   server.close();

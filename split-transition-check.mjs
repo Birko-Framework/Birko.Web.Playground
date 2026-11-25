@@ -35,6 +35,10 @@ try {
   await page.setViewport({ width: 1200, height: 800 });
   await page.goto(url, { waitUntil: 'networkidle0' });
   await page.waitForFunction(() => !!customElements.get('b-split-panel'));
+  // A drag commits rem (TASK-981): one rem is the page's root font size (the Playground's is 14px).
+  const ROOT = await page.evaluate(() => parseFloat(getComputedStyle(document.documentElement).fontSize));
+  const asRem = (px) => `${Number((px / ROOT).toFixed(2))}rem`;
+  const REM = /^\d*\.?\d+rem$/;
 
   /** A fresh panel at the top of the page; `transition` is the app's --b-split-transition, or none. */
   const mount = (transition, master = '1fr', detail = '300px', extra = '', width = 1000) => page.evaluate((transition, master, detail, extra, width) => {
@@ -128,7 +132,7 @@ try {
   await sleep(30);
   const fdrop = await state();
   check(`fixed detail: the drop commits ${JSON.stringify(fdrop.sizes)} and nothing moves (detail ${Math.round(fdrop.detailW)}px, panel full)`,
-    fdrop.sizes.master === '1fr' && /^\d+px$/.test(fdrop.sizes.detail) && Math.abs(fdrop.detailW - fd.detailW) <= 3 && fills(fdrop));
+    fdrop.sizes.master === '1fr' && REM.test(fdrop.sizes.detail) && Math.abs(fdrop.detailW - fd.detailW) <= 3 && fills(fdrop));
   await sleep(500);
   const fsettled = await state();
   check(`fixed detail: still there after the transition time (detail ${Math.round(fsettled.detailW)}px)`,
@@ -138,8 +142,8 @@ try {
   await page.keyboard.press('ArrowLeft');
   await sleep(500);
   const fk = await state();
-  check(`fixed detail: Left arrow widens the detail by 16px and the panel stays full (${Math.round(fsettled.detailW)} -> ${Math.round(fk.detailW)}px)`,
-    Math.abs(fk.detailW - fsettled.detailW - 16) <= 2 && fills(fk));
+  check(`fixed detail: Left arrow widens the detail by 1rem = ${ROOT}px and the panel stays full (${Math.round(fsettled.detailW)} -> ${Math.round(fk.detailW)}px)`,
+    Math.abs(fk.detailW - fsettled.detailW - ROOT) <= 2 && fills(fk));
 
   // ── The classic shape (fixed master, flexible detail) still drags the master ─────────────────────────────
   await mount(null, '300px', '1fr');
@@ -173,7 +177,7 @@ try {
   check(`detail-min: the drag stops the detail at 320px while dragged (${Math.round(mn.during.detailW)}px), panel full`,
     Math.abs(mn.during.detailW - 320) <= 2 && fills(mn.during));
   check(`detail-min: the drop commits ${JSON.stringify(mn.dropped.sizes)}, nothing moves`,
-    mn.dropped.sizes.detail === '320px' && Math.abs(mn.dropped.detailW - 320) <= 2);
+    mn.dropped.sizes.detail === asRem(320) && Math.abs(mn.dropped.detailW - 320) <= 2);
   await sleep(500);
   s = await state();
   check(`detail-min: still 320px after the transition time (${Math.round(s.detailW)}px)`, Math.abs(s.detailW - 320) <= 2);
@@ -193,7 +197,7 @@ try {
   await sleep(100);
   mn = await drag(-200);
   check(`master-min in rem: the drag stops the master at 15rem = ${remPx}px (${Math.round(mn.during.masterW)}px), drop ${JSON.stringify(mn.dropped.sizes)}`,
-    Math.abs(mn.during.masterW - remPx) <= 2 && mn.dropped.sizes.master === `${Math.round(remPx)}px`);
+    Math.abs(mn.during.masterW - remPx) <= 2 && mn.dropped.sizes.master === '15rem');
   await page.evaluate(() => document.getElementById('st').shadowRoot.querySelector('.resizer').focus());
   await page.keyboard.press('Home');
   s = await state();
@@ -204,12 +208,34 @@ try {
   await sleep(100);
   mn = await drag(100);
   check(`too narrow, fixed detail: the detail keeps 320px, the master gets the rest (${Math.round(mn.dropped.masterW)} + ${mn.dropped.gap} + ${Math.round(mn.dropped.detailW)}), sizes ${JSON.stringify(mn.dropped.sizes)}`,
-    Math.abs(mn.dropped.detailW - 320) <= 2 && mn.dropped.masterW >= 0 && /^\d+px$/.test(mn.dropped.sizes.detail));
+    Math.abs(mn.dropped.detailW - 320) <= 2 && mn.dropped.masterW >= 0 && REM.test(mn.dropped.sizes.detail));
   await mount(null, '250px', '1fr', 'detail-min="320px" master-min="200px"', 400);
   await sleep(100);
   mn = await drag(-100);
   check(`too narrow, fixed master: the master keeps 200px (${Math.round(mn.dropped.masterW)}px), sizes ${JSON.stringify(mn.dropped.sizes)}`,
-    Math.abs(mn.dropped.masterW - 200) <= 2 && mn.dropped.sizes.master === '200px');
+    Math.abs(mn.dropped.masterW - 200) <= 2 && mn.dropped.sizes.master === asRem(200));
+
+  // No attributes: the default minimum is 7.5rem (120px at a 16px root), and a px width saved before still loads.
+  await mount(null, '300px', '1fr');
+  await sleep(100);
+  await page.evaluate(() => document.getElementById('st').shadowRoot.querySelector('.resizer').focus());
+  await page.keyboard.press('Home');
+  s = await state();
+  check(`default minimum: Home stops at 7.5rem = ${7.5 * ROOT}px (${Math.round(s.masterW)}px), committed ${s.sizes.master}`,
+    Math.abs(s.masterW - 7.5 * ROOT) <= 2 && s.sizes.master === '7.5rem');
+  const restored = await page.evaluate(async () => {
+    localStorage.setItem('birko-split:st-old', JSON.stringify({ master: '333px', detail: '1fr' }));
+    const el = document.createElement('b-split-panel');
+    el.setAttribute('persist-key', 'st-old');
+    el.setAttribute('resizable', '');
+    document.getElementById('st-host').appendChild(el);
+    await new Promise((r) => setTimeout(r, 50));
+    const sizes = el.sizes;
+    el.remove();
+    localStorage.removeItem('birko-split:st-old');
+    return sizes;
+  });
+  check(`a px width saved before still loads (${JSON.stringify(restored)})`, restored.master === '333px');
 
   // ── Reduced motion wins ───────────────────────────────────────────────────────────────────────────────────
   await page.emulateMediaFeatures([{ name: 'prefers-reduced-motion', value: 'reduce' }]);

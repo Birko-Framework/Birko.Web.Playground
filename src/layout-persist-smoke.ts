@@ -107,17 +107,20 @@ void (async () => {
     check('resizable renders a vertical separator', sep?.getAttribute('role') === 'separator' && sep.getAttribute('aria-orientation') === 'vertical');
     eq('its value is the master width', sep.getAttribute('aria-valuenow'), '300');
 
+    // A key or a drag commits rem (TASK-981): one rem is the root font size; the keys step 1rem (Shift: 4rem).
+    const root = parseFloat(getComputedStyle(document.documentElement).fontSize) || 16;
+    const rem = (px: number) => `${Number((px / root).toFixed(2))}rem`;
     key(sep, 'ArrowRight');
     await tick();
-    eq('ArrowRight widens the master by 16px', split.getAttribute('master-width'), '316px');
-    eq('and emits split-resize with the sizes', resizes[0], { sizes: { master: '316px', detail: '1fr' } });
-    eq('and saves them under persist-key', JSON.parse(localStorage.getItem(`birko-split:${persist}`) ?? 'null'), { master: '316px', detail: '1fr' });
+    eq('ArrowRight widens the master by 1rem', split.getAttribute('master-width'), rem(300 + root));
+    eq('and emits split-resize with the sizes', resizes[0], { sizes: { master: rem(300 + root), detail: '1fr' } });
+    eq('and saves them under persist-key', JSON.parse(localStorage.getItem(`birko-split:${persist}`) ?? 'null'), { master: rem(300 + root), detail: '1fr' });
     key(handle(split)!, 'ArrowLeft', { shiftKey: true });
     await tick();
-    eq('Shift+ArrowLeft narrows by 64px', split.getAttribute('master-width'), '252px');
+    eq('Shift+ArrowLeft narrows by 4rem', split.getAttribute('master-width'), rem(300 - 3 * root));
     key(handle(split)!, 'Home');
     await tick();
-    eq('Home goes to the minimum', split.getAttribute('master-width'), '120px');
+    eq('Home goes to the minimum, 7.5rem by default', split.getAttribute('master-width'), '7.5rem');
 
     const h = handle(split)!;
     const start = masterPx(split);
@@ -126,10 +129,10 @@ void (async () => {
     h.dispatchEvent(new PointerEvent('pointermove', { bubbles: true, clientX: x + 50, pointerId: 7 }));
     h.dispatchEvent(new PointerEvent('pointerup', { bubbles: true, clientX: x + 50, pointerId: 7 }));
     await tick();
-    eq('dragging the separator 50px widens the master by 50px', split.getAttribute('master-width'), `${start + 50}px`);
+    eq('dragging the separator 50px widens the master by 50px', split.getAttribute('master-width'), rem(Math.round(start + 50)));
 
     const restored = await makeSplit({ resizable: '', 'persist-key': persist });
-    eq('a new panel with the same persist-key restores the sizes', restored.sizes, { master: `${start + 50}px`, detail: '1fr' });
+    eq('a new panel with the same persist-key restores the sizes', restored.sizes, { master: rem(Math.round(start + 50)), detail: '1fr' });
 
     const hostile = `smoke-bad-${Date.now()}`;
     storageKeys.push(`birko-split:${hostile}`);

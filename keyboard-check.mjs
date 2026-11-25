@@ -34,7 +34,7 @@ try {
   const page = await browser.newPage();
   // ?kb=1 loads the fixtures only this script needs (TASK-545's toast manager on window and an undo-mode page).
   await page.goto(`${url}?kb=1`, { waitUntil: 'networkidle0' });
-  await page.waitForFunction(() => !!window.__kbToast && !!customElements.get('ud-kb-page'));
+  await page.waitForFunction(() => !!window.__kbToast && !!customElements.get('ud-kb-page') && !!customElements.get('ud-kb-rows-page'));
 
   /** Mount `<button>before</button>{markup}<button>after</button>` on top of the gallery and wait for b-rating. */
   const mount = (markup) => page.evaluate(async (m) => {
@@ -214,6 +214,16 @@ try {
   await page.keyboard.press('Enter');
   for (let i = 0; i < 50 && !(await rowsText()).includes('Alpha'); i++) await new Promise((r) => setTimeout(r, 50));
   check('Enter on Undo brings the row back', (await rowsText()).includes('Alpha'));
+  // TASK-989: the toast that held focus is replaced, so focus fell to <body>. These rows are not focusable (no row
+  // click), so it goes to the page itself and Tab carries on from there.
+  const focusedAfterUndo = () => page.evaluate(() => {
+    let el = document.activeElement;
+    while (el?.shadowRoot?.activeElement) el = el.shadowRoot.activeElement;
+    return el ? `${el.tagName.toLowerCase()}${el.dataset?.id ? `[data-id=${el.dataset.id}]` : ''}` : 'none';
+  });
+  for (let i = 0; i < 20 && (await focusedAfterUndo()) === 'body'; i++) await new Promise((r) => setTimeout(r, 50));
+  const pageFocus = await focusedAfterUndo();
+  check(`after Undo, focus is on the page, not <body> (${pageFocus})`, pageFocus === 'ud-kb-page');
 
   // A pointer-started delete leaves focus alone: a toast that grabbed it would stay open until the user clicked away.
   await page.evaluate(() => document.querySelectorAll('b-toast-item').forEach((t) => t.remove()));
@@ -223,6 +233,30 @@ try {
   await page.evaluate(() => document.querySelector('ud-kb-page').deleteRow('b'));
   for (let i = 0; i < 50 && (await rowsText()).includes('Bravo'); i++) await new Promise((r) => setTimeout(r, 50));
   check('a pointer-started delete does not move focus to Undo', !(await focusedIsAction()));
+
+  // ── TASK-989: with focusable rows (a page that opens rows on click), Undo puts focus on the restored row ──
+  await page.evaluate(() => {
+    document.querySelectorAll('b-toast-item').forEach((t) => t.remove());
+    document.getElementById('kb-host').innerHTML = '<button id="kb-before">before</button><ud-kb-rows-page></ud-kb-rows-page>';
+  });
+  const rowsPageText = () => page.evaluate(() => {
+    const deep = (n) => (n.nodeType === 3 ? n.textContent : '') + (n.shadowRoot ? deep(n.shadowRoot) : '') + [...n.childNodes].map(deep).join('');
+    return deep(document.querySelector('ud-kb-rows-page').shadowRoot.querySelector('#table'));
+  });
+  for (let i = 0; i < 60 && !(await rowsPageText()).includes('Bravo'); i++) await new Promise((r) => setTimeout(r, 50));
+  await page.evaluate(() => document.getElementById('kb-before').focus());
+  for (let i = 0; i < 25 && !(await focusedAfterUndo()).startsWith('tr[data-id=a]'); i++) await page.keyboard.press('Tab');
+  await page.keyboard.press('ArrowDown');
+  check(`precondition: Tab and Down reach row Bravo (${await focusedAfterUndo()})`, (await focusedAfterUndo()) === 'tr[data-id=b]');
+  await page.evaluate(() => document.querySelector('ud-kb-rows-page').deleteRow('b'));
+  for (let i = 0; i < 50 && (await rowsPageText()).includes('Bravo'); i++) await new Promise((r) => setTimeout(r, 50));
+  check("rows page: the keyboard delete moved focus to Undo", await focusedIsAction());
+  await page.keyboard.press('Enter');
+  for (let i = 0; i < 50 && !(await rowsPageText()).includes('Bravo'); i++) await new Promise((r) => setTimeout(r, 50));
+  for (let i = 0; i < 20 && (await focusedAfterUndo()) !== 'tr[data-id=b]'; i++) await new Promise((r) => setTimeout(r, 50));
+  check(`after Undo, focus is on the restored row (${await focusedAfterUndo()})`, (await focusedAfterUndo()) === 'tr[data-id=b]');
+  await page.keyboard.press('ArrowUp');
+  check(`…and the arrow keys carry on from it (${await focusedAfterUndo()})`, (await focusedAfterUndo()) === 'tr[data-id=a]');
 
   // ── b-tag-input keeps focus across a commit (TASK-729) ──
   // Each commit re-renders, and the positional morph puts the new chip where the input was, replacing the focused

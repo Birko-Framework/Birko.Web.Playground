@@ -44,4 +44,11 @@ class UdKbPage extends BaseListPage<Row> {
 }
 customElements.define('ud-kb-page', UdKbPage);
 
+/** The same page with rows that open on click, so they are focusable (TASK-978) and Undo can return focus to one (TASK-989). */
+class UdKbRowsPage extends UdKbPage {
+  opened: string[] = [];
+  protected onRowClick(id: string) { this.opened.push(id); }
+}
+customElements.define('ud-kb-rows-page', UdKbRowsPage);
+
 (window as unknown as { __kbToast: typeof toast }).__kbToast = toast;

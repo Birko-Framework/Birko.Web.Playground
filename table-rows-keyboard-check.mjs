@@ -126,6 +126,45 @@ try {
   const kept = await active();
   check(`A: a reload while row "c" has focus keeps focus on it ("${kept?.rowId}")`, kept?.rowId === 'c');
 
+  // ── A2. Birko TASK-992: a row opened from the keyboard hands focus to its detail panel; closing gives it back ──
+  // The panel comes after the table's pager in the DOM, so Tab from the opened row went past the page-size select and
+  // the pager before reaching the panel (5 Tabs to Delete on Symbio).
+  const detailOpen = () => page.evaluate(() => window.__deepAll(document, '#detail-card').some((c) => !c.hidden));
+  await mount('rows-split-page');
+  await tabToRow();
+  await key('ArrowDown');
+  await key('Enter');
+  await page.waitForFunction(() => window.__deepAll(document, '.detail-name').some((e) => e.textContent === 'Bravo'), { timeout: 3000 }).catch(() => {});
+  await sleep(100);
+  let f2 = await active();
+  check(`A2: Enter on a row puts focus on the detail panel's first action ("${f2?.hostId}" ${JSON.stringify(f2)})`, f2?.hostId === 'btn-detail-edit');
+  await key('Tab');
+  f2 = await active();
+  check(`A2: one Tab from there reaches Delete ("${f2?.hostId}")`, f2?.hostId === 'btn-detail-delete');
+  await key('Escape');
+  await sleep(100);
+  f2 = await active();
+  check(`A2: Escape closes the panel and puts focus back on the row ("${f2?.rowId}", panel open: ${await detailOpen()})`,
+    f2?.rowId === 'b' && !(await detailOpen()));
+  await key('Enter');
+  await page.waitForFunction(() => window.__deepAll(document, '#detail-card').some((c) => !c.hidden), { timeout: 3000 }).catch(() => {});
+  await sleep(100);
+  await page.keyboard.down('Shift'); await key('Tab'); await page.keyboard.up('Shift');
+  f2 = await active();
+  check(`A2: Shift+Tab from the first action reaches the panel's close button ("${f2?.hostId}")`, f2?.hostId === 'btn-close-detail');
+  await key('Enter');
+  await sleep(100);
+  f2 = await active();
+  check(`A2: Enter on close closes the panel and puts focus back on the row ("${f2?.rowId}", panel open: ${await detailOpen()})`,
+    f2?.rowId === 'b' && !(await detailOpen()));
+  // A click opens the detail and leaves focus alone: the pointer user is looking at the table.
+  const rowB = await page.evaluateHandle(() => window.__deepAll(document.getElementById('rows-host'), 'tbody tr[data-id="c"]')[0]);
+  await rowB.click();
+  await page.waitForFunction(() => window.__deepAll(document, '.detail-name').some((e) => e.textContent === 'Charlie'), { timeout: 3000 }).catch(() => {});
+  await sleep(100);
+  f2 = await active();
+  check(`A2: a click on a row opens it without moving focus into the panel ("${f2?.hostId ?? f2?.rowId}")`, f2?.hostId !== 'btn-detail-edit');
+
   // ── B. list page that opens rows ─────────────────────────────────────────────────────────────────────────────
   await mount('rows-open-list-page');
   const pb = await tabToRow();

@@ -4,6 +4,8 @@
 // shipped theme and in an inverse area on a light page:
 //   - a real Tab onto a b-checkbox and into a b-input draws the ring token on the focused element;
 //   - the ring's solid 1px line has 3:1 against the page background and the secondary surface, for both rings.
+// Birko TASK-986 (asked for by DraCode): --b-focus-ring-inset / --b-focus-ring-danger-inset draw the same ring wholly inside
+// the control, in every theme, with a 3:1 line.
 //
 //   node build.js && node focus-ring-check.mjs        (exit 1 on any FAIL)
 import http from 'node:http';
@@ -39,9 +41,11 @@ const ratio = (a, b) => { const [x, y] = [lum(a), lum(b)].sort((p, q) => q - p);
  * "rgb(37, 99, 235) 0px 0px 0px 1px"), or null: the old 3px wash also matches, so the contrast decides.
  */
 function lineColour(shadow) {
-  const first = shadow.split(/,(?![^(]*\))/)[0].trim();
-  const c = first.match(/^(rgba?\([^)]*\))\s+0px\s+0px\s+0px\s+([\d.]+)px$/i);
-  return c ? { colour: c[1], width: parseFloat(c[2]) } : null;
+  const parts = shadow.split(/,(?![^(]*\))/).map((s) => s.trim());
+  const c = parts[0].match(/^(rgba?\([^)]*\))\s+0px\s+0px\s+0px\s+([\d.]+)px(\s+inset)?$/i);
+  // `allInset`: every shadow in the list is inset (TASK-986's tokens); `noneInset`: none is (the outer ring).
+  return c ? { colour: c[1], width: parseFloat(c[2]), allInset: parts.every((p) => /\binset$/.test(p)),
+    noneInset: parts.every((p) => !/\binset$/.test(p)) } : null;
 }
 
 const browser = await launchBrowser({ headless: 'new', args: ['--no-sandbox', '--disable-setuid-sandbox'] });
@@ -70,6 +74,7 @@ try {
     const tokens = await page.evaluate(() => {
       const cs = getComputedStyle(document.getElementById('fr'));
       return { ring: cs.getPropertyValue('--b-focus-ring').trim(), danger: cs.getPropertyValue('--b-focus-ring-danger').trim(),
+        ringIn: cs.getPropertyValue('--b-focus-ring-inset').trim(), dangerIn: cs.getPropertyValue('--b-focus-ring-danger-inset').trim(),
         bg: cs.backgroundColor, bg2: cs.getPropertyValue('--b-bg-secondary').trim() };
     });
     // Resolve the secondary surface to rgb through a probe element.
@@ -77,6 +82,16 @@ try {
       const c = getComputedStyle(d).color; d.remove(); return c; }, tokens.bg2);
     const page0 = rgb(tokens.bg);
     const surf = over(rgb(bg2), page0);
+
+    // TASK-986: the inset forms draw the same ring entirely inside the control (line and glow both inset).
+    for (const [name, value, inside] of [['inset ring', tokens.ringIn, true], ['inset danger ring', tokens.dangerIn, true]]) {
+      const resolved = await page.evaluate((v) => { const d = document.createElement('div'); d.style.boxShadow = v;
+        document.getElementById('fr').appendChild(d); const s = getComputedStyle(d).boxShadow; d.remove(); return s; }, value);
+      const line = value ? lineColour(resolved) : null;
+      const vsPage = line ? ratio(over(rgb(line.colour), page0), page0) : 0, vsSurf = line ? ratio(over(rgb(line.colour), surf), surf) : 0;
+      check(`${label}: the ${name} is defined and wholly inside (${line ? (line.allInset ? 'all inset' : 'NOT all inset') : 'missing'}), its line ${vsPage.toFixed(2)}:1 on the page and ${vsSurf.toFixed(2)}:1 on the secondary surface`,
+        !!line && inside && line.allInset && line.width >= 1 && vsPage >= 3 && vsSurf >= 3);
+    }
 
     for (const [name, value] of [['ring', tokens.ring], ['danger ring', tokens.danger]]) {
       const resolved = await page.evaluate((v) => { const d = document.createElement('div'); d.style.boxShadow = v;

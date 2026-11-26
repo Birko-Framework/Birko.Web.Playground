@@ -211,6 +211,48 @@ const rendered = await page.evaluate(async () => {
 });
 for (const m of rendered) check(`${m.where}: ${m.what} text is AA (${m.ratio}:1, ${m.fg} on ${m.bg})`, m.ratio >= 4.5);
 
+// ── 3b'. Danger and warning badges read as urgent (TASK-599, option B, the user's pick 2026-11-26) ────────────
+// AA alone passed while the badges read as subtle on a phone in daylight. b-badge's danger / warning now paint their
+// own stronger pair (--b-badge-*) in light and dark; every other theme points that pair at its own shared tokens, and
+// the shared -light / -text tokens (diffs, banners, menus, stats) keep their values.
+const urgency = await page.evaluate(async () => {
+  const EXPECT = {
+    light: { danger: ['rgb(161, 26, 26)', 'rgb(254, 202, 202)'], warning: ['rgb(124, 58, 3)', 'rgb(253, 230, 138)'],
+      shared: { danger: 'rgb(254, 226, 226)', warning: 'rgb(254, 243, 199)' } },
+    dark: { danger: ['rgb(254, 202, 202)', 'rgb(95, 26, 26)'], warning: ['rgb(252, 211, 77)', 'rgb(92, 61, 6)'],
+      shared: { danger: 'rgb(63, 29, 29)', warning: 'rgb(61, 44, 10)' } },
+  };
+  const out = [];
+  for (const theme of ['light', 'dark', 'neon', 'finstat', 'inverse']) {
+    document.documentElement.setAttribute('data-theme', theme);
+    const host = document.createElement('div');
+    host.innerHTML = '<b-badge variant="danger">danger</b-badge><b-badge variant="warning">warning</b-badge>'
+      + '<i data-probe="danger" style="color:var(--b-color-danger-text);background:var(--b-color-danger-light)"></i>'
+      + '<i data-probe="warning" style="color:var(--b-color-warning-text);background:var(--b-color-warning-light)"></i>';
+    document.body.appendChild(host);
+    await new Promise((r) => setTimeout(r, 60));
+    for (const v of ['danger', 'warning']) {
+      const cs = getComputedStyle(host.querySelector(`b-badge[variant="${v}"]`).shadowRoot.querySelector('.badge'));
+      const probe = getComputedStyle(host.querySelector(`[data-probe="${v}"]`));
+      out.push({ theme, v, fg: cs.color, bg: cs.backgroundColor, sharedFg: probe.color, sharedBg: probe.backgroundColor, expect: EXPECT[theme] });
+    }
+    host.remove();
+  }
+  document.documentElement.setAttribute('data-theme', 'dark');
+  return out;
+});
+for (const m of urgency) {
+  if (m.expect) {
+    const [fg, bg] = m.expect[m.v];
+    check(`${m.theme}: ${m.v} badge paints the stronger pair (${m.fg} on ${m.bg}; want ${fg} on ${bg})`, m.fg === fg && m.bg === bg);
+    check(`${m.theme}: the shared ${m.v}-light other components use is unchanged (${m.sharedBg}; want ${m.expect.shared[m.v]})`,
+      m.sharedBg === m.expect.shared[m.v]);
+  } else {
+    check(`${m.theme}: ${m.v} badge keeps the theme's own pair (${m.fg} on ${m.bg}; shared ${m.sharedFg} on ${m.sharedBg})`,
+      m.fg === m.sharedFg && m.bg === m.sharedBg);
+  }
+}
+
 // ── 3c. b-json-diff's coloured text, every theme (TASK-951) ────────────────────────────────────────────────
 // The diff paints the semantic -text colours on its own card and on added/removed highlights, pairs the token gate
 // never sees. Measured on 2026-11-21 in dark: the added value at 2.80:1 and every marker under 4.5:1, because the card

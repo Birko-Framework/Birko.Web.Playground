@@ -253,6 +253,47 @@ for (const m of urgency) {
   }
 }
 
+// ── 3b''. b-sync-status's chips look like the badge of the same meaning, AA in every theme (TASK-994) ─────────
+// Reps measured the offline chip at 2.86:1: it painted the base --b-color-warning on its tint, a pair the token gate never
+// declares and 3b never rendered. The user's decision (option B): Offline = the warning badge, Syncing = the info badge,
+// "not saved" = the danger badge, so each chip is checked against a b-badge rendered beside it, and for AA.
+const syncChips = async (offline) => {
+  await page.setOfflineMode(offline);
+  return page.evaluate(async (offline) => {
+    const parse = (v) => v.match(/\d+(\.\d+)?/g).slice(0, 3).map(Number);
+    const lum = (c) => { const [r, g, b] = c.map((v) => { const s = v / 255; return s <= 0.03928 ? s / 12.92 : ((s + 0.055) / 1.055) ** 2.4; }); return 0.2126 * r + 0.7152 * g + 0.0722 * b; };
+    const ratio = (fg, bg) => { const [x, y] = [lum(parse(fg)), lum(parse(bg))].sort((p, q) => q - p); return Math.round(((x + 0.05) / (y + 0.05)) * 100) / 100; };
+    const out = [];
+    for (const theme of ['light', 'dark', 'neon', 'finstat', 'inverse']) {
+      document.documentElement.setAttribute('data-theme', theme);
+      const host = document.createElement('div');
+      host.innerHTML = '<b-sync-status></b-sync-status><b-badge variant="warning">w</b-badge><b-badge variant="info">i</b-badge><b-badge variant="danger">d</b-badge>';
+      document.body.appendChild(host);
+      await customElements.whenDefined('b-sync-status');
+      host.querySelector('b-sync-status').bind({ pendingCount: 2, deadCount: 1, onChange: () => () => {} });
+      await new Promise((r) => setTimeout(r, 60));
+      const root = host.querySelector('b-sync-status').shadowRoot;
+      const badge = (v) => getComputedStyle(host.querySelector(`b-badge[variant="${v}"]`).shadowRoot.querySelector('.badge'));
+      const parts = [[offline ? 'offline chip' : 'syncing chip', root.querySelector('.chip'), offline ? 'warning' : 'info'],
+        ['"not saved" button', root.querySelector('button.dead'), 'danger']];
+      for (const [what, el, like] of parts) {
+        const cs = getComputedStyle(el); const b = badge(like);
+        out.push({ theme, what, like, fg: cs.color, bg: cs.backgroundColor, ratio: ratio(cs.color, cs.backgroundColor),
+          sameAsBadge: cs.color === b.color && cs.backgroundColor === b.backgroundColor, badge: `${b.color} on ${b.backgroundColor}` });
+      }
+      host.remove();
+    }
+    document.documentElement.setAttribute('data-theme', 'dark');
+    return out;
+  }, offline);
+};
+const sync = [...await syncChips(false), ...await syncChips(true)];
+await page.setOfflineMode(false);
+for (const m of sync) {
+  check(`${m.theme}: b-sync-status ${m.what} text is AA (${m.ratio}:1, ${m.fg} on ${m.bg})`, m.ratio >= 4.5);
+  check(`${m.theme}: b-sync-status ${m.what} looks like the ${m.like} badge (${m.fg} on ${m.bg}; badge ${m.badge})`, m.sameAsBadge);
+}
+
 // ── 3c. b-json-diff's coloured text, every theme (TASK-951) ────────────────────────────────────────────────
 // The diff paints the semantic -text colours on its own card and on added/removed highlights, pairs the token gate
 // never sees. Measured on 2026-11-21 in dark: the added value at 2.80:1 and every marker under 4.5:1, because the card

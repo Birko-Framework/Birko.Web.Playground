@@ -211,6 +211,64 @@ class PgDeviceDemo extends HTMLElement {
 }
 if (!customElements.get('pg-device-demo')) customElements.define('pg-device-demo', PgDeviceDemo);
 
+// TASK-994 — every b-sync-status state on demand, for review in any theme. The chip reads navigator.onLine, which a page
+// cannot set, so "Offline" shadows it on this page only and fires the `offline` event; turning it off (or leaving the card)
+// restores the browser's own value.
+class PgSyncStatusDemo extends HTMLElement {
+  private _restoreOnline: (() => void) | null = null;
+  connectedCallback(): void {
+    if (this.dataset.ready) return;
+    this.dataset.ready = '1';
+    this.innerHTML = `
+      <div style="display:flex;flex-wrap:wrap;gap:1rem;align-items:center;margin-bottom:.75rem;font-size:.85rem">
+        <label style="display:inline-flex;gap:.35rem;align-items:center"><input type="checkbox" data-ctl="offline"> Offline</label>
+        <label style="display:inline-flex;gap:.35rem;align-items:center">Pending
+          <select data-ctl="pending"><option>0</option><option selected>2</option><option>5</option></select></label>
+        <label style="display:inline-flex;gap:.35rem;align-items:center">Not saved
+          <select data-ctl="dead"><option selected>0</option><option>2</option></select></label>
+      </div>
+      <b-sync-status></b-sync-status>
+      <p data-hint style="font-size:.8rem;color:var(--b-text-secondary);margin:.5rem 0 0"></p>`;
+    const state = { pending: 2, dead: 0 };
+    const listeners = new Set<(n: number) => void>();
+    const chip = this.querySelector('b-sync-status') as unknown as { bind(s: unknown): void };
+    chip.bind({
+      get pendingCount() { return state.pending; },
+      get deadCount() { return state.dead; },
+      onChange(fn: (n: number) => void) { listeners.add(fn); return () => { listeners.delete(fn); }; },
+    });
+    const hint = (): void => {
+      const h = this.querySelector('[data-hint]');
+      if (h) h.textContent = navigator.onLine && state.pending === 0 && state.dead === 0
+        ? 'Online with nothing pending: the chip hides itself.' : '';
+    };
+    const changed = (): void => { listeners.forEach((fn) => fn(state.pending)); hint(); };
+    this.querySelector<HTMLSelectElement>('[data-ctl="pending"]')?.addEventListener('change', (e) => {
+      state.pending = Number((e.target as HTMLSelectElement).value); changed();
+    });
+    this.querySelector<HTMLSelectElement>('[data-ctl="dead"]')?.addEventListener('change', (e) => {
+      state.dead = Number((e.target as HTMLSelectElement).value); changed();
+    });
+    this.querySelector<HTMLInputElement>('[data-ctl="offline"]')?.addEventListener('change', (e) => {
+      this.simulateOffline((e.target as HTMLInputElement).checked); hint();
+    });
+    hint();
+  }
+  disconnectedCallback(): void { this.simulateOffline(false); }
+  private simulateOffline(on: boolean): void {
+    if (on && !this._restoreOnline) {
+      Object.defineProperty(navigator, 'onLine', { configurable: true, get: () => false });
+      this._restoreOnline = () => { delete (navigator as unknown as { onLine?: boolean }).onLine; };
+      window.dispatchEvent(new Event('offline'));
+    } else if (!on && this._restoreOnline) {
+      this._restoreOnline();
+      this._restoreOnline = null;
+      window.dispatchEvent(new Event('online'));
+    }
+  }
+}
+if (!customElements.get('pg-sync-status-demo')) customElements.define('pg-sync-status-demo', PgSyncStatusDemo);
+
 // Vertical-range equalizer bank (TASK-053) — a row of slider-only vertical b-ranges.
 class PgEqualizer extends HTMLElement {
   connectedCallback(): void {
@@ -736,9 +794,8 @@ const CATALOGUE: ComponentDef[] = [
   { tag: 'b-skeleton', label: 'Skeleton', category: 'feedback', attrs: { width: '180px', height: '1rem' } },
   { tag: 'b-stale-banner', label: 'Stale banner', category: 'feedback', render: () => 'Data may be out of date.', note: 'Typically shown when cached data is stale.' },
   { tag: 'b-toast-item', label: 'Toast item', category: 'feedback', attrs: { variant: 'success', message: 'Saved successfully' }, note: 'Normally emitted through the toast service.' },
-  { tag: 'b-sync-status', label: 'Sync status', category: 'feedback',
-    note: 'Offline / syncing / synced chip bound to an outbox SyncSource (EPIC-002 backport). Shown with 2 pending writes (syncing); it hides when online + idle and shows "offline" when disconnected.',
-    setup: (el) => el.bind({ get pendingCount() { return 2; }, onChange() { return () => {}; } }) },
+  { tag: 'pg-sync-status-demo', label: 'Sync status', category: 'feedback',
+    note: 'b-sync-status bound to an outbox SyncSource (EPIC-002 backport). Switch Offline, Pending and Not saved to see every state: syncing (info), offline (warning), "N not saved" (danger, a button). Each looks like the b-badge of the same meaning (TASK-994). Offline is simulated for this page only.' },
   { tag: 'pg-device-demo', label: 'Device utils (wake lock / audio cue / SW)', category: 'lab',
     note: 'EPIC-016 backports: Screen Wake Lock, iOS-safe audio cue, and opt-in PWA service-worker register/unregister. Buttons drive each; the playground never auto-registers a SW.' },
   { tag: 'pg-dialogs', label: 'Dialogs (imperative helpers)', category: 'feedback',

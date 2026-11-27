@@ -26,6 +26,15 @@
       "zoom": "Zvětšit obrázek",
       "zoomCount": "{index} / {count}",
       "status": "Obrázek {index} z {count}: {name}"
+    },
+    "pagination": {
+      "items": { "one": "položka", "few": "položky", "many": "položky", "other": "položek" }
+    },
+    "select": { "noMatches": "Žádné shody" },
+    "chat": {
+      "placeholder": "Napište zprávu...",
+      "send": "Odeslat",
+      "sending": "Odesílá se..."
     }
   }
 }

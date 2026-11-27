@@ -94,6 +94,7 @@ node category-ribbon-check.mjs # the Shell's category ribbon by real mouse and k
 node contextual-ribbon-check.mjs # a Shell page's contextual ribbon tab by real mouse: raised on a row click, commands, kept, gone on close
 node testing-smoke-check.mjs # birko-web-testing's runSmoke with a real Playwright: mustSee / expectSelector take the first VISIBLE match
 node locale-switch-check.mjs # a locale switch re-localizes components at every shadow depth, innermost first; an open dialog survives a re-render; b-form relabels (factory and i18n keys), keeping values, focus and errors
+node i18n-gaps-check.mjs   # cs app in an en-US browser: b-chat time in the app's locale + bwc.chat.*, b-pagination plural forms (and b-data-table's items function), b-select bwc.select.noMatches (TASK-1009)
 node rerender-leak-check.mjs # re-renders every gallery component and fails on any that gains event listeners per render
 ```
 

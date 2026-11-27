@@ -57,6 +57,15 @@ void (async () => {
     eq('cs and sk miss, en has it: en', i18n.t('only.en'), 'English only');
     eq('a key in no locale: the key, as before', i18n.t('only.none'), 'only.none');
     eq('plurals follow the chain, with the fallback locale\'s rules (sk "few")', i18n.t('items', { count: 3 }), '3 položky');
+    // TASK-1010 (measured by Symbio at its TASK-1140): the current locale's own translation wins in either shape. A
+    // cs plain string used to lose to sk's plural forms, so Czech rendered Slovak "položiek".
+    i18n.addMessages('cs', { t1010: { plain: '{count} položek' } });
+    i18n.addMessages('sk', { t1010: { plain: { one: '{count} položka', few: '{count} položky', other: '{count} položiek' } } });
+    eq('a cs plain string beats an sk plural object (count 5)', i18n.t('t1010.plain', { count: 5 }), '5 položek');
+    eq('a cs plain string beats an sk plural object (count 1)', i18n.t('t1010.plain', { count: 1 }), '1 položek');
+    i18n.addMessages('cs', { t1010: { partial: { one: '{count} kus' } } });
+    i18n.addMessages('sk', { t1010: { partial: { one: '{count} kus', other: '{count} kusov' } } });
+    eq('a cs plural object without the count\'s form or other falls through to sk', i18n.t('t1010.partial', { count: 5 }), '5 kusov');
 
     await reset();
     await i18n.loadModule('orders');
